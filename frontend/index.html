@@ -39,7 +39,7 @@
     <div class="flex items-center gap-3">
       <img src="/static/assets/icon-1024.png" alt="Ion+" class="w-9 h-9 rounded-xl shadow-lg border border-white/10">
       <div>
-        <div class="eyebrow-label text-cyan-400 text-[10px]">Inside Your Phone</div>
+        <div class="eyebrow-label text-cyan-400 text-[10px] tracking-wider uppercase font-bold">INTELLIGENCE AT THE CORE</div>
         <div class="text-base font-black tracking-tight text-white flex items-center gap-0.5">
           <span>Ion</span><span class="text-cyan-400 font-black text-lg leading-none">+</span>
         </div>
@@ -79,6 +79,39 @@
 
   </header>
 
+  <!-- DEVICE CONNECTED TOAST NOTIFICATION (Design Doc v2 §5.2) -->
+  <div id="device-connect-toast" role="status" aria-live="polite" aria-atomic="true">
+    <div class="toast-glassmorphic relative flex items-center gap-3.5 px-4 py-3 rounded-2xl overflow-hidden pointer-events-auto">
+      <!-- Icon: Accent-colored glowing badge with checkmark/plug -->
+      <div class="relative w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500/20 to-teal-500/20 border border-indigo-500/40 flex items-center justify-center text-teal-300 shrink-0 shadow-[0_0_12px_rgba(99,102,241,0.3)]">
+        <svg class="w-4 h-4 text-teal-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M5 13l4 4L19 7" />
+        </svg>
+        <span class="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_#34d399]"></span>
+      </div>
+
+      <!-- Text Content: Bold headline + detected device model & serial -->
+      <div class="pr-2 min-w-[150px] max-w-[240px]">
+        <div class="text-xs font-bold text-white tracking-wide flex items-center gap-1.5">
+          <span>Device Connected</span>
+        </div>
+        <div id="toast-device-name" class="text-[11px] text-zinc-300 font-medium truncate font-mono mt-0.5">
+          Android Device
+        </div>
+      </div>
+
+      <!-- Manual Dismiss Close Button -->
+      <button id="toast-close-btn" class="text-zinc-400 hover:text-white transition p-1 -mr-1 rounded-lg hover:bg-white/10 shrink-0" title="Dismiss notification" aria-label="Dismiss notification">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+
+      <!-- 3-Second Visible Countdown Drain Line -->
+      <div id="toast-progress" class="toast-progress-bar"></div>
+    </div>
+  </div>
+
   <!-- MAIN SCROLLABLE CONTENT -->
   <main class="flex-1 w-full max-w-7xl mx-auto px-6 py-8 space-y-10">
 
@@ -114,9 +147,9 @@
 
           <!-- Left Text Introduction -->
           <div class="lg:col-span-5 space-y-4">
-            <div class="eyebrow-label text-indigo-400 flex items-center gap-2">
-              <span class="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
-              Live Biometric Evaluation
+            <div id="hero-eyebrow" class="eyebrow-label text-zinc-400 flex items-center gap-2">
+              <span class="w-1.5 h-1.5 rounded-full bg-zinc-500"></span>
+              Standby Mode
             </div>
             <h2 class="text-4xl md:text-5xl font-black tracking-tight text-white leading-tight">
               Genuine Battery Degradation.

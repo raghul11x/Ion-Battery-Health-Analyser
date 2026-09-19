@@ -1,11 +1,11 @@
 # Ion+ — Battery Health & Longevity Analyzer
 
 <p align="center">
-  <img src="frontend/static/assets/brand-banner.png" alt="Ion+ Inside Your Phone" width="680">
+  <img src="frontend/static/assets/brand-banner.png" alt="Ion+ — INTELLIGENCE AT THE CORE" width="680">
 </p>
 
 <p align="center">
-  <b>Inside Your Phone</b> — Direct ADB-Powered Battery Degradation, Electrochemical Longevity & Deep Hardware Diagnostics for Android
+  <b>INTELLIGENCE AT THE CORE</b> — Direct ADB-Powered Battery Degradation, Electrochemical Longevity & Deep Hardware Diagnostics for Android
 </p>
 
 <p align="center">

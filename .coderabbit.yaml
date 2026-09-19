@@ -1,0 +1,39 @@
+# .coderabbit.yaml
+version: "2"
+language: "en"
+tone_instructions: "Senior battery systems software engineer and Python/Modern Web architect. Pragmatic, rigorous, prioritizing performance, offline reliability, and electrochemical precision."
+
+reviews:
+  profile: "assertive"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+      - master
+
+  path_filters:
+    - "!dist/**"
+    - "!build/**"
+    - "!**/*.exe"
+    - "!**/*.spec"
+    - "!battery_data.db"
+
+  path_instructions:
+    - path: "backend/health.py"
+      instructions: |
+        CRITICAL: Ensure zero AI/LLM integration in this file. All calculations must be 100% deterministic mathematical calculations based on physical readings (coulomb counter, design capacity, cycle wear). Enforce unit normalization scale handling.
+    - path: "backend/adb_client.py"
+      instructions: |
+        Ensure all ADB commands enforce proper timeout limits (<= 5s) and CREATE_NO_WINDOW flags on Windows. Watch for blocking subprocess calls that could stall the async server.
+    - path: "backend/device_profiler.py"
+      instructions: |
+        Enforce local-first authority (ADB sysfs always overrides AI). Verify that LLM fallback strictly honors majority-vote consensus (2 of 3 or 2 of 2) before accepting any suggested sysfs path or capacity value. Never log raw API keys.
+    - path: "frontend/**"
+      instructions: |
+        Ensure smooth, hardware-accelerated CSS and JS animations. Verify requestAnimationFrame usage, passive event listeners, and proper cleanup of timers (setInterval/setTimeout) to prevent memory leaks. Respect prefers-reduced-motion.

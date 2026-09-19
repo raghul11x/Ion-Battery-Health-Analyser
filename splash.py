@@ -86,8 +86,8 @@ class AdobeSplashScreen:
 
         eyebrow = tk.Label(
             text_frame,
-            text="EURA BIO-AGE EDITION",
-            fg="#818CF8",
+            text="INTELLIGENCE AT THE CORE",
+            fg="#38BDF8",
             bg=self.bg_color,
             font=("Segoe UI", 8, "bold"),
         )

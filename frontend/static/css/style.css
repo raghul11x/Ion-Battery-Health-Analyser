@@ -238,3 +238,245 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.25);
 }
+
+/* ==========================================================================
+   CURSOR-TRACKING GLOW EFFECT (Spotlight Hover Pattern)
+   ========================================================================== */
+
+/* Ensure targets have relative positioning and clip glow to border radius */
+.capsule-segment,
+.time-filter-pill,
+.pill-button,
+#connection-pill,
+.hero-card,
+.eura-dark-card,
+.eura-indigo-card {
+  position: relative;
+  overflow: hidden;
+}
+
+/* Base overlay: ::before tracks cursor via --mouse-x and --mouse-y */
+.capsule-segment::before,
+.time-filter-pill::before,
+.pill-button::before,
+#connection-pill::before,
+.hero-card::before,
+.eura-dark-card::before,
+.eura-indigo-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: 1;
+}
+
+/* Smoothly fade in on hover (only opacity transitions, position updates instantly) */
+.capsule-segment:hover::before,
+.time-filter-pill:hover::before,
+.pill-button:hover::before,
+#connection-pill:hover::before,
+.hero-card:hover::before,
+.eura-dark-card:hover::before,
+.eura-indigo-card:hover::before {
+  opacity: 1;
+}
+
+/* 1. Nav pills & buttons: soft indigo-blue glow */
+.capsule-segment::before,
+.time-filter-pill::before,
+.pill-button::before,
+#connection-pill::before {
+  background: radial-gradient(
+    circle 90px at var(--mouse-x, 50%) var(--mouse-y, 50%),
+    rgba(99, 102, 241, 0.35) 0%,
+    rgba(99, 102, 241, 0.08) 50%,
+    transparent 70%
+  );
+}
+
+/* Special case for white CTA button (#probe-btn) */
+#probe-btn::before {
+  background: radial-gradient(
+    circle 90px at var(--mouse-x, 50%) var(--mouse-y, 50%),
+    rgba(99, 102, 241, 0.22) 0%,
+    transparent 70%
+  );
+}
+
+/* 2. Battery Health Hero Card: warm white/amber glow tracing surface */
+.hero-card::before {
+  background: radial-gradient(
+    circle 400px at var(--mouse-x, 50%) var(--mouse-y, 50%),
+    rgba(255, 255, 255, 0.15) 0%,
+    rgba(255, 255, 255, 0.04) 50%,
+    transparent 70%
+  );
+  z-index: 0;
+}
+
+/* 3. Secondary Cards: Health Report, Current Charge, Chemical Capacity: cool indigo-white glow */
+.eura-dark-card::before,
+.eura-indigo-card::before {
+  background: radial-gradient(
+    circle 360px at var(--mouse-x, 50%) var(--mouse-y, 50%),
+    rgba(165, 180, 252, 0.15) 0%,
+    rgba(129, 140, 248, 0.03) 50%,
+    transparent 70%
+  );
+  z-index: 0;
+}
+
+/* Ensure card children remain above card surface glow */
+.hero-card > *,
+.eura-dark-card > *,
+.eura-indigo-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.time-filter-pill {
+  z-index: 2;
+}
+
+/* Accessibility: Reduced Motion Fallback */
+@media (prefers-reduced-motion: reduce) {
+  .capsule-segment::before,
+  .time-filter-pill::before,
+  .pill-button::before,
+  #connection-pill::before,
+  .hero-card::before,
+  .eura-dark-card::before,
+  .eura-indigo-card::before {
+    display: none !important;
+  }
+
+  .capsule-segment:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .time-filter-pill:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #FFFFFF;
+  }
+
+  .pill-button:hover,
+  #connection-pill:hover {
+    filter: brightness(1.08);
+  }
+
+  .hero-card:hover {
+    filter: brightness(1.03);
+  }
+
+  .eura-dark-card:hover {
+    border-color: rgba(255, 255, 255, 0.18);
+  }
+
+  .eura-indigo-card:hover {
+    filter: brightness(1.04);
+  }
+}
+
+/* Touch Devices (No true hover / coarse pointer) */
+@media (hover: none) or (pointer: coarse) {
+  .capsule-segment::before,
+  .time-filter-pill::before,
+  .pill-button::before,
+  #connection-pill::before,
+  .hero-card::before,
+  .eura-dark-card::before,
+  .eura-indigo-card::before {
+    display: none !important;
+  }
+}
+
+/* ==========================================================================
+   DEVICE CONNECTED TOAST NOTIFICATION (Design Doc v2 §5.2)
+   ========================================================================== */
+
+#device-connect-toast {
+  position: fixed;
+  top: 5.25rem;
+  right: 1.5rem;
+  z-index: 50;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate3d(32px, -10px, 0) scale(0.96);
+  transition: opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  visibility: hidden;
+  max-width: calc(100vw - 2rem);
+}
+
+#device-connect-toast.toast-visible {
+  visibility: visible;
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1);
+  pointer-events: auto;
+}
+
+#device-connect-toast.toast-exiting {
+  visibility: visible;
+  opacity: 0;
+  transform: translate3d(24px, -8px, 0) scale(0.97);
+  transition: opacity 0.22s ease-in,
+              transform 0.22s ease-in;
+  pointer-events: none;
+}
+
+.toast-glassmorphic {
+  background: linear-gradient(135deg, rgba(18, 20, 46, 0.94) 0%, rgba(10, 11, 26, 0.96) 100%);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(99, 102, 241, 0.38);
+  box-shadow: 0 14px 36px -4px rgba(0, 0, 0, 0.65),
+              0 0 20px -2px rgba(99, 102, 241, 0.25),
+              inset 0 1px 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.toast-progress-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2.5px;
+  background: linear-gradient(90deg, #6366f1 0%, #2dd4bf 55%, #818cf8 100%);
+  transform-origin: left center;
+  transform: scaleX(1);
+}
+
+#device-connect-toast.toast-visible .toast-progress-bar {
+  animation: toast-drain 3s linear forwards;
+}
+
+@keyframes toast-drain {
+  0% {
+    transform: scaleX(1);
+  }
+  100% {
+    transform: scaleX(0);
+  }
+}
+
+/* Reduced Motion Fallback for Toast */
+@media (prefers-reduced-motion: reduce) {
+  #device-connect-toast {
+    transform: none !important;
+    transition: opacity 0.18s linear !important;
+  }
+  #device-connect-toast.toast-visible {
+    transform: none !important;
+  }
+  #device-connect-toast.toast-exiting {
+    transform: none !important;
+    transition: opacity 0.18s linear !important;
+  }
+  #device-connect-toast.toast-visible .toast-progress-bar {
+    animation: none !important;
+    display: none !important;
+  }
+}
+

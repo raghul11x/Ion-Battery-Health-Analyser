@@ -21,6 +21,12 @@ const state = {
 
 // DOM References
 const el = {
+  // Toast Notification
+  connectToast: document.getElementById('device-connect-toast'),
+  toastDeviceName: document.getElementById('toast-device-name'),
+  toastProgress: document.getElementById('toast-progress'),
+  toastCloseBtn: document.getElementById('toast-close-btn'),
+
   // Connection Bar
   connDot: document.getElementById('conn-dot'),
   connStatusLabel: document.getElementById('conn-status-label'),
@@ -30,6 +36,7 @@ const el = {
   seedBtn: document.getElementById('seed-btn'),
 
   // Hero Card (EURA Bio-Age Style)
+  heroEyebrow: document.getElementById('hero-eyebrow'),
   heroCard: document.getElementById('hero-card'),
   heroStatusPill: document.getElementById('hero-status-pill'),
   heroHealthNumber: document.getElementById('hero-health-number'),
@@ -153,9 +160,11 @@ async function fetchStatus() {
   }
 }
 
-async function fetchSnapshot() {
+async function fetchSnapshot(serial = null) {
   try {
-    const res = await fetch('/api/snapshot');
+    const targetSerial = serial || state.selectedSerial;
+    const url = targetSerial ? `/api/snapshot?serial=${encodeURIComponent(targetSerial)}` : '/api/snapshot';
+    const res = await fetch(url);
     if (res.ok) {
       state.snapshot = await res.json();
       renderSnapshot();
@@ -165,9 +174,11 @@ async function fetchSnapshot() {
   }
 }
 
-async function fetchHistory(days = 30) {
+async function fetchHistory(days = 30, serial = null) {
   try {
-    const res = await fetch(`/api/history?days=${days}&limit=150`);
+    const targetSerial = serial || state.selectedSerial;
+    const serialParam = targetSerial ? `&serial=${encodeURIComponent(targetSerial)}` : '';
+    const res = await fetch(`/api/history?days=${days}&limit=150${serialParam}`);
     if (res.ok) {
       const data = await res.json();
       state.history = data.readings || [];
@@ -178,9 +189,11 @@ async function fetchHistory(days = 30) {
   }
 }
 
-async function fetchInsights() {
+async function fetchInsights(serial = null) {
   try {
-    const res = await fetch('/api/insights');
+    const targetSerial = serial || state.selectedSerial;
+    const serialParam = targetSerial ? `?serial=${encodeURIComponent(targetSerial)}` : '';
+    const res = await fetch(`/api/insights${serialParam}`);
     if (res.ok) {
       state.insights = await res.json();
       renderInsights();
@@ -206,6 +219,100 @@ async function fetchProbe() {
   }
 }
 
+// Device Connected Toast State & Management (Design Doc v2 §5.2)
+const toastState = {
+  wasConnected: false,
+  lastSerial: null,
+  holdTimer: null,
+  exitTimer: null,
+  lastDismissedAt: 0,
+};
+
+function formatConnectedDeviceSubtitle(activeDev) {
+  const model = activeDev?.model ? activeDev.model.replace(/_/g, ' ') : (state.snapshot?.device_model || '');
+  const serial = activeDev?.serial || state.snapshot?.device_serial || '';
+
+  if (model && serial) {
+    if (model.toLowerCase().includes(serial.toLowerCase())) {
+      return model;
+    }
+    const displaySerial = serial.length > 10 ? `${serial.slice(0, 8)}...` : serial;
+    return `${model} · ${displaySerial}`;
+  }
+  if (model) return model;
+  if (serial) return `Android Device · ${serial.length > 10 ? serial.slice(0, 8) + '...' : serial}`;
+  return 'Android Device';
+}
+
+function showDeviceConnectedToast(deviceName) {
+  const toastEl = el.connectToast || document.getElementById('device-connect-toast');
+  const nameEl = el.toastDeviceName || document.getElementById('toast-device-name');
+  const progressEl = el.toastProgress || document.getElementById('toast-progress');
+  if (!toastEl || !nameEl) return;
+
+  nameEl.textContent = deviceName;
+
+  // Clear any existing dismissal timers
+  if (toastState.holdTimer) {
+    clearTimeout(toastState.holdTimer);
+    toastState.holdTimer = null;
+  }
+  if (toastState.exitTimer) {
+    clearTimeout(toastState.exitTimer);
+    toastState.exitTimer = null;
+  }
+
+  // Remove exiting state if currently transitioning out
+  toastEl.classList.remove('toast-exiting');
+
+  // Reset progress bar drain animation
+  if (progressEl) {
+    progressEl.style.animation = 'none';
+    void progressEl.offsetWidth; // Force reflow to retrigger CSS animation
+    progressEl.style.animation = '';
+  }
+
+  // Ensure visible with entrance animation
+  if (!toastEl.classList.contains('toast-visible')) {
+    void toastEl.offsetWidth;
+    toastEl.classList.add('toast-visible');
+  }
+
+  // 3-second hold timer
+  toastState.holdTimer = setTimeout(() => {
+    dismissDeviceConnectedToast();
+  }, 3000);
+}
+
+function dismissDeviceConnectedToast(immediate = false) {
+  const toastEl = el.connectToast || document.getElementById('device-connect-toast');
+  if (!toastEl || (!toastEl.classList.contains('toast-visible') && !toastEl.classList.contains('toast-exiting'))) return;
+
+  if (toastState.holdTimer) {
+    clearTimeout(toastState.holdTimer);
+    toastState.holdTimer = null;
+  }
+  if (toastState.exitTimer) {
+    clearTimeout(toastState.exitTimer);
+    toastState.exitTimer = null;
+  }
+
+  toastState.lastDismissedAt = Date.now();
+
+  const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (immediate || prefersReduced) {
+    toastEl.classList.remove('toast-visible', 'toast-exiting');
+  } else {
+    toastEl.classList.remove('toast-visible');
+    toastEl.classList.add('toast-exiting');
+
+    toastState.exitTimer = setTimeout(() => {
+      toastEl.classList.remove('toast-exiting');
+      toastState.exitTimer = null;
+    }, 220);
+  }
+}
+
 // Renderers
 function updateConnectionStatus() {
   const isConn = state.systemStatus?.active_device_count > 0;
@@ -217,6 +324,22 @@ function updateConnectionStatus() {
 
   const guidanceBanner = document.getElementById('connection-guidance-banner');
   const guidanceText = document.getElementById('connection-guidance-text');
+
+  // Connection Toast Trigger Check (Design Doc v2 §5.2)
+  const isConnected = !!(isConn && activeDev);
+  const currentSerial = activeDev ? (activeDev.serial || 'connected-device') : null;
+
+  if (isConnected) {
+    const isNewConnection = !toastState.wasConnected || (toastState.lastSerial !== currentSerial);
+    if (isNewConnection) {
+      const formattedName = formatConnectedDeviceSubtitle(activeDev);
+      showDeviceConnectedToast(formattedName);
+      toastState.wasConnected = true;
+      toastState.lastSerial = currentSerial;
+    }
+  } else {
+    toastState.wasConnected = false;
+  }
 
   if (isProfiling) {
     el.connDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse';
@@ -259,18 +382,104 @@ function updateConnectionStatus() {
     el.connDot.className = 'dot-idle-gray';
     el.connStatusLabel.textContent = 'Disconnected';
     if (guidanceBanner) guidanceBanner.classList.add('hidden');
-    if (state.snapshot?.device_model && state.snapshot.device_model !== 'No device connected') {
-      el.connDeviceLabel.textContent = `· ${state.snapshot.device_model} (Cached)`;
-      el.connDeviceLabel.classList.remove('hidden');
-    } else {
-      el.connDeviceLabel.classList.add('hidden');
-    }
+    el.connDeviceLabel.classList.add('hidden');
   }
+}
+
+function renderIdleState() {
+  // 1. Eyebrow
+  if (el.heroEyebrow) {
+    el.heroEyebrow.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-zinc-500"></span>Standby Mode';
+    el.heroEyebrow.className = 'eyebrow-label text-zinc-400 flex items-center gap-2';
+  }
+
+  // 2. Hero Card (EURA Bio-Age Style)
+  el.heroCard.classList.remove('hero-gradient-healthy', 'hero-gradient-fair', 'hero-gradient-poor');
+  el.heroCard.classList.add('hero-gradient-unknown');
+  el.heroHealthNumber.textContent = '--';
+  el.heroStatusPill.textContent = 'Awaiting Device';
+  el.heroStatusHeading.textContent = 'No Device Connected';
+  el.heroStatusSubtext.textContent = 'Connect phone over USB-C to compute real chemical health.';
+  el.rangeDialMarker.style.left = '0%';
+  el.heroMethodBadge.textContent = 'Standby';
+
+  const oemBadge = document.getElementById('hero-oem-soh-badge');
+  if (oemBadge) oemBadge.classList.add('hidden');
+  const divBanner = document.getElementById('soh-divergence-banner');
+  if (divBanner) divBanner.classList.add('hidden');
+
+  // 3. Three-Stat Row (Heart Report)
+  el.statTemp.textContent = '—';
+  el.statTempLabel.textContent = 'Awaiting connection';
+  el.statVoltage.textContent = '—';
+  el.statCycles.textContent = '—';
+  const sublabel = document.getElementById('stat-cycles-sublabel');
+  if (sublabel) sublabel.textContent = 'Awaiting connection';
+
+  // 4. Current Charge Card
+  el.snapLevelText.textContent = '—';
+  el.snapStatusBadge.textContent = 'Disconnected';
+  el.snapStatusBadge.className = 'px-3 py-0.5 rounded-full text-xs font-semibold bg-zinc-800 text-zinc-400 border border-white/10';
+  el.snapChargeSpeedText.textContent = 'Connect phone over USB-C';
+  el.snapLastSync.textContent = 'Standby';
+
+  // 5. Chemical Capacity Card
+  el.capFullText.textContent = '—';
+  if (el.capFullSubtext) el.capFullSubtext.classList.add('hidden');
+  el.capDesignText.textContent = '—';
+  if (el.capRetentionText) el.capRetentionText.textContent = '—';
+  if (el.capFadeText) el.capFadeText.textContent = '—';
+  if (el.capBadge) el.capBadge.textContent = 'Hardware Standby';
+  if (el.capFullProvenance) {
+    el.capFullProvenance.textContent = 'Standby';
+    el.capFullProvenance.className = 'text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 font-mono';
+  }
+  if (el.capDesignProvenance) {
+    el.capDesignProvenance.textContent = 'Standby';
+    el.capDesignProvenance.className = 'text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 font-mono';
+  }
+  if (el.capFooterNote) el.capFooterNote.textContent = 'Connect phone to read hardware registers.';
+  if (el.bdSourcesPill) el.bdSourcesPill.innerHTML = '';
+
+  // 6. Forecast Card
+  if (el.forecastMonthsText) el.forecastMonthsText.textContent = '—';
+  if (el.forecastDateText) el.forecastDateText.textContent = 'Awaiting connection';
+  if (el.forecastUrgencyPill) {
+    el.forecastUrgencyPill.textContent = 'Standby';
+    el.forecastUrgencyPill.className = 'px-3.5 py-1 rounded-full text-xs font-bold bg-zinc-800 text-zinc-400 border border-white/10';
+  }
+  if (el.forecastCurrentHealth) el.forecastCurrentHealth.textContent = '—';
+  if (el.forecastCyclesLeft) el.forecastCyclesLeft.textContent = '— cycles remaining';
+  if (el.forecastProgressBar) el.forecastProgressBar.style.width = '0%';
 }
 
 function renderSnapshot() {
   const s = state.snapshot;
-  if (!s) return;
+  if (!s || (s.health_pct === null && s.health_pct === undefined && !s.connected) || (!s.connected && !s.device_serial)) {
+    renderIdleState();
+    return;
+  }
+
+  // Active connected phone vs seeded/cached evaluation
+  if (el.heroEyebrow) {
+    if (s.connected) {
+      el.heroEyebrow.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"></span>Live Biometric Evaluation';
+      el.heroEyebrow.className = 'eyebrow-label text-indigo-400 flex items-center gap-2';
+    } else {
+      el.heroEyebrow.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>Historical / Seeded Evaluation';
+      el.heroEyebrow.className = 'eyebrow-label text-emerald-300 flex items-center gap-2';
+    }
+  }
+
+  // Sync richer snapshot model name to active toast if currently visible
+  if (s.device_model) {
+    const toastEl = el.connectToast || document.getElementById('device-connect-toast');
+    const toastNameEl = el.toastDeviceName || document.getElementById('toast-device-name');
+    if (toastEl && toastEl.classList.contains('toast-visible') && toastNameEl) {
+      const activeDev = state.systemStatus?.connected_devices?.find(d => d.state === 'device');
+      toastNameEl.textContent = formatConnectedDeviceSubtitle(activeDev);
+    }
+  }
 
   const health = s.health_pct;
 
@@ -311,12 +520,7 @@ function renderSnapshot() {
     const days = s.history_days !== undefined ? `${s.history_days}d history` : 'Gathering';
     el.heroMethodBadge.textContent = `Gathering Data · ${days}`;
   } else if (health === null || health === undefined) {
-    el.heroCard.classList.add('hero-gradient-unknown');
-    el.heroHealthNumber.textContent = '--';
-    el.heroStatusPill.textContent = 'Awaiting Device';
-    el.heroStatusHeading.textContent = 'No Device Connected';
-    el.heroStatusSubtext.textContent = 'Connect phone over USB-C to compute real chemical health.';
-    el.rangeDialMarker.style.left = '0%';
+    renderIdleState();
     el.heroMethodBadge.textContent = 'Offline';
   } else {
     const displayVal = Math.min(100, Math.round(health));
@@ -1006,9 +1210,10 @@ async function handleSeed() {
     });
 
     if (res.ok) {
-      await fetchSnapshot();
-      await fetchHistory(state.selectedDays);
-      await fetchInsights();
+      state.selectedSerial = 'mock-phone-2a';
+      await fetchSnapshot('mock-phone-2a');
+      await fetchHistory(state.selectedDays, 'mock-phone-2a');
+      await fetchInsights('mock-phone-2a');
     }
   } catch (err) {
     alert('Failed to seed demo data: ' + err.message);
@@ -1062,6 +1267,121 @@ function init() {
     fetchStatus();
     fetchSnapshot();
   }, 1000);
+
+  // Initialize Toast Notification Close Button
+  const toastCloseBtn = el.toastCloseBtn || document.getElementById('toast-close-btn');
+  if (toastCloseBtn) {
+    toastCloseBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dismissDeviceConnectedToast();
+    });
+  }
+
+  // Initialize Cursor-Tracking Glow Effect (Spotlight Hover)
+  initCursorTrackingGlow();
+}
+
+// Cursor-Tracking Spotlight Glow Hover Implementation
+function initCursorTrackingGlow() {
+  // 1. Accessibility: Skip tracking if user prefers reduced motion
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // 2. Touch Check: Skip on touch / coarse pointer devices (no real hover)
+  const supportsHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+
+  if (prefersReducedMotion || !supportsHover) {
+    return;
+  }
+
+  // Helper for delegated mousemove tracking on pill/button groups
+  function setupDelegatedGlow(container, itemSelector) {
+    if (!container) return;
+    let rafId = null;
+    let currentItem = null;
+    let latestX = 0;
+    let latestY = 0;
+
+    container.addEventListener('mousemove', (e) => {
+      const item = e.target.closest(itemSelector);
+      if (!item) {
+        currentItem = null;
+        return;
+      }
+
+      currentItem = item;
+      const rect = item.getBoundingClientRect();
+      latestX = e.clientX - rect.left;
+      latestY = e.clientY - rect.top;
+
+      if (!rafId) {
+        rafId = requestAnimationFrame(() => {
+          if (currentItem) {
+            currentItem.style.setProperty('--mouse-x', `${latestX}px`);
+            currentItem.style.setProperty('--mouse-y', `${latestY}px`);
+          }
+          rafId = null;
+        });
+      }
+    }, { passive: true });
+
+    container.addEventListener('mouseleave', () => {
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      currentItem = null;
+    }, { passive: true });
+  }
+
+  // Helper for individual card surface glow
+  function setupCardGlow(card) {
+    if (!card) return;
+    let rafId = null;
+    let latestX = 0;
+    let latestY = 0;
+
+    card.addEventListener('mousemove', (e) => {
+      const rect = card.getBoundingClientRect();
+      latestX = e.clientX - rect.left;
+      latestY = e.clientY - rect.top;
+
+      if (!rafId) {
+        rafId = requestAnimationFrame(() => {
+          card.style.setProperty('--mouse-x', `${latestX}px`);
+          card.style.setProperty('--mouse-y', `${latestY}px`);
+          rafId = null;
+        });
+      }
+    }, { passive: true });
+
+    card.addEventListener('mouseleave', () => {
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+    }, { passive: true });
+  }
+
+  // A. Delegated tracking on Navigation Capsule
+  const navContainer = document.querySelector('.capsule-nav');
+  if (navContainer) {
+    setupDelegatedGlow(navContainer, '.capsule-segment');
+  }
+
+  // B. Delegated tracking on Header Action Pills (#connection-pill, #seed-btn, #probe-btn)
+  const headerActions = document.getElementById('probe-btn')?.parentElement;
+  if (headerActions) {
+    setupDelegatedGlow(headerActions, '.pill-button, #connection-pill');
+  }
+
+  // C. Delegated tracking on Timeline Filter Pills (7D / 14D / 30D / 90D)
+  const timeFilterContainer = document.querySelector('.time-filter-pill')?.parentElement;
+  if (timeFilterContainer) {
+    setupDelegatedGlow(timeFilterContainer, '.time-filter-pill');
+  }
+
+  // D. Surface tracking on Cards (Hero card, Health Report, Current Charge, Chemical Capacity, etc.)
+  const cardElements = document.querySelectorAll('#hero-card, .eura-dark-card, .eura-indigo-card');
+  cardElements.forEach(card => setupCardGlow(card));
 }
 
 document.addEventListener('DOMContentLoaded', init);

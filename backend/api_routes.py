@@ -124,6 +124,31 @@ def get_snapshot(serial: Optional[str] = None) -> Dict[str, Any]:
             "connection_guidance": "Device is offline. Please reconnect USB cable or toggle USB Debugging in Developer Options.",
         }
 
+    # No device actively connected over USB and no explicit serial requested -> Return clean idle state
+    if not active and not serial:
+        return {
+            "live": False,
+            "connected": False,
+            "connection_state": "disconnected",
+            "device_serial": None,
+            "device_model": None,
+            "level_pct": None,
+            "voltage_mv": None,
+            "temperature_c": None,
+            "health_pct": None,
+            "effective_capacity_uah": None,
+            "charge_full_uah": None,
+            "charge_full_design_uah": None,
+            "replacement_forecast": None,
+            "cycle_count": None,
+            "cycle_count_type": "none",
+            "health_status": "disconnected",
+            "status": "Disconnected",
+            "health_flag": "Unknown",
+            "health_band": "unknown",
+            "temperature_band": "normal",
+        }
+
     target_serial = serial or (active[0]["serial"] if active else None)
     if not target_serial:
         db_devs = db.get_devices()
@@ -299,6 +324,7 @@ def get_snapshot(serial: Optional[str] = None) -> Dict[str, Any]:
             "live": False,
             "connected": False,
             **latest,
+            "status": "Disconnected",
             "maximum_battery_capacity_uah": cfd,
             "maximum_chargeable_capacity_uah": cf,
             "capacity_retention_pct": retention,

@@ -59,6 +59,17 @@ def normalize_capacity_units(
         norm_full = charge_full_raw * 1000
         explanation = "Detected 0.001x scale mismatch: charge_full was in mAh (scaled by 1000)"
 
+    # Case 5: Both values in mAh (e.g. <= 20,000 µAh is physically impossible for phone batteries)
+    if norm_full <= 20000 and norm_design <= 20000:
+        norm_full = norm_full * 1000
+        norm_design = norm_design * 1000
+        explanation += " | Converted from mAh to µAh (scaled by 1000)"
+    # Case 6: Both values in 10 µAh (e.g. 50,000 - 999,999)
+    elif 50000 <= norm_full <= 999999 and 50000 <= norm_design <= 999999:
+        norm_full = norm_full * 10
+        norm_design = norm_design * 10
+        explanation += " | Converted from 10 µAh to µAh (scaled by 10)"
+
     norm_ratio = (norm_full / float(norm_design)) * 100.0
     logger.info(
         f"[UNIT AUDIT] Normalized: full={norm_full} µAh, design={norm_design} µAh | "
@@ -200,8 +211,8 @@ def build_breakdown(
 def calculate_health(
     charge_full_uah: Optional[int],
     charge_full_design_uah: Optional[int],
-    charge_counter_uah: Optional[int],
-    level_pct: Optional[int],
+    charge_counter_uah: Optional[int] = None,
+    level_pct: Optional[int] = None,
     baseline_record: Optional[Dict[str, Any]] = None,
     cycle_count: Optional[int] = None,
     voltage_mv: Optional[int] = None,

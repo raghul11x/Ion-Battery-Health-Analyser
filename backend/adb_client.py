@@ -306,6 +306,13 @@ class ADBClient:
             "health",
             "technology",
             "model_name",
+            # Vendor / OEM registers
+            "battery_soh",
+            "soh",
+            "fg_cycle",
+            "battery_cycle",
+            "batt_temp",
+            "fast_chg_status",
         ]
 
         for node in subdirs:
@@ -465,14 +472,17 @@ class ADBClient:
                     charge_counter_path = entry["path"]
                     break
 
-        # 4. Locate cycle_count
+        # 4. Locate cycle_count (standard cycle_count, MediaTek fg_cycle, or battery_cycle)
         cycle_count_raw: Optional[int] = None
         cycle_count_path: Optional[str] = None
         for node in search_nodes:
-            entry = power_tree.get(node, {}).get("cycle_count")
-            if entry and entry.get("readable") and entry.get("int_val") is not None:
-                cycle_count_raw = entry["int_val"]
-                cycle_count_path = entry["path"]
+            for cycle_key in ["cycle_count", "fg_cycle", "battery_cycle"]:
+                entry = power_tree.get(node, {}).get(cycle_key)
+                if entry and entry.get("readable") and entry.get("int_val") is not None and entry["int_val"] >= 0:
+                    cycle_count_raw = entry["int_val"]
+                    cycle_count_path = entry["path"]
+                    break
+            if cycle_count_raw is not None:
                 break
 
         # Check unit scale mismatch
