@@ -1,0 +1,42 @@
+# Environment secrets
+.env
+
+# Database
+*.db
+*.sqlite3
+
+# Python cache & virtual environment
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+env/
+venv/
+
+# Pytest & IDE
+.pytest_cache/
+.coverage
+htmlcov/
+.idea/
+.vscode/
+
+# PyInstaller build artifacts & executables
+build/
+dist/
+*.spec.bak
+
+# Scratch & prompt logs
+last_user_prompt.txt
+last_user_prompt_full.txt
+*.log
+
+# Windows user-specific shortcuts
+*.lnk
+
+# Temporary icon extraction artifacts
+test_*.png
+test_*.ico
+extracted_*.png
+
+# Helper scripts
+push_to_github.bat

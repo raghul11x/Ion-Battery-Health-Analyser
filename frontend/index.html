@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ion+ — Battery Health & Longevity</title>
+  <link rel="icon" type="image/x-icon" href="/static/assets/favicon.ico">
+  <link rel="icon" type="image/png" href="/static/assets/icon-1024.png">
+  <link rel="apple-touch-icon" href="/static/assets/icon-1024.png">
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Local Offline-Ready Chart.js -->
+  <script src="/static/js/chart.min.js"></script>
+  <!-- EURA Health Style Theme -->
+  <link rel="stylesheet" href="/static/css/style.css">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            eura: {
+              dark: '#0B0B10',
+              card: '#0F1024',
+              indigo: '#312E81',
+              accent: '#4F46E5',
+            }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-[#0B0B10] text-white flex flex-col min-h-screen">
+
+  <!-- TOP BAR & CAPSULE NAVIGATION (Design Doc v2 §5.2) -->
+  <header class="sticky top-0 z-40 w-full px-6 py-4 flex items-center justify-between backdrop-blur-md bg-[#0B0B10]/80 border-b border-white/[0.06]">
+    
+    <!-- Left: Brand / Title -->
+    <div class="flex items-center gap-3">
+      <img src="/static/assets/icon-1024.png" alt="Ion+" class="w-9 h-9 rounded-xl shadow-lg border border-white/10">
+      <div>
+        <div class="eyebrow-label text-cyan-400 text-[10px]">Inside Your Phone</div>
+        <div class="text-base font-black tracking-tight text-white flex items-center gap-0.5">
+          <span>Ion</span><span class="text-cyan-400 font-black text-lg leading-none">+</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Center: Floating Pill Capsule Nav -->
+    <nav class="capsule-nav flex items-center gap-1 shadow-lg">
+      <button class="capsule-segment active" data-tab="dashboard">Dashboard</button>
+      <button class="capsule-segment" data-tab="trends">History</button>
+      <button class="capsule-segment" data-tab="habits">Insights</button>
+      <button class="capsule-segment" data-tab="diagnostics">Diagnostics</button>
+    </nav>
+
+    <!-- Right: Connection Capsule & Actions -->
+    <div class="flex items-center gap-3">
+      <!-- Status Pill -->
+      <div id="connection-pill" class="flex items-center gap-2.5 px-4 py-2 rounded-full bg-[#0F1024] border border-white/10 text-xs shadow-inner">
+        <div id="conn-dot" class="dot-idle-gray"></div>
+        <span id="conn-status-label" class="font-semibold text-zinc-300">Checking ADB...</span>
+        <span id="conn-device-label" class="text-zinc-500 font-mono hidden sm:inline"></span>
+      </div>
+
+      <!-- Seed Demo Data Button -->
+      <button id="seed-btn" class="pill-button bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 border border-white/10 text-xs flex items-center gap-1.5 transition">
+        <span>Seed 30D</span>
+      </button>
+
+      <!-- Connect / Probe Device Pill CTA Button (Design Doc v2 §5.2) -->
+      <button id="probe-btn" class="pill-button bg-white hover:bg-zinc-200 text-black text-xs flex items-center gap-1.5 font-bold shadow-md transition" title="Scan and probe connected USB Android device">
+        <svg id="probe-icon" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+        Connect Device
+      </button>
+    </div>
+
+  </header>
+
+  <!-- MAIN SCROLLABLE CONTENT -->
+  <main class="flex-1 w-full max-w-7xl mx-auto px-6 py-8 space-y-10">
+
+    <!-- USB Connection Guidance Banner (Unauthorized / Offline / Missing Debugging) -->
+    <div id="connection-guidance-banner" class="hidden p-4 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-200 text-xs sm:text-sm flex items-center justify-between gap-3 shadow-lg">
+      <div class="flex items-center gap-3">
+        <svg class="w-5 h-5 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+        </svg>
+        <span id="connection-guidance-text">Phone detected! Please unlock your phone screen and tap &quot;Allow USB debugging&quot; on the prompt.</span>
+      </div>
+      <button id="reconnect-btn" class="px-3 py-1.5 rounded-lg bg-amber-400/20 hover:bg-amber-400/30 text-amber-200 text-xs font-semibold shrink-0 transition">Re-check</button>
+    </div>
+
+    <!-- ================= VIEW 1: DASHBOARD HOME (EURA STYLE) ================= -->
+    <section id="view-dashboard" class="space-y-10">
+
+      <!-- CINEMATIC HERO ZONE (Design Doc v2 §2 & §5.1) -->
+      <div class="cinematic-backdrop rounded-[36px] p-8 md:p-12 relative border border-white/[0.08] shadow-2xl">
+        <!-- Ambient Glow Backdrop Orb & Abstract Logo Watermark -->
+        <div class="ambient-glow-orb top-[-100px] left-[-50px]"></div>
+        <img src="/static/assets/logo-mark.svg" alt="" class="backdrop-logo-watermark" aria-hidden="true">
+
+        <!-- OEM SoH Divergence Alert Banner -->
+        <div id="soh-divergence-banner" class="hidden mb-6 p-4 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-200 text-xs sm:text-sm flex items-center gap-3">
+          <svg class="w-5 h-5 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+          <span id="soh-divergence-text">OEM reported SoH diverges from calculated electrochemical health by &gt;10%.</span>
+        </div>
+
+        <div class="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+
+          <!-- Left Text Introduction -->
+          <div class="lg:col-span-5 space-y-4">
+            <div class="eyebrow-label text-indigo-400 flex items-center gap-2">
+              <span class="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
+              Live Biometric Evaluation
+            </div>
+            <h2 class="text-4xl md:text-5xl font-black tracking-tight text-white leading-tight">
+              Genuine Battery Degradation.
+            </h2>
+            <p class="text-sm text-zinc-400 leading-relaxed">
+              Real capacity loss computed directly from OEM hardware full-charge counters vs factory design specifications.
+            </p>
+            <div class="pt-2 flex items-center gap-4 text-xs text-zinc-400">
+              <div class="flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                <span>Good ≥85%</span>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                <span>Fair 70–84%</span>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-rose-400"></span>
+                <span>Needs Care &lt;70%</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Centerpiece Hero Gradient Card (EURA Bio-Age Style) -->
+          <div class="lg:col-span-7">
+            <div id="hero-card" class="hero-card hero-gradient-healthy p-8 md:p-10 text-white flex flex-col justify-between">
+              
+              <!-- Card Top Row -->
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2.5">
+                  <div class="w-8 h-8 rounded-full bg-black/20 flex items-center justify-center backdrop-blur">
+                    <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                  </div>
+                  <span class="text-xs uppercase font-bold tracking-widest text-white/90">Battery Health</span>
+                </div>
+
+                <!-- Status & OEM SoH Badges -->
+                <div class="flex items-center gap-2">
+                  <span id="hero-oem-soh-badge" class="hidden px-3 py-1 rounded-full text-xs font-mono font-medium bg-black/25 text-indigo-300 border border-indigo-400/30">
+                    OEM SoH: --%
+                  </span>
+                  <span id="hero-status-pill" class="px-3.5 py-1 rounded-full text-xs font-semibold bg-black/25 text-white backdrop-blur border border-white/20">
+                    Optimal Condition
+                  </span>
+                </div>
+              </div>
+
+              <!-- Center: The One Big Number (EURA "24 years" Equivalent) -->
+              <div class="py-6 flex items-baseline justify-center">
+                <span id="hero-health-number" class="text-7xl sm:text-8xl md:text-9xl font-black tracking-tight text-white leading-none">
+                  --
+                </span>
+                <span class="text-3xl sm:text-4xl font-bold text-white/80 ml-2">%</span>
+              </div>
+
+              <!-- Horizontal Range Dial (EURA -40...0x...10x Dial Equivalent) -->
+              <div class="space-y-1.5">
+                <div class="range-dial-track">
+                  <!-- Dial Indicator Pin -->
+                  <div id="range-dial-marker" class="range-dial-pin" style="left: 95%;"></div>
+                </div>
+
+                <!-- Dial Scale Labels -->
+                <div class="flex justify-between text-[11px] font-bold text-white/75 px-1 font-mono">
+                  <span>0% Poor</span>
+                  <span>50%</span>
+                  <span>70% Fair</span>
+                  <span>85% Good</span>
+                  <span>100% Factory</span>
+                </div>
+              </div>
+
+              <!-- Status Line & Comparative Diagnosis -->
+              <div class="pt-5 border-t border-white/20 mt-4 flex items-center justify-between">
+                <div>
+                  <div id="hero-status-heading" class="text-base md:text-lg font-bold text-white">Steady and Healthy</div>
+                  <div id="hero-status-subtext" class="text-xs text-white/85 font-medium mt-0.5">
+                    Measuring capacity ratio against factory baseline.
+                  </div>
+                </div>
+                <div id="hero-method-badge" class="px-3 py-1 rounded-full text-[11px] font-mono font-medium bg-black/25 border border-white/20 text-white/90 shrink-0">
+                  Capacity Ratio
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- SECONDARY CARDS ROW (EURA Heart Report & Indigo Metric Cards) -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+        <!-- EURA "Heart Report" Equivalent: Black Trend Card (7 cols) -->
+        <div class="lg:col-span-7 eura-dark-card p-7 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-4">
+              <div>
+                <div class="eyebrow-label text-indigo-400">Health Report</div>
+                <h3 class="text-lg font-bold text-white tracking-tight">Capacity Retention Curve</h3>
+              </div>
+              <!-- Timeline Filter Pills -->
+              <div class="flex items-center gap-1 bg-black/50 p-1 rounded-full border border-white/10 text-xs">
+                <button class="time-filter-pill px-3 py-1 rounded-full font-medium text-zinc-400 hover:text-white transition" data-days="7">7D</button>
+                <button class="time-filter-pill px-3 py-1 rounded-full font-medium text-zinc-400 hover:text-white transition" data-days="14">14D</button>
+                <button class="time-filter-pill active px-3 py-1 rounded-full font-bold bg-white text-black shadow transition" data-days="30">30D</button>
+                <button class="time-filter-pill px-3 py-1 rounded-full font-medium text-zinc-400 hover:text-white transition" data-days="90">90D</button>
+              </div>
+            </div>
+
+            <!-- Chart.js Canvas (White curve) -->
+            <div class="relative h-64 w-full pt-2">
+              <canvas id="heart-report-chart"></canvas>
+            </div>
+          </div>
+
+          <!-- Three Compact Stats in a Row (Direct EURA 47 / 62 / 95 equivalent) -->
+          <div class="grid grid-cols-3 gap-4 pt-6 border-t border-white/[0.08] mt-6 text-center">
+            <!-- Stat 1: Temperature -->
+            <div>
+              <div class="eyebrow-label text-zinc-400">Temperature</div>
+              <div id="stat-temp" class="text-2xl font-black text-white font-mono mt-1">—</div>
+              <div id="stat-temp-label" class="text-[11px] text-zinc-400 mt-0.5">Operating thermal state</div>
+            </div>
+
+            <!-- Stat 2: Voltage -->
+            <div>
+              <div class="eyebrow-label text-zinc-400">Voltage</div>
+              <div id="stat-voltage" class="text-2xl font-black text-white font-mono mt-1">—</div>
+              <div class="text-[11px] text-zinc-400 mt-0.5">Terminal potential</div>
+            </div>
+
+            <!-- Stat 3: Cycle Count -->
+            <div>
+              <div class="eyebrow-label text-zinc-400">Cycles</div>
+              <div id="stat-cycles" class="text-2xl font-black text-white font-mono mt-1">—</div>
+              <div id="stat-cycles-sublabel" class="text-[11px] text-zinc-400 mt-0.5">OEM cycle count</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Secondary Indigo Metric Cards (5 cols) -->
+        <div class="lg:col-span-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-6">
+
+          <!-- Card 1: Charge Status & Level -->
+          <div class="eura-indigo-card p-6 flex flex-col justify-between">
+            <div class="flex items-center justify-between">
+              <span class="eyebrow-label text-indigo-200">Current Charge</span>
+              <span id="snap-status-badge" class="px-3 py-0.5 rounded-full text-xs font-semibold bg-black/25 text-white border border-white/10">
+                Connected
+              </span>
+            </div>
+            <div class="py-4 flex items-baseline gap-2">
+              <span id="snap-level-text" class="text-5xl font-black tracking-tight text-white leading-none">—</span>
+              <span class="text-xl font-bold text-white/70">Level</span>
+            </div>
+            <div class="text-xs text-indigo-100 flex items-center justify-between pt-2 border-t border-white/10">
+              <span id="snap-charge-speed-text">Monitoring charging metrics</span>
+              <span id="snap-last-sync" class="font-mono text-white/70">Live</span>
+            </div>
+          </div>
+
+          <!-- Card 2: Chemical Capacity Details -->
+          <div class="eura-dark-card p-6 flex flex-col justify-between">
+            <div class="flex items-center justify-between">
+              <span class="eyebrow-label text-indigo-400">Chemical Capacity</span>
+              <span id="cap-badge" class="text-xs font-mono text-zinc-400">Apple Standard SoH</span>
+            </div>
+            <div class="py-3 space-y-3">
+              <div>
+                <div class="text-xs text-zinc-400 flex items-center justify-between">
+                  <span>Max Chemically Chargeable Capacity</span>
+                  <span id="cap-full-provenance" class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono">Local</span>
+                </div>
+                <div id="cap-full-text" class="text-2xl font-black text-white font-mono mt-0.5">—</div>
+                <div id="cap-full-subtext" class="text-[11px] text-zinc-400 font-mono mt-0.5 hidden">OEM Register: —</div>
+              </div>
+              <div class="pt-1">
+                <div class="text-xs text-zinc-400 flex items-center justify-between">
+                  <span>Max Battery Capacity (Design Ceiling)</span>
+                  <span id="cap-design-provenance" class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono">Local</span>
+                </div>
+                <div id="cap-design-text" class="text-lg font-bold text-zinc-300 font-mono mt-0.5">—</div>
+              </div>
+              <!-- Core Analytics Ratio Pills -->
+              <div class="grid grid-cols-2 gap-2 pt-2 border-t border-white/[0.08]">
+                <div class="p-2.5 rounded-xl bg-black/30 border border-white/10">
+                  <div class="text-[10px] uppercase tracking-wider text-zinc-400 font-mono">Capacity Retention</div>
+                  <div id="cap-retention-text" class="text-base font-black text-emerald-400 font-mono mt-0.5">—</div>
+                </div>
+                <div class="p-2.5 rounded-xl bg-black/30 border border-white/10">
+                  <div class="text-[10px] uppercase tracking-wider text-zinc-400 font-mono">Capacity Fade</div>
+                  <div id="cap-fade-text" class="text-base font-black text-rose-400 font-mono mt-0.5">—</div>
+                </div>
+              </div>
+            </div>
+            <div id="cap-footer-note" class="text-[11px] text-zinc-400 pt-2 border-t border-white/[0.08]">
+              Calibrated against IEC 61960 electrochemical cycle and calendar aging standards.
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- ROW 3: LIFESPAN FORECAST & ACTIVE COULOMB TEST -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-2">
+
+        <!-- CARD 1: PREDICTIVE REPLACEMENT TIMELINE (7 cols) -->
+        <div class="lg:col-span-7 eura-dark-card p-7 flex flex-col justify-between relative overflow-hidden border border-white/[0.08]">
+          <div class="relative z-10 space-y-4">
+            <div class="flex items-center justify-between">
+              <div>
+                <div class="eyebrow-label text-indigo-400">Longevity Forecast</div>
+                <h3 class="text-xl font-black text-white tracking-tight">Replacement Timeline</h3>
+              </div>
+              <span id="forecast-urgency-pill" class="px-3.5 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                Upcoming
+              </span>
+            </div>
+
+            <!-- Big Countdown Hero -->
+            <div class="py-2 flex items-baseline gap-3">
+              <span id="forecast-months-text" class="text-5xl md:text-6xl font-black text-white font-mono leading-none">—</span>
+              <div class="flex flex-col">
+                <span class="text-xs uppercase tracking-widest text-zinc-400 font-bold">Estimated To 80%</span>
+                <span id="forecast-date-text" class="text-sm font-semibold text-zinc-300">—</span>
+              </div>
+            </div>
+
+            <!-- Progress Bar towards 80% boundary -->
+            <div class="space-y-1.5 pt-1">
+              <div class="flex justify-between text-xs text-zinc-400 font-mono">
+                <span>Current: <strong id="forecast-current-health" class="text-white">—</strong></span>
+                <span>Service Limit: <strong class="text-rose-400">80.0%</strong></span>
+              </div>
+              <div class="w-full bg-black/40 h-2.5 rounded-full overflow-hidden border border-white/10">
+                <div id="forecast-progress-bar" class="h-full bg-gradient-to-r from-emerald-500 via-amber-500 to-rose-500 rounded-full transition-all duration-500" style="width: 83%;"></div>
+              </div>
+              <div class="flex justify-between text-[11px] text-zinc-500">
+                <span id="forecast-cycles-left">— cycles remaining</span>
+                <span id="forecast-daily-cadence">~1.0 cycles/day</span>
+              </div>
+            </div>
+
+            <!-- 80% Charging Cap Simulator Toggle -->
+            <div class="p-4 rounded-2xl bg-[#0F1024]/80 border border-white/[0.08] space-y-2 mt-4">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <div class="w-7 h-7 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <div class="text-xs font-bold text-white">Daily 80% Charge Cap Simulator</div>
+                    <div class="text-[11px] text-zinc-400">Simulate longevity gain by eliminating high-voltage stress</div>
+                  </div>
+                </div>
+                <!-- Toggle Button -->
+                <button id="sim-cap-toggle" class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-zinc-700 transition-colors duration-200 ease-in-out focus:outline-none" role="switch" aria-checked="false">
+                  <span id="sim-cap-knob" class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out translate-x-0"></span>
+                </button>
+              </div>
+
+              <!-- Simulation Result Pill -->
+              <div id="sim-cap-result" class="text-xs text-indigo-300 font-medium pt-1 hidden">
+                ✨ Extends useful lifespan by <strong id="sim-cap-extra-text" class="text-white">+1.8 years</strong>.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- CARD 2: ACTIVE COULOMB CHARGE TEST WIZARD (5 cols) -->
+        <div class="lg:col-span-5 eura-dark-card p-7 flex flex-col justify-between relative overflow-hidden border border-white/[0.08]">
+          <div class="space-y-4">
+            <div class="flex items-center justify-between">
+              <div>
+                <div class="eyebrow-label text-indigo-400">Live Empirical Test</div>
+                <h3 class="text-xl font-black text-white tracking-tight">Coulomb Calibration</h3>
+              </div>
+              <span id="cal-status-badge" class="px-3 py-0.5 rounded-full text-xs font-semibold bg-zinc-800 text-zinc-400 border border-white/10 font-mono">
+                Idle
+              </span>
+            </div>
+
+            <p class="text-xs text-zinc-400 leading-relaxed">
+              Dynamically integrates charging current (Q = ∫ I dt) to physically measure chemical capacity in mAh.
+            </p>
+
+            <!-- Real-time Ammeter Display -->
+            <div class="grid grid-cols-2 gap-3 pt-1">
+              <div class="p-3.5 rounded-xl bg-black/40 border border-white/10">
+                <div class="text-[11px] text-zinc-400 uppercase font-mono">Charging Current</div>
+                <div id="cal-current-text" class="text-2xl font-black text-white font-mono mt-1">0 mA</div>
+              </div>
+              <div class="p-3.5 rounded-xl bg-black/40 border border-white/10">
+                <div class="text-[11px] text-zinc-400 uppercase font-mono">Accumulated Charge</div>
+                <div id="cal-accumulated-text" class="text-2xl font-black text-indigo-400 font-mono mt-1">0 mAh</div>
+              </div>
+            </div>
+
+            <!-- Extrapolated Verdict (Hidden until test runs) -->
+            <div id="cal-verdict-box" class="p-4 rounded-xl bg-indigo-950/40 border border-indigo-500/30 space-y-1 hidden">
+              <div class="text-xs text-indigo-300 font-bold uppercase tracking-wider">Measured Capacity Extrapolation</div>
+              <div class="flex items-baseline justify-between">
+                <div id="cal-extrapolated-text" class="text-2xl font-black text-white font-mono">— mAh</div>
+                <div id="cal-health-pct-text" class="text-lg font-bold text-amber-400 font-mono">—% SoH</div>
+              </div>
+              <div id="cal-comparison-subtext" class="text-[11px] text-zinc-400">
+                Validated against OEM design specification.
+              </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="pt-2 flex items-center gap-2">
+              <button id="cal-start-btn" class="flex-1 py-2.5 px-4 rounded-xl bg-white hover:bg-zinc-200 text-black font-bold text-xs shadow-md transition flex items-center justify-center gap-1.5">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <span>Start Live Test</span>
+              </button>
+
+              <button id="cal-sim-btn" class="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-white/10 font-medium text-xs transition" title="Preview simulated 20-second charge cycle">
+                <span>Demo Run</span>
+              </button>
+
+              <button id="cal-stop-btn" class="py-2.5 px-3 rounded-xl bg-rose-950/70 hover:bg-rose-900 text-rose-300 border border-rose-500/30 font-semibold text-xs transition hidden">
+                <span>Stop</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ROW 4: PURE MATHEMATICAL BREAKDOWN & DATA PROVENANCE -->
+      <div class="eura-dark-card p-6 border border-white/[0.08] mt-2">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+          <div>
+            <div class="eyebrow-label text-indigo-400">Pure Mathematical Model</div>
+            <h3 class="text-base sm:text-lg font-bold text-white tracking-tight">Health Calculation Breakdown & Provenance</h3>
+          </div>
+          <span id="breakdown-provenance-note" class="text-xs font-mono text-zinc-400 bg-black/40 px-3 py-1 rounded-full border border-white/10">
+            Real Hardware Data Only
+          </span>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-center">
+          <div class="p-3 rounded-xl bg-black/40 border border-white/10">
+            <div class="text-[10px] uppercase tracking-wider text-zinc-400 font-mono">Capacity Fade</div>
+            <div id="bd-fade-text" class="text-lg font-black text-rose-400 font-mono mt-1">—</div>
+            <div class="text-[10px] text-zinc-500 mt-0.5">Chemical loss</div>
+          </div>
+          <div class="p-3 rounded-xl bg-black/40 border border-white/10">
+            <div class="text-[10px] uppercase tracking-wider text-zinc-400 font-mono">Cycle Fatigue</div>
+            <div id="bd-cycle-text" class="text-lg font-black text-amber-400 font-mono mt-1">—</div>
+            <div class="text-[10px] text-zinc-500 mt-0.5">Intercalation wear</div>
+          </div>
+          <div class="p-3 rounded-xl bg-black/40 border border-white/10">
+            <div class="text-[10px] uppercase tracking-wider text-zinc-400 font-mono">Calendar Aging</div>
+            <div id="bd-calendar-text" class="text-lg font-black text-indigo-400 font-mono mt-1">—</div>
+            <div class="text-[10px] text-zinc-500 mt-0.5">SEI growth</div>
+          </div>
+          <div class="p-3 rounded-xl bg-black/40 border border-white/10">
+            <div class="text-[10px] uppercase tracking-wider text-zinc-400 font-mono">Stress Factor</div>
+            <div id="bd-stress-text" class="text-lg font-black text-white font-mono mt-1">—</div>
+            <div class="text-[10px] text-zinc-500 mt-0.5">Thermal/Voltage</div>
+          </div>
+          <div class="p-3 rounded-xl bg-black/40 border border-white/10">
+            <div class="text-[10px] uppercase tracking-wider text-zinc-400 font-mono">Final Health</div>
+            <div id="bd-final-text" class="text-lg font-black text-emerald-400 font-mono mt-1">—</div>
+            <div class="text-[10px] text-zinc-500 mt-0.5">Electrochemical SoH</div>
+          </div>
+          <div class="p-3 rounded-xl bg-black/40 border border-white/10 flex flex-col justify-between">
+            <div class="text-[10px] uppercase tracking-wider text-zinc-400 font-mono">Data Sources</div>
+            <div id="bd-sources-pill" class="text-xs font-bold text-zinc-300 mt-1 flex flex-wrap justify-center gap-1">
+              <!-- Source tags injected via JS -->
+            </div>
+            <div class="text-[10px] text-zinc-500 mt-0.5">Input Provenance</div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ================= VIEW 2: FULL TRENDS & HISTORY TABLE ================= -->
+    <section id="view-trends" class="space-y-6 hidden">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="eyebrow-label text-indigo-400">Historical Archive</div>
+          <h2 class="text-2xl font-black tracking-tight text-white">Full Battery Degradation Log</h2>
+        </div>
+        <span id="history-count-badge" class="px-3.5 py-1 rounded-full text-xs font-bold bg-[#0F1024] border border-white/10 text-indigo-300">
+          0 readings
+        </span>
+      </div>
+
+      <!-- History Table -->
+      <div class="eura-dark-card p-6">
+        <div class="overflow-x-auto max-h-[500px]">
+          <table class="w-full text-left">
+            <thead class="sticky top-0 bg-[#0F1024] backdrop-blur z-10">
+              <tr class="text-[11px] uppercase tracking-wider text-zinc-400 border-b border-white/[0.08]">
+                <th class="py-3 px-4">Timestamp</th>
+                <th class="py-3 px-4">Health %</th>
+                <th class="py-3 px-4">Charge Level</th>
+                <th class="py-3 px-4">Voltage</th>
+                <th class="py-3 px-4">Temperature</th>
+                <th class="py-3 px-4">Cycles</th>
+                <th class="py-3 px-4">Method</th>
+              </tr>
+            </thead>
+            <tbody id="history-table-body">
+              <!-- Injected via JavaScript -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= VIEW 3: BIOMETRIC HABITS & INSIGHTS ================= -->
+    <section id="view-habits" class="space-y-6 hidden">
+      <div>
+        <div class="eyebrow-label text-indigo-400">Wear Analysis</div>
+        <h2 class="text-2xl font-black tracking-tight text-white">Charging Habits & Thermal Stress</h2>
+      </div>
+
+      <!-- 4 Stats Grid -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        <div class="eura-dark-card p-6">
+          <div class="eyebrow-label text-zinc-400">Time Above 80%</div>
+          <div id="metric-above-80" class="text-3xl font-black text-white font-mono mt-1">—</div>
+          <p class="text-xs text-zinc-400 mt-1">High voltage stress exposure</p>
+        </div>
+
+        <div class="eura-dark-card p-6">
+          <div class="eyebrow-label text-zinc-400">Fast Charging Rate</div>
+          <div id="metric-fast-charge" class="text-3xl font-black text-white font-mono mt-1">—</div>
+          <p class="text-xs text-zinc-400 mt-1">High current frequency</p>
+        </div>
+
+        <div class="eura-dark-card p-6">
+          <div class="eyebrow-label text-zinc-400">Average Temp</div>
+          <div id="metric-avg-temp" class="text-3xl font-black text-white font-mono mt-1">—</div>
+          <p class="text-xs text-zinc-400 mt-1">Operating thermal baseline</p>
+        </div>
+
+        <div class="eura-dark-card p-6">
+          <div class="eyebrow-label text-zinc-400">Capacity Fade Delta</div>
+          <div id="metric-delta" class="text-3xl font-black text-emerald-400 font-mono mt-1">—</div>
+          <p class="text-xs text-zinc-400 mt-1">Decline since first recorded session</p>
+        </div>
+      </div>
+
+      <!-- Insights List -->
+      <div class="eura-dark-card p-6 space-y-4">
+        <h3 class="text-sm font-bold text-white uppercase tracking-wider">Diagnostic Insights</h3>
+        <div id="insights-list-container" class="space-y-3">
+          <!-- Injected via JavaScript -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= VIEW 4: HARDWARE DIAGNOSTICS ================= -->
+    <section id="view-diagnostics" class="space-y-6 hidden">
+      <div>
+        <div class="eyebrow-label text-indigo-400">Hardware Access</div>
+        <h2 class="text-2xl font-black tracking-tight text-white">Sysfs & Dumpsys Diagnostic Probe</h2>
+      </div>
+
+      <div id="probe-content-container" class="space-y-6">
+        <!-- Injected via JavaScript -->
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Script -->
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,240 @@
+/* EURA iOS Health/Wellness App Style (Design Doc v2) */
+
+:root {
+  --bg-gradient: linear-gradient(145deg, #0A0E27 0%, #1B1035 45%, #000000 100%);
+  --surface-base: #0B0B10;
+  
+  /* EURA Dynamic Hero Card Gradients by Health Band */
+  --hero-gradient-healthy: linear-gradient(135deg, #14532D 0%, #15803D 50%, #22C55E 100%);
+  --hero-gradient-fair: linear-gradient(135deg, #7C2D12 0%, #C2410C 50%, #F59E0B 100%);
+  --hero-gradient-poor: linear-gradient(135deg, #7F1D1D 0%, #B91C1C 50%, #EF4444 100%);
+  --hero-gradient-unknown: linear-gradient(135deg, #1E293B 0%, #334155 50%, #475569 100%);
+
+  /* Secondary Cards (Near-black with faint indigo tint) */
+  --card-secondary: #0F1024;
+  --card-border: rgba(255, 255, 255, 0.08);
+  --card-border-hover: rgba(255, 255, 255, 0.16);
+
+  /* Indigo Gradient Accent Cards */
+  --card-indigo-gradient: linear-gradient(135deg, #1E1B4B 0%, #312E81 50%, #4338CA 100%);
+
+  /* Text Roles */
+  --text-primary: #FFFFFF;
+  --text-secondary: #A1A1AA;
+  --text-muted: #71717A;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Inter", sans-serif;
+  background-color: var(--surface-base);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+  letter-spacing: -0.015em;
+  user-select: none;
+}
+
+/* Cinematic Diagonal Backdrop for Dashboard Header/Hero */
+.cinematic-backdrop {
+  background: var(--bg-gradient);
+  position: relative;
+  overflow: hidden;
+}
+
+.backdrop-logo-watermark {
+  position: absolute;
+  right: -40px;
+  bottom: -40px;
+  width: 480px;
+  height: 480px;
+  opacity: 0.06;
+  filter: blur(16px);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Ambient Blurred Glow Orb in Backdrop */
+.ambient-glow-orb {
+  position: absolute;
+  width: 550px;
+  height: 550px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.18) 0%, rgba(139, 92, 246, 0.10) 45%, rgba(0, 0, 0, 0) 70%);
+  filter: blur(80px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* EURA Hero Card Styles (32px radius, dynamic gradient) */
+.hero-card {
+  border-radius: 32px;
+  box-shadow: 0 24px 48px -12px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.12) inset;
+  transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.hero-gradient-healthy {
+  background: var(--hero-gradient-healthy);
+}
+
+.hero-gradient-fair {
+  background: var(--hero-gradient-fair);
+}
+
+.hero-gradient-poor {
+  background: var(--hero-gradient-poor);
+}
+
+.hero-gradient-unknown {
+  background: var(--hero-gradient-unknown);
+}
+
+/* Secondary Near-Black Card (EURA Heart Report Card) */
+.eura-dark-card {
+  background-color: var(--card-secondary);
+  border: 1px solid var(--card-border);
+  border-radius: 28px;
+  box-shadow: 0 16px 36px -8px rgba(0, 0, 0, 0.5);
+  transition: all 0.25s ease;
+}
+
+.eura-dark-card:hover {
+  border-color: var(--card-border-hover);
+}
+
+/* Indigo Biometric Metric Card */
+.eura-indigo-card {
+  background: var(--card-indigo-gradient);
+  border-radius: 28px;
+  box-shadow: 0 16px 36px -8px rgba(30, 27, 75, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.12) inset;
+  transition: all 0.25s ease;
+}
+
+.eura-indigo-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 20px 42px -6px rgba(49, 46, 129, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.18) inset;
+}
+
+/* Capsule Pill Navigation & Elements (EURA Signature) */
+.capsule-nav {
+  background: rgba(15, 16, 36, 0.75);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 9999px;
+  padding: 4px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
+}
+
+.capsule-segment {
+  border-radius: 9999px;
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.capsule-segment:hover {
+  color: #FFFFFF;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.capsule-segment.active {
+  background: #FFFFFF;
+  color: #0A0E27;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+/* Pill CTA Buttons */
+.pill-button {
+  border-radius: 9999px;
+  padding: 8px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+/* Horizontal Range Dial inside Hero Card (EURA -40...0x...10x equivalent) */
+.range-dial-track {
+  position: relative;
+  height: 6px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.25);
+  margin-top: 14px;
+  margin-bottom: 8px;
+}
+
+.range-dial-pin {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #FFFFFF;
+  box-shadow: 0 0 14px rgba(255, 255, 255, 0.95), 0 2px 6px rgba(0, 0, 0, 0.35);
+  transition: left 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Eyebrow Label */
+.eyebrow-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+}
+
+/* Live Pulse Animation */
+@keyframes pulseDot {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.8);
+  }
+  70% {
+    transform: scale(1.15);
+    box-shadow: 0 0 0 8px rgba(34, 197, 94, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+  }
+}
+
+.dot-live-green {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #22C55E;
+  animation: pulseDot 2s infinite ease-in-out;
+}
+
+.dot-idle-gray {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #71717A;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0B0B10;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
