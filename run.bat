@@ -6,10 +6,6 @@ if exist "dist\Ion+.exe" (
     start "" "dist\Ion+.exe" %*
     exit
 )
-if exist "dist\Phone Battery Analyzer.exe" (
-    start "" "dist\Phone Battery Analyzer.exe" %*
-    exit
-)
 
 REM 2. Otherwise verify virtual environment
 if not exist ".venv\Scripts\pythonw.exe" (

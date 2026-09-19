@@ -1,8 +1,26 @@
-# Phone Battery Health Analyzer
+# Ion+ — Battery Health & Longevity Analyzer
 
-An ADB-powered desktop tool that connects to an Android phone over a USB-C cable and provides an accurate, trend-based assessment of real battery degradation — bypassing the vague *"Battery health: Good"* label by calculating genuine capacity loss and logging historical trends in a dark glassmorphic dashboard.
+<p align="center">
+  <img src="frontend/static/assets/brand-banner.png" alt="Ion+ Inside Your Phone" width="680">
+</p>
 
-![Brand Mark](frontend/static/assets/logo-mark.svg)
+<p align="center">
+  <b>Inside Your Phone</b> — Direct ADB-Powered Battery Degradation, Electrochemical Longevity & Deep Hardware Diagnostics for Android
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Release-v2.0-blue?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/Platform-Windows%2011%20%7C%2010-0078D6?style=flat-square&logo=windows" alt="Platform">
+  <img src="https://img.shields.io/badge/Framework-FastAPI%20%2B%20PyWebView-teal?style=flat-square" alt="Stack">
+  <img src="https://img.shields.io/badge/Standards-IEC%2061960-purple?style=flat-square" alt="Standards">
+  <img src="https://img.shields.io/badge/Zero--Hallucination-Guaranteed-emerald?style=flat-square" alt="Zero Hallucination">
+</p>
+
+---
+
+## Overview
+
+**Ion+** is an ADB-powered desktop diagnostics application that connects to any Android phone via USB-C to calculate and visualize true electrochemical battery health and degradation trends. It bypasses OEM ambiguity and the vague *"Battery health: Good"* placeholder by probing real kernel hardware counters (`charge_full`, `charge_full_design`, `cycle_count`, temperature, voltage) across sysfs and dumpsys.
 
 ---
 
@@ -11,7 +29,7 @@ An ADB-powered desktop tool that connects to an Android phone over a USB-C cable
 - **Direct Hardware Probing (No Root Required)**:
   - Communicates via Android Debug Bridge (`adb shell dumpsys battery` and `/sys/class/power_supply/battery/...`).
   - Probes design capacity, current full capacity, voltage, temperature, cycle counts, and charging status.
-  - Automatically identifies which sysfs paths are accessible on OEM firmware (such as Nothing OS on the Nothing Phone 2a).
+  - Automatically identifies accessible kernel sysfs paths across OEM firmware lineages (ColorOS, Realme UI, OxygenOS, Nothing OS, Pixel, One UI).
 - **Dual-Engine Health Calculation**:
   - **Primary Method (`capacity_ratio`)**:
     $$\text{Health \%} = \frac{\text{charge\_full\_uah}}{\text{charge\_full\_design\_uah}} \times 100$$
@@ -21,7 +39,7 @@ An ADB-powered desktop tool that connects to an Android phone over a USB-C cable
   - Time spent in high state-of-charge ($>80\%$).
   - Fast-charging frequency (high voltage $>4200\text{ mV}$).
   - Operational temperature history and thermal stress warnings ($>42^\circ\text{C}$).
-- **EURA iOS Health/Wellness Desktop UI (v2)**:
+- **EURA iOS Health/Wellness Desktop UI**:
   - Centerpiece hero card with giant bold health % typography (EURA "24 years" bio-age aesthetic).
   - Meaning-driven dynamic gradients: Emerald ($\ge 85\%$, `#14532D` $\to$ `#22C55E`), Amber ($70\text{--}84\%$, `#7C2D12` $\to$ `#F59E0B`), and Crimson ($< 70\%$, `#7F1D1D` $\to$ `#EF4444`).
   - Integrated horizontal range dial (0–100) with a live position pin and comparative status diagnosis line.
@@ -40,11 +58,14 @@ An ADB-powered desktop tool that connects to an Android phone over a USB-C cable
 ## Project Structure
 
 ```
-Battery analyser/
+Ion-Battery-Health-Analyser/
 ├── backend/
 │   ├── adb_client.py        # ADB connection & hardware sysfs/dumpsys probe
-│   ├── db.py                # SQLite schema (PRD §8) & aggregation queries
+│   ├── calibration.py       # Voltage-drop load step & baseline calibration
+│   ├── db.py                # SQLite schema & historical aggregation queries
+│   ├── device_profiler.py   # Multi-vendor sysfs kernel deep discovery
 │   ├── health.py            # Primary & fallback health calculation engines
+│   ├── prediction.py        # Degradation curve modeling & cycle extrapolation
 │   ├── watcher.py           # Background connection watcher (APScheduler)
 │   ├── api_routes.py        # FastAPI REST endpoints
 │   └── main.py              # Application entrypoint & static file serving
@@ -60,9 +81,14 @@ Battery analyser/
 │   ├── test_health.py       # Health calculation tests
 │   ├── test_db.py           # Database CRUD & aggregation tests
 │   ├── test_parser.py       # Dumpsys & sysfs parsing tests
-│   └── test_api.py          # FastAPI endpoint integration tests
+│   ├── test_api.py          # FastAPI endpoint integration tests
+│   ├── test_deep_scan.py    # Multi-vendor deep scan tests
+│   └── test_calibration.py # Calibration engine tests
 ├── desktop.py               # Native desktop window launcher (PyWebview)
+├── splash.py                # Frameless Adobe-style glassmorphic splash screen
+├── Ion+.vbs                 # Silent background Windows launcher
 ├── run.bat                  # One-click Windows runner
+├── build_exe.bat            # PyInstaller one-click compilation script
 ├── requirements.txt         # Project dependencies
 └── README.md
 ```
@@ -71,7 +97,7 @@ Battery analyser/
 
 ## Phone Setup (One-Time)
 
-To allow the analyzer to communicate with your Android phone:
+To allow Ion+ to communicate with your Android phone:
 
 1. **Enable Developer Options**:
    - Open **Settings** $\to$ **About Phone**.
@@ -91,13 +117,13 @@ To allow the analyzer to communicate with your Android phone:
 ## Running the Application
 
 ### Option 1: Standalone `.exe` (Recommended - Native Desktop App)
-Double-click **`dist\Phone Battery Analyzer.exe`** or the **Phone Battery Analyzer** shortcut on your Windows Desktop.
+Double-click **`dist\Ion+.exe`** or the **Ion+** shortcut on your Windows Desktop.
 - **Adobe-Style Startup Screen**: Frameless dark glassmorphic splash card with app logo, glowing progress bar, and real-time initialization ticker.
 - **Zero Command Prompt Window**: Launches directly into the desktop window.
 - **Self-Contained**: Can be copied anywhere or pinned to your Windows Taskbar/Start Menu.
 
 ### Option 2: Windows Desktop Shortcut
-Double-click the **Phone Battery Analyzer** shortcut on your Desktop or in the project folder.
+Double-click the **Ion+** shortcut on your Desktop or in the project folder.
 *(If you ever move the project folder, run `create_shortcuts.bat` to refresh the shortcuts).*
 
 ### Option 3: Quick Launch (`run.bat`)
@@ -114,7 +140,7 @@ To recompile the standalone `.exe` after making any code or styling changes:
 ```cmd
 build_exe.bat
 ```
-Output executable will be generated at: `dist\Phone Battery Analyzer.exe`.
+Output executable will be generated at: `dist\Ion+.exe`.
 
 ---
 
