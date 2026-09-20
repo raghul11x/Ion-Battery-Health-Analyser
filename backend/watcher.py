@@ -130,12 +130,17 @@ class DeviceWatcher:
 
         # Hardware cycle count vs estimated cycle count fallback
         hw_cycle_count = summary.get("cycle_count")
-        if hw_cycle_count is not None and hw_cycle_count > 0:
+        if hw_cycle_count is not None and hw_cycle_count >= 0:
             cycle_count = hw_cycle_count
             cycle_count_type = "hardware"
         else:
-            cycle_count = db.get_estimated_cycles(serial)
-            cycle_count_type = "estimated"
+            est_cycles = db.get_estimated_cycles(serial)
+            if est_cycles > 0:
+                cycle_count = est_cycles
+                cycle_count_type = "estimated"
+            else:
+                cycle_count = None
+                cycle_count_type = "unavailable"
 
         status = summary.get("status") or "Unknown"
         health_flag = summary.get("health_flag") or "Good"

@@ -89,7 +89,8 @@ def get_snapshot(serial: Optional[str] = None) -> Dict[str, Any]:
             "effective_capacity_uah": None,
             "replacement_forecast": None,
             "cycle_count": None,
-            "cycle_count_type": "none",
+            "cycle_count_type": "unavailable",
+            "cycle_count_display": "Unavailable",
             "health_status": "unauthorized",
             "status": "Unauthorized",
             "health_flag": "Unknown",
@@ -115,7 +116,8 @@ def get_snapshot(serial: Optional[str] = None) -> Dict[str, Any]:
             "effective_capacity_uah": None,
             "replacement_forecast": None,
             "cycle_count": None,
-            "cycle_count_type": "none",
+            "cycle_count_type": "unavailable",
+            "cycle_count_display": "Unavailable",
             "health_status": "offline",
             "status": "Offline",
             "health_flag": "Unknown",
@@ -141,7 +143,8 @@ def get_snapshot(serial: Optional[str] = None) -> Dict[str, Any]:
             "charge_full_design_uah": None,
             "replacement_forecast": None,
             "cycle_count": None,
-            "cycle_count_type": "none",
+            "cycle_count_type": "unavailable",
+            "cycle_count_display": "Unavailable",
             "health_status": "disconnected",
             "status": "Disconnected",
             "health_flag": "Unknown",
@@ -182,22 +185,27 @@ def get_snapshot(serial: Optional[str] = None) -> Dict[str, Any]:
 
             # NOTE: Cycle count MUST be resolved before data_sources dictionary is constructed!
             hw_cycle_count = summary.get("cycle_count")
-            if hw_cycle_count is not None and hw_cycle_count > 0:
+            if hw_cycle_count is not None and hw_cycle_count >= 0:
                 cycle_count = hw_cycle_count
                 cycle_count_type = "hardware"
             else:
                 if history_days >= 7.0:
-                    cycle_count = db.get_estimated_cycles(target_serial)
-                    cycle_count_type = "estimated"
+                    est_cycles = db.get_estimated_cycles(target_serial)
+                    if est_cycles > 0:
+                        cycle_count = est_cycles
+                        cycle_count_type = "estimated"
+                    else:
+                        cycle_count = None
+                        cycle_count_type = "unavailable"
                 else:
                     cycle_count = None
-                    cycle_count_type = "unexposed"
+                    cycle_count_type = "unavailable"
 
             profile_fields = profile.get("fields", {}) if profile else {}
             data_sources = {
                 "charge_full": profile_fields.get("charge_full", {}).get("source", "local" if charge_full_uah else "insufficient_data"),
                 "charge_full_design": profile_fields.get("charge_full_design", {}).get("source", "local" if charge_full_design_uah else "insufficient_data"),
-                "cycle_count": profile_fields.get("cycle_count", {}).get("source", "local" if (cycle_count and cycle_count > 0) else "insufficient_data"),
+                "cycle_count": profile_fields.get("cycle_count", {}).get("source", "local" if (cycle_count is not None and cycle_count >= 0) else "unavailable"),
                 "charge_counter": profile_fields.get("charge_counter", {}).get("source", "local" if counter_uah else "insufficient_data"),
                 "temperature": profile_fields.get("temperature", {}).get("source", "local" if temp_c is not None else "insufficient_data"),
             }
@@ -254,6 +262,7 @@ def get_snapshot(serial: Optional[str] = None) -> Dict[str, Any]:
                 "replacement_forecast": forecast,
                 "cycle_count": cycle_count,
                 "cycle_count_type": cycle_count_type,
+                "cycle_count_display": str(cycle_count) if cycle_count is not None else "Unavailable",
                 "health_pct": displayed_health,
                 "health_status": details.get("health_status", "evaluated" if displayed_health is not None else "insufficient_data"),
                 "oem_reported_soh": details.get("oem_reported_soh") or oem_soh,
@@ -320,10 +329,18 @@ def get_snapshot(serial: Optional[str] = None) -> Dict[str, Any]:
             "provenance_note": f"Cached from database reading on {latest.get('timestamp')}",
         }
 
+        cached_cycle = latest.get("cycle_count")
+        cached_type = latest.get("cycle_count_type") or ("hardware" if cached_cycle is not None else "unavailable")
+        if cached_cycle is None:
+            cached_type = "unavailable"
+
         return {
             "live": False,
             "connected": False,
             **latest,
+            "cycle_count": cached_cycle,
+            "cycle_count_type": cached_type,
+            "cycle_count_display": str(cached_cycle) if cached_cycle is not None else "Unavailable",
             "status": "Disconnected",
             "maximum_battery_capacity_uah": cfd,
             "maximum_chargeable_capacity_uah": cf,
@@ -352,7 +369,8 @@ def get_snapshot(serial: Optional[str] = None) -> Dict[str, Any]:
         "raw_capacity_ratio": None,
         "recalibrated": False,
         "cycle_count": None,
-        "cycle_count_type": "none",
+        "cycle_count_type": "unavailable",
+        "cycle_count_display": "Unavailable",
         "health_method": "none",
         "device_serial": None,
         "device_model": "No device connected",

@@ -23,6 +23,9 @@ def test_api_snapshot_endpoint():
     data = res.json()
     assert "health_band" in data
     assert "temperature_band" in data
+    assert data["cycle_count"] is None
+    assert data["cycle_count_type"] == "unavailable"
+    assert data["cycle_count_display"] == "Unavailable"
 
 
 def test_api_seed_and_history():

@@ -17,6 +17,8 @@ const state = {
   isRefreshing: false,
   is80CapSimulated: false,
   calibrationPollTimer: null,
+  cachedDevices: [],
+  lastDevicesFetchTime: 0,
 };
 
 // DOM References
@@ -31,12 +33,15 @@ const el = {
   connDot: document.getElementById('conn-dot'),
   connStatusLabel: document.getElementById('conn-status-label'),
   connDeviceLabel: document.getElementById('conn-device-label'),
+  connLastSeenLabel: document.getElementById('conn-last-seen-label'),
   probeBtn: document.getElementById('probe-btn'),
   probeIcon: document.getElementById('probe-icon'),
   seedBtn: document.getElementById('seed-btn'),
 
   // Hero Card (EURA Bio-Age Style)
   heroEyebrow: document.getElementById('hero-eyebrow'),
+  heroHeadline: document.getElementById('hero-headline'),
+  heroHeadlineSubtext: document.getElementById('hero-headline-subtext'),
   heroCard: document.getElementById('hero-card'),
   heroStatusPill: document.getElementById('hero-status-pill'),
   heroHealthNumber: document.getElementById('hero-health-number'),
@@ -72,6 +77,8 @@ const el = {
   },
 
   // Chart & History
+  chartCanvasContainer: document.getElementById('chart-canvas-container'),
+  chartLastSyncedLabel: document.getElementById('chart-last-synced-label'),
   chartCanvas: document.getElementById('heart-report-chart'),
   historyCountBadge: document.getElementById('history-count-badge'),
   historyTableBody: document.getElementById('history-table-body'),
@@ -313,6 +320,24 @@ function dismissDeviceConnectedToast(immediate = false) {
   }
 }
 
+function updateHeroHeadline(isConnected) {
+  const headlineEl = el.heroHeadline || document.getElementById('hero-headline');
+  const subtextEl = el.heroHeadlineSubtext || document.getElementById('hero-headline-subtext');
+  if (!headlineEl) return;
+
+  if (isConnected) {
+    headlineEl.textContent = 'Genuine Battery Degradation.';
+    if (subtextEl) {
+      subtextEl.textContent = 'Real capacity loss computed directly from OEM hardware full-charge counters vs factory design specifications.';
+    }
+  } else {
+    headlineEl.textContent = 'Plug In to Begin.';
+    if (subtextEl) {
+      subtextEl.textContent = 'Connect your phone over USB-C to see genuine capacity loss, computed from real hardware counters.';
+    }
+  }
+}
+
 // Renderers
 function updateConnectionStatus() {
   const isConn = state.systemStatus?.active_device_count > 0;
@@ -328,6 +353,9 @@ function updateConnectionStatus() {
   // Connection Toast Trigger Check (Design Doc v2 §5.2)
   const isConnected = !!(isConn && activeDev);
   const currentSerial = activeDev ? (activeDev.serial || 'connected-device') : null;
+
+  // Hero Headline & Subtext Reactive Sync
+  updateHeroHeadline(isConnected);
 
   if (isConnected) {
     const isNewConnection = !toastState.wasConnected || (toastState.lastSerial !== currentSerial);
@@ -358,6 +386,10 @@ function updateConnectionStatus() {
     el.connDeviceLabel.textContent = `· ${name}`;
     el.connDeviceLabel.classList.remove('hidden');
     if (guidanceBanner) guidanceBanner.classList.add('hidden');
+    if (el.connLastSeenLabel) {
+      el.connLastSeenLabel.classList.add('hidden');
+      el.connLastSeenLabel.textContent = '';
+    }
   } else if (unauthDev || state.snapshot?.health_status === 'unauthorized' || state.snapshot?.connection_state === 'unauthorized') {
     el.connDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse';
     el.connStatusLabel.textContent = 'Unauthorized';
@@ -383,6 +415,7 @@ function updateConnectionStatus() {
     el.connStatusLabel.textContent = 'Disconnected';
     if (guidanceBanner) guidanceBanner.classList.add('hidden');
     el.connDeviceLabel.classList.add('hidden');
+    updateLastSeenDeviceLabel();
   }
 }
 
@@ -393,10 +426,17 @@ function renderIdleState() {
     el.heroEyebrow.className = 'eyebrow-label text-zinc-400 flex items-center gap-2';
   }
 
+  // 1b. Fix 1: State-aware Hero Headline & Subtext
+  updateHeroHeadline(false);
+
   // 2. Hero Card (EURA Bio-Age Style)
   el.heroCard.classList.remove('hero-gradient-healthy', 'hero-gradient-fair', 'hero-gradient-poor');
   el.heroCard.classList.add('hero-gradient-unknown');
+
+  // Fix 2: Hero Number Skeleton Shimmer
   el.heroHealthNumber.textContent = '--';
+  el.heroHealthNumber.classList.add('skeleton-shimmer');
+
   el.heroStatusPill.textContent = 'Awaiting Device';
   el.heroStatusHeading.textContent = 'No Device Connected';
   el.heroStatusSubtext.textContent = 'Connect phone over USB-C to compute real chemical health.';
@@ -408,13 +448,22 @@ function renderIdleState() {
   const divBanner = document.getElementById('soh-divergence-banner');
   if (divBanner) divBanner.classList.add('hidden');
 
+  // Fix 3: Stale Chart Filter & Last Synced Timestamp
+  if (el.chartCanvasContainer) {
+    el.chartCanvasContainer.classList.add('chart-stale-dimmed');
+  }
+  updateChartLastSyncedLabel();
+
+  // Fix 5: Last Seen Device Context
+  updateLastSeenDeviceLabel();
+
   // 3. Three-Stat Row (Heart Report)
   el.statTemp.textContent = '—';
   el.statTempLabel.textContent = 'Awaiting connection';
   el.statVoltage.textContent = '—';
-  el.statCycles.textContent = '—';
+  el.statCycles.textContent = 'Unavailable';
   const sublabel = document.getElementById('stat-cycles-sublabel');
-  if (sublabel) sublabel.textContent = 'Awaiting connection';
+  if (sublabel) sublabel.textContent = 'No cycle data';
 
   // 4. Current Charge Card
   el.snapLevelText.textContent = '—';
@@ -469,6 +518,32 @@ function renderSnapshot() {
       el.heroEyebrow.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>Historical / Seeded Evaluation';
       el.heroEyebrow.className = 'eyebrow-label text-emerald-300 flex items-center gap-2';
     }
+  }
+
+  // Active connected state restorations (Fix 1, Fix 2, Fix 3, Fix 5)
+  if (s.connected) {
+    updateHeroHeadline(true);
+    el.heroHealthNumber.classList.remove('skeleton-shimmer');
+    if (el.chartCanvasContainer) {
+      el.chartCanvasContainer.classList.remove('chart-stale-dimmed');
+    }
+    if (el.chartLastSyncedLabel) {
+      el.chartLastSyncedLabel.classList.add('hidden');
+      el.chartLastSyncedLabel.textContent = '';
+    }
+    if (el.connLastSeenLabel) {
+      el.connLastSeenLabel.classList.add('hidden');
+      el.connLastSeenLabel.textContent = '';
+    }
+  } else {
+    // Seeded / historical evaluation (not connected)
+    updateHeroHeadline(false);
+    if (el.chartCanvasContainer) {
+      el.chartCanvasContainer.classList.add('chart-stale-dimmed');
+    }
+    updateChartLastSyncedLabel();
+    updateLastSeenDeviceLabel();
+    el.heroHealthNumber.classList.remove('skeleton-shimmer');
   }
 
   // Sync richer snapshot model name to active toast if currently visible
@@ -585,13 +660,14 @@ function renderSnapshot() {
 
   // Cycles
   const sublabel = document.getElementById('stat-cycles-sublabel');
-  if (s.cycle_count !== null && s.cycle_count !== undefined) {
+  const hasCycles = s.cycle_count !== null && s.cycle_count !== undefined && s.cycle_count !== 'unavailable' && s.cycle_count_type !== 'unavailable';
+  if (hasCycles) {
     const cycleType = s.cycle_count_type === 'estimated' ? ' (Estimated)' : ' (Hardware)';
     el.statCycles.textContent = `${s.cycle_count}`;
     if (sublabel) sublabel.textContent = `OEM cycle count${cycleType}`;
   } else {
-    el.statCycles.textContent = '—';
-    if (sublabel) sublabel.textContent = s.connected ? 'Not exposed by OEM' : 'OEM cycle count';
+    el.statCycles.textContent = 'Unavailable';
+    if (sublabel) sublabel.textContent = s.connected ? 'No cycle data exposed' : 'OEM cycle count';
   }
 
   // 3. SECONDARY INDIGO & DARK CARDS
@@ -683,9 +759,9 @@ function renderSnapshot() {
       if (src === 'ai_consensus') {
         badgeStyle = 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30';
         srcLabel = 'AI Consensus';
-      } else if (src === 'insufficient_data' || !s.connected) {
+      } else if (src === 'insufficient_data' || src === 'unavailable' || !s.connected) {
         badgeStyle = 'bg-zinc-800 text-zinc-400 border-white/10';
-        srcLabel = 'No Data';
+        srcLabel = 'Unavailable';
       }
       badge.className = `px-2 py-0.5 rounded text-[10px] font-mono border ${badgeStyle}`;
       badge.textContent = `${f.label}: ${srcLabel}`;
@@ -977,6 +1053,23 @@ function renderHistoryAndChart() {
         },
       });
     }
+
+    // Fix 3: Stale chart sync check
+    const isConn = state.snapshot?.connected || state.systemStatus?.connected_devices?.some(d => d.state === 'device');
+    if (!isConn) {
+      if (el.chartCanvasContainer) {
+        el.chartCanvasContainer.classList.add('chart-stale-dimmed');
+      }
+      updateChartLastSyncedLabel();
+    } else {
+      if (el.chartCanvasContainer) {
+        el.chartCanvasContainer.classList.remove('chart-stale-dimmed');
+      }
+      if (el.chartLastSyncedLabel) {
+        el.chartLastSyncedLabel.classList.add('hidden');
+        el.chartLastSyncedLabel.textContent = '';
+      }
+    }
   }
 
   // 2. History Log Table
@@ -1009,7 +1102,7 @@ function renderHistoryAndChart() {
         <td class="py-3 px-4 font-bold text-white">${r.level_pct}%</td>
         <td class="py-3 px-4 font-mono text-zinc-400">${(r.voltage_mv / 1000).toFixed(2)} V</td>
         <td class="py-3 px-4 text-zinc-300">${r.temperature_c} °C</td>
-        <td class="py-3 px-4 font-mono text-zinc-400">${r.cycle_count !== null ? r.cycle_count : '—'}</td>
+        <td class="py-3 px-4 font-mono text-zinc-400">${(r.cycle_count !== null && r.cycle_count !== undefined && r.cycle_count_type !== 'unavailable') ? r.cycle_count : '<span class="text-zinc-500 italic">Unavailable</span>'}</td>
         <td class="py-3 px-4">
           <span class="text-[11px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 border border-white/5">
             ${r.health_method === 'capacity_ratio' ? 'Capacity Ratio' : 'Trend'}
@@ -1223,6 +1316,143 @@ async function handleSeed() {
   }
 }
 
+// Disconnected Polish Helper Functions (Fix 3 & Fix 5)
+
+function formatSyncedTimestamp(isoString) {
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return 'Recently';
+    const now = new Date();
+    const isToday = d.toDateString() === now.toDateString();
+    const timeStr = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    if (isToday) {
+      return `Today, ${timeStr}`;
+    }
+    const month = d.toLocaleDateString([], { month: 'short' });
+    const day = d.getDate();
+    return `${month} ${day}, ${timeStr}`;
+  } catch {
+    return 'Recently';
+  }
+}
+
+function updateChartLastSyncedLabel() {
+  const labelEl = el.chartLastSyncedLabel || document.getElementById('chart-last-synced-label');
+  if (!labelEl) return;
+
+  const isConn = state.snapshot?.connected || state.systemStatus?.connected_devices?.some(d => d.state === 'device');
+  if (isConn) {
+    labelEl.classList.add('hidden');
+    labelEl.textContent = '';
+    return;
+  }
+
+  let latestTimestamp = null;
+  if (state.history && state.history.length > 0) {
+    for (const r of state.history) {
+      if (r.timestamp) {
+        if (!latestTimestamp || new Date(r.timestamp) > new Date(latestTimestamp)) {
+          latestTimestamp = r.timestamp;
+        }
+      }
+    }
+  } else if (state.snapshot && state.snapshot.timestamp) {
+    latestTimestamp = state.snapshot.timestamp;
+  }
+
+  if (latestTimestamp) {
+    const formatted = formatSyncedTimestamp(latestTimestamp);
+    labelEl.textContent = `Last synced: ${formatted}`;
+    labelEl.classList.remove('hidden');
+  } else {
+    labelEl.textContent = 'Last synced: Standby';
+    labelEl.classList.remove('hidden');
+  }
+}
+
+function formatRelativeTime(isoString) {
+  if (!isoString) return null;
+  const d = new Date(isoString);
+  const now = new Date();
+  const diffSec = Math.floor((now - d) / 1000);
+  if (diffSec < 0 || isNaN(diffSec)) return null;
+  if (diffSec < 45) return 'just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} min ago`;
+  const diffHours = Math.floor(diffMin / 60);
+  if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`;
+  const diffDays = Math.floor(diffMin / 1440);
+  if (diffDays === 1) return 'yesterday';
+  if (diffDays < 7) return `${diffDays} days ago`;
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
+async function fetchRecentDevices() {
+  const now = Date.now();
+  if (now - (state.lastDevicesFetchTime || 0) < 8000 && state.cachedDevices && state.cachedDevices.length > 0) {
+    return state.cachedDevices;
+  }
+  try {
+    const res = await fetch('/api/devices');
+    if (res.ok) {
+      state.cachedDevices = await res.json();
+      state.lastDevicesFetchTime = now;
+      return state.cachedDevices;
+    }
+  } catch (err) {
+    console.warn('Failed to fetch devices for last-seen context:', err);
+  }
+  return state.cachedDevices || [];
+}
+
+async function updateLastSeenDeviceLabel() {
+  const labelEl = el.connLastSeenLabel || document.getElementById('conn-last-seen-label');
+  if (!labelEl) return;
+
+  const isConn = state.snapshot?.connected || state.systemStatus?.connected_devices?.some(d => d.state === 'device');
+  if (isConn) {
+    labelEl.classList.add('hidden');
+    labelEl.textContent = '';
+    return;
+  }
+
+  const devices = await fetchRecentDevices();
+  if (!devices || devices.length === 0) {
+    labelEl.classList.add('hidden');
+    return;
+  }
+
+  const valid = devices.filter(d => d.last_seen);
+  if (valid.length === 0) {
+    labelEl.classList.add('hidden');
+    return;
+  }
+
+  valid.sort((a, b) => new Date(b.last_seen) - new Date(a.last_seen));
+  const mostRecent = valid[0];
+  const relTime = formatRelativeTime(mostRecent.last_seen);
+  if (!relTime) {
+    labelEl.classList.add('hidden');
+    return;
+  }
+
+  if (devices.length > 1) {
+    const model = mostRecent.model ? mostRecent.model.replace(/_/g, ' ') : '';
+    const serial = mostRecent.serial && mostRecent.serial !== 'default' ? mostRecent.serial : '';
+    const serialShort = serial.length > 8 ? serial.slice(0, 8) : serial;
+    let label = model;
+    if (model && serialShort && !model.toLowerCase().includes(serialShort.toLowerCase())) {
+      label = `${serialShort} (${model})`;
+    } else if (!model) {
+      label = serialShort || 'Device';
+    }
+    labelEl.textContent = `${label} · last seen ${relTime}`;
+  } else {
+    labelEl.textContent = `Last seen ${relTime}`;
+  }
+  labelEl.classList.remove('hidden');
+}
+
 // Boot
 function init() {
   // Capsule Nav clicks
@@ -1255,6 +1485,9 @@ function init() {
       fetchHistory(d);
     });
   });
+
+  // Disconnected/standby state copy on boot
+  updateHeroHeadline(false);
 
   // Initial queries
   fetchStatus();

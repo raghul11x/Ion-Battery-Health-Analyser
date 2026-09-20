@@ -480,3 +480,39 @@ body {
   }
 }
 
+/* ==========================================================================
+   Disconnected & Standby State Polish Enhancements
+   ========================================================================== */
+
+/* Fix 2: Skeleton Pulse / Shimmer Animation for Hero Health Number */
+@keyframes skeleton-shimmer {
+  0%, 100% {
+    opacity: 0.35;
+    filter: drop-shadow(0 0 0 rgba(255, 255, 255, 0));
+  }
+  50% {
+    opacity: 0.85;
+    filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.25));
+  }
+}
+
+.skeleton-shimmer {
+  animation: skeleton-shimmer 1.8s ease-in-out infinite;
+  display: inline-block;
+  will-change: opacity, filter;
+}
+
+/* Fix 3: Stale Chart Filter in Disconnected State */
+.chart-stale-dimmed {
+  filter: grayscale(40%) opacity(0.55);
+  transition: filter 0.35s ease, opacity 0.35s ease;
+}
+
+/* Reduced Motion Fallback for Disconnected State Shimmer */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-shimmer {
+    animation: none !important;
+    opacity: 0.6 !important;
+  }
+}
+

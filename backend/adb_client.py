@@ -244,6 +244,34 @@ class ADBClient:
         else:
             parsed["temperature_c"] = None
 
+        # Normalize cycle count if exposed directly by dumpsys battery (Android 14+, Samsung, Pixel)
+        dumpsys_cycle_val: Optional[int] = None
+        dumpsys_cycle_src: Optional[str] = None
+        for c_key in [
+            "battery_cycle_count",
+            "cycle_count",
+            "mbatterycyclecount",
+            "battery_cycle",
+            "mbatterycycle",
+        ]:
+            raw_c = parsed.get(c_key)
+            if isinstance(raw_c, int) and 0 <= raw_c < 20000:
+                dumpsys_cycle_val = raw_c
+                dumpsys_cycle_src = f"dumpsys battery ({c_key})"
+                break
+
+        # Samsung usage counter fallback (mSavedBatteryUsage)
+        if dumpsys_cycle_val is None:
+            raw_usage = parsed.get("msavedbatteryusage")
+            if isinstance(raw_usage, int) and raw_usage >= 0:
+                scaled = int(round(raw_usage / 100.0)) if raw_usage >= 1000 else raw_usage
+                if 0 <= scaled < 20000:
+                    dumpsys_cycle_val = scaled
+                    dumpsys_cycle_src = "dumpsys battery (mSavedBatteryUsage)"
+
+        parsed["cycle_count"] = dumpsys_cycle_val
+        parsed["cycle_count_source"] = dumpsys_cycle_src
+
         return parsed
 
     def probe_sysfs_paths(self, serial: str) -> Dict[str, Any]:
@@ -274,9 +302,13 @@ class ADBClient:
                     result["charge_full_design_uah"] = int(out.strip())
 
             if result["cycle_count"] is None:
-                out, _, code = self.run_shell(serial, f"cat {base}/cycle_count")
-                if code == 0 and out.strip().isdigit():
-                    result["cycle_count"] = int(out.strip())
+                for c_attr in ["cycle_count", "batt_cycle_count", "battery_cycle_count", "fg_cycle", "battery_cycle", "total_cycle"]:
+                    out, _, code = self.run_shell(serial, f"cat {base}/{c_attr}")
+                    if code == 0 and out.strip().isdigit():
+                        c_val = int(out.strip())
+                        if 0 <= c_val < 20000:
+                            result["cycle_count"] = c_val
+                            break
 
         return result
 
@@ -313,6 +345,17 @@ class ADBClient:
             "battery_cycle",
             "batt_temp",
             "fast_chg_status",
+            # Deep OEM cycle counters (Samsung, MediaTek, Pixel, Xiaomi, OnePlus)
+            "batt_cycle_count",
+            "battery_cycle_count",
+            "batt_cycle",
+            "total_cycle",
+            "cycle",
+            "fg_cycle_count",
+            "cycle_count_id",
+            "battery_cycles",
+            "soh_cycle_count",
+            "batt_discharge_level",
         ]
 
         for node in subdirs:
@@ -472,18 +515,83 @@ class ADBClient:
                     charge_counter_path = entry["path"]
                     break
 
-        # 4. Locate cycle_count (standard cycle_count, MediaTek fg_cycle, or battery_cycle)
+        # 4. Locate cycle_count with deep phone data extraction across OEM layers
         cycle_count_raw: Optional[int] = None
         cycle_count_path: Optional[str] = None
-        for node in search_nodes:
-            for cycle_key in ["cycle_count", "fg_cycle", "battery_cycle"]:
-                entry = power_tree.get(node, {}).get(cycle_key)
-                if entry and entry.get("readable") and entry.get("int_val") is not None and entry["int_val"] >= 0:
-                    cycle_count_raw = entry["int_val"]
-                    cycle_count_path = entry["path"]
+
+        # Tier 1: dumpsys battery (Android 14+, Pixel, Samsung, Motorola)
+        if dumpsys.get("cycle_count") is not None:
+            c_cand = dumpsys["cycle_count"]
+            if isinstance(c_cand, int) and 0 <= c_cand < 20000:
+                cycle_count_raw = c_cand
+                cycle_count_path = dumpsys.get("cycle_count_source") or "dumpsys battery (cycle count)"
+
+        # Tier 2: Sysfs power supply hardware nodes across all discovered power supplies
+        if cycle_count_raw is None:
+            cycle_keys = [
+                "cycle_count",
+                "batt_cycle_count",
+                "battery_cycle_count",
+                "fg_cycle",
+                "battery_cycle",
+                "total_cycle",
+                "cycle",
+                "fg_cycle_count",
+                "cycle_count_id",
+                "batt_cycle",
+                "battery_cycles",
+                "soh_cycle_count",
+                "batt_discharge_level",
+            ]
+            for node in search_nodes:
+                node_data = power_tree.get(node, {})
+                for cycle_key in cycle_keys:
+                    entry = node_data.get(cycle_key)
+                    if entry and entry.get("readable") and entry.get("int_val") is not None:
+                        val = entry["int_val"]
+                        # Plausibility check: reject negative or driver overflow (e.g. 65535, 4294967295)
+                        if 0 <= val < 20000:
+                            cycle_count_raw = val
+                            cycle_count_path = entry["path"]
+                            break
+                if cycle_count_raw is not None:
                     break
-            if cycle_count_raw is not None:
-                break
+
+        # Tier 3: dumpsys batterystats (Discharge/Charge cycle counters)
+        if cycle_count_raw is None:
+            bs_out, _, bs_code = self.run_shell(serial, "dumpsys batterystats --charged")
+            if bs_code != 0 or not bs_out:
+                bs_out, _, bs_code = self.run_shell(serial, "dumpsys batterystats")
+            if bs_code == 0 and bs_out:
+                import re
+                m = re.search(r"(?:charge cycle count|discharge cycle count|discharge_cycle|mdischargecyclecount)\s*[:=]\s*(\d+)", bs_out, re.IGNORECASE)
+                if not m:
+                    m = re.search(r"\bdcc,(\d+)\b", bs_out)
+                if m:
+                    val = int(m.group(1))
+                    if 0 <= val < 20000:
+                        cycle_count_raw = val
+                        cycle_count_path = "dumpsys batterystats (Charge cycle count)"
+
+        # Tier 4: Direct vendor / OEM sysfs fallback paths
+        if cycle_count_raw is None:
+            vendor_paths = [
+                "/sys/class/power_supply/battery/batt_cycle_count",
+                "/sys/class/power_supply/battery/cycle_count",
+                "/sys/class/power_supply/bms/cycle_count",
+                "/sys/class/power_supply/google,battery/cycle_count",
+                "/efs/FactoryApp/batt_discharge_level",
+            ]
+            for vpath in vendor_paths:
+                out, _, code = self.run_shell(serial, f"cat {vpath}")
+                if code == 0 and out:
+                    val_str = out.strip()
+                    if val_str.isdigit():
+                        val = int(val_str)
+                        if 0 <= val < 20000:
+                            cycle_count_raw = val
+                            cycle_count_path = vpath
+                            break
 
         # Check unit scale mismatch
         from backend.health import normalize_capacity_units
@@ -527,6 +635,7 @@ class ADBClient:
                     "raw_val": cycle_count_raw,
                     "path": cycle_count_path,
                     "exposed_by_hardware": cycle_count_raw is not None,
+                    "status": "hardware" if cycle_count_raw is not None else "unavailable",
                 },
                 "unit_audit": {
                     "raw_ratio_before_conversion": raw_ratio_unconverted,
@@ -563,6 +672,7 @@ class ADBClient:
                 "cycle_count": cycle_count_raw,
                 "cycle_count_path": cycle_count_path,
                 "cycle_count_exposed": cycle_count_raw is not None,
+                "cycle_count_status": "hardware" if cycle_count_raw is not None else "unavailable",
                 "has_design_capacity": norm_design is not None,
                 "recommended_method": "capacity_ratio" if norm_design is not None else "trend_estimate",
             },
@@ -605,10 +715,10 @@ class ADBClient:
         print(f"   Normalized Ratio:        {ua.get('normalized_ratio_pct'):.2f}%" if ua.get('normalized_ratio_pct') else "   Normalized Ratio: N/A")
 
         print("\n4. CYCLE COUNT:")
-        if cy.get("exposed_by_hardware"):
+        if cy.get("exposed_by_hardware") and cy.get("raw_val") is not None:
             print(f"   Hardware Cycle Count:    {cy.get('raw_val')} cycles (from: {cy.get('path')})")
         else:
-            print(f"   Hardware Cycle Count:    NOT EXPOSED by OEM firmware. Using SQLite charge deltas.")
+            print(f"   Hardware Cycle Count:    Unavailable (not exposed by OEM firmware)")
         print("=" * 65 + "\n")
 
 

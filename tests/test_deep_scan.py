@@ -291,3 +291,150 @@ def test_oem_soh_consensus_accepted_when_grounded():
     assert agreed_soh == 92.0
     assert audit["decision"] == "ai_consensus"
     assert set(audit["agreeing_models"]) == {"OpenRouter:modelA", "OpenRouter:modelB"}
+
+
+# ---------------------------------------------------------------------------
+# Deep Cycle Count Extraction & Unavailable State Tests
+# ---------------------------------------------------------------------------
+
+def test_cycle_count_extraction_dumpsys_battery_android14():
+    """Verifies cycle count extraction from native Android 14+ dumpsys battery."""
+    client = ADBClient()
+
+    def mock_shell(serial, command, timeout=None):
+        if "dumpsys battery" in command:
+            return ("Current Battery Service state:\n  level: 85\n  voltage: 4120\n  temperature: 295\n  Battery cycle count: 215\n  status: 2\n  health: 2", "", 0)
+        return ("", "", 0)
+
+    client.run_shell = MagicMock(side_effect=mock_shell)
+    probe = client.probe_device("pixel-android14")
+
+    assert probe["summary"]["cycle_count"] == 215
+    assert probe["summary"]["cycle_count_exposed"] is True
+    assert probe["summary"]["cycle_count_status"] == "hardware"
+    assert "dumpsys battery" in probe["summary"]["cycle_count_path"]
+
+
+def test_cycle_count_extraction_dumpsys_battery_samsung_usage():
+    """Verifies cycle count extraction from Samsung dumpsys battery mSavedBatteryUsage."""
+    client = ADBClient()
+
+    # Case A: Scaled usage counter (14500 -> 145 cycles)
+    def mock_shell_scaled(serial, command, timeout=None):
+        if "dumpsys battery" in command:
+            return ("Current Battery Service state:\n  level: 90\n  voltage: 4180\n  temperature: 280\n  mSavedBatteryUsage: 14500\n  status: 2\n  health: 2", "", 0)
+        return ("", "", 0)
+
+    client.run_shell = MagicMock(side_effect=mock_shell_scaled)
+    probe_scaled = client.probe_device("samsung-s23")
+    assert probe_scaled["summary"]["cycle_count"] == 145
+    assert "mSavedBatteryUsage" in probe_scaled["summary"]["cycle_count_path"]
+
+    # Case B: Direct usage counter (<1000, e.g. 78 cycles)
+    def mock_shell_direct(serial, command, timeout=None):
+        if "dumpsys battery" in command:
+            return ("Current Battery Service state:\n  level: 90\n  voltage: 4180\n  temperature: 280\n  mSavedBatteryUsage: 78\n  status: 2\n  health: 2", "", 0)
+        return ("", "", 0)
+
+    client.run_shell = MagicMock(side_effect=mock_shell_direct)
+    probe_direct = client.probe_device("samsung-s22")
+    assert probe_direct["summary"]["cycle_count"] == 78
+
+
+def test_cycle_count_extraction_samsung_sysfs():
+    """Verifies cycle count extraction from Samsung batt_cycle_count sysfs node."""
+    client = ADBClient()
+
+    def mock_shell(serial, command, timeout=None):
+        if "ls /sys/class/power_supply" in command and "battery" not in command:
+            return ("battery usb", "", 0)
+        if "ls /sys/class/power_supply/battery" in command:
+            return ("batt_cycle_count charge_full temp voltage_now", "", 0)
+        if "cat /sys/class/power_supply/battery/batt_cycle_count" in command:
+            return ("310", "", 0)
+        if "cat /sys/class/power_supply/battery/charge_full" in command:
+            return ("4800000", "", 0)
+        if "dumpsys battery" in command:
+            return ("level: 65\nvoltage: 4050\ntemperature: 310\nstatus: 3", "", 0)
+        return ("", "", 0)
+
+    client.run_shell = MagicMock(side_effect=mock_shell)
+    probe = client.probe_device("samsung-a54")
+
+    assert probe["summary"]["cycle_count"] == 310
+    assert probe["summary"]["cycle_count_exposed"] is True
+    assert "batt_cycle_count" in probe["summary"]["cycle_count_path"]
+
+
+def test_cycle_count_extraction_batterystats_fallback():
+    """Verifies fallback extraction from dumpsys batterystats when sysfs and dumpsys battery lack cycles."""
+    client = ADBClient()
+
+    def mock_shell(serial, command, timeout=None):
+        if "ls /sys/class/power_supply" in command:
+            return ("battery", "", 0)
+        if "cat /sys/class/power_supply/battery" in command:
+            return ("", "No such file", 1)
+        if "dumpsys batterystats" in command:
+            return ("Battery History:\n  Discharge cycle count: 88\n  Capacity: 4500", "", 0)
+        if "dumpsys battery" in command:
+            return ("level: 50\nvoltage: 3900\ntemperature: 290\nstatus: 3", "", 0)
+        return ("", "", 0)
+
+    client.run_shell = MagicMock(side_effect=mock_shell)
+    probe = client.probe_device("motorola-edge")
+
+    assert probe["summary"]["cycle_count"] == 88
+    assert "dumpsys batterystats" in probe["summary"]["cycle_count_path"]
+
+
+def test_cycle_count_rejection_of_driver_junk():
+    """Verifies rejection of invalid driver overflow values (-1, 65535, 4294967295)."""
+    client = ADBClient()
+
+    def mock_shell(serial, command, timeout=None):
+        if "ls /sys/class/power_supply" in command and "battery" not in command:
+            return ("battery", "", 0)
+        if "ls /sys/class/power_supply/battery" in command:
+            return ("cycle_count charge_full", "", 0)
+        if "cat /sys/class/power_supply/battery/cycle_count" in command:
+            return ("65535", "", 0)  # Driver overflow / invalid
+        if "cat /sys/class/power_supply/battery/charge_full" in command:
+            return ("4500000", "", 0)
+        if "dumpsys battery" in command:
+            return ("level: 50\nvoltage: 3900\ntemperature: 290\nstatus: 3", "", 0)
+        return ("", "", 0)
+
+    client.run_shell = MagicMock(side_effect=mock_shell)
+    probe = client.probe_device("buggy-driver-phone")
+
+    # 65535 must be rejected as invalid junk -> marked as None / unavailable
+    assert probe["summary"]["cycle_count"] is None
+    assert probe["summary"]["cycle_count_exposed"] is False
+    assert probe["summary"]["cycle_count_status"] == "unavailable"
+
+
+def test_cycle_count_zero_is_valid_hardware():
+    """Verifies that a brand-new device with 0 cycles is recognized as valid hardware cycles."""
+    client = ADBClient()
+
+    def mock_shell(serial, command, timeout=None):
+        if "ls /sys/class/power_supply" in command and "battery" not in command:
+            return ("battery", "", 0)
+        if "ls /sys/class/power_supply/battery" in command:
+            return ("cycle_count charge_full", "", 0)
+        if "cat /sys/class/power_supply/battery/cycle_count" in command:
+            return ("0", "", 0)
+        if "cat /sys/class/power_supply/battery/charge_full" in command:
+            return ("5000000", "", 0)
+        if "dumpsys battery" in command:
+            return ("level: 100\nvoltage: 4350\ntemperature: 250\nstatus: 2", "", 0)
+        return ("", "", 0)
+
+    client.run_shell = MagicMock(side_effect=mock_shell)
+    probe = client.probe_device("brand-new-phone")
+
+    assert probe["summary"]["cycle_count"] == 0
+    assert probe["summary"]["cycle_count_exposed"] is True
+    assert probe["summary"]["cycle_count_status"] == "hardware"
+
