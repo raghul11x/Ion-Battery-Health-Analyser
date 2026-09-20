@@ -1,13 +1,7 @@
 # Ion+ — Battery Health & Longevity Analyzer
 
 <p align="center">
-  <a href="https://github.com/raghul11x/Ion-Battery-Health-Analyser">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="frontend/static/assets/brand-banner-dark.png">
-      <source media="(prefers-color-scheme: light)" srcset="frontend/static/assets/brand-banner-light.png">
-      <img src="frontend/static/assets/brand-banner-dark.png" alt="Ion+ — Intelligence at the Core" width="740">
-    </picture>
-  </a>
+  <img src="frontend/static/assets/brand-banner.png" alt="Ion+ — Intelligence at the Core" width="700">
 </p>
 
 <p align="center">
