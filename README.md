@@ -1,7 +1,13 @@
 # Ion+ — Battery Health & Longevity Analyzer
 
 <p align="center">
-  <img src="frontend/static/assets/brand-banner.png" alt="Ion+ — INTELLIGENCE AT THE CORE" width="680">
+  <a href="https://github.com/raghul11x/Ion-Battery-Health-Analyser">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="frontend/static/assets/brand-banner-dark.png">
+      <source media="(prefers-color-scheme: light)" srcset="frontend/static/assets/brand-banner-light.png">
+      <img src="frontend/static/assets/brand-banner-dark.png" alt="Ion+ — Intelligence at the Core" width="740">
+    </picture>
+  </a>
 </p>
 
 <p align="center">
@@ -13,7 +19,7 @@
   <img src="https://img.shields.io/badge/Platform-Windows%2011%20%7C%2010-0078D6?style=flat-square&logo=windows" alt="Platform">
   <img src="https://img.shields.io/badge/Framework-FastAPI%20%2B%20PyWebView-teal?style=flat-square" alt="Stack">
   <img src="https://img.shields.io/badge/Standards-IEC%2061960-purple?style=flat-square" alt="Standards">
-  <img src="https://img.shields.io/badge/Zero--Hallucination-Guaranteed-emerald?style=flat-square" alt="Zero Hallucination">
+  <img src="https://img.shields.io/badge/Zero--Hallucination-Guaranteed-10B981?style=flat-square" alt="Zero Hallucination">
 </p>
 
 ---
@@ -29,22 +35,22 @@
 - **Direct Hardware Probing (No Root Required)**:
   - Communicates via Android Debug Bridge (`adb shell dumpsys battery` and `/sys/class/power_supply/battery/...`).
   - Probes design capacity, current full capacity, voltage, temperature, cycle counts, and charging status.
-  - Automatically identifies accessible kernel sysfs paths across OEM firmware lineages (ColorOS, Realme UI, OxygenOS, Nothing OS, Pixel, One UI).
+  - Automatically identifies accessible kernel sysfs paths across OEM firmware lineages (Samsung One UI, Pixel, ColorOS, Realme UI, OxygenOS, Nothing OS, Xiaomi MIUI/HyperOS).
 - **Dual-Engine Health Calculation**:
   - **Primary Method (`capacity_ratio`)**:
-    $$\text{Health \%} = \frac{\text{charge\_full\_uah}}{\text{charge\_full\_design\_uah}} \times 100$$
+    $$\text{Battery Health (\%)} = \left( \frac{\text{charge\_full\_uah}}{\text{charge\_full\_design\_uah}} \right) \times 100$$
   - **Fallback Method (`trend_estimate`)**:
     Used when OEM firmware hides `charge_full_design`. Compares observed capacity against the initial logged baseline.
 - **Charging Habit & Wear Analytics**:
-  - Time spent in high state-of-charge ($>80\%$).
-  - Fast-charging frequency (high voltage $>4200\text{ mV}$).
-  - Operational temperature history and thermal stress warnings ($>42^\circ\text{C}$).
+  - Time spent in high state-of-charge (> 80%).
+  - Fast-charging frequency (high voltage > 4200 mV).
+  - Operational temperature history and thermal stress warnings (> 42°C).
 - **EURA iOS Health/Wellness Desktop UI**:
   - Centerpiece hero card with giant bold health % typography (EURA "24 years" bio-age aesthetic).
-  - Meaning-driven dynamic gradients: Emerald ($\ge 85\%$, `#14532D` $\to$ `#22C55E`), Amber ($70\text{--}84\%$, `#7C2D12` $\to$ `#F59E0B`), and Crimson ($< 70\%$, `#7F1D1D` $\to$ `#EF4444`).
+  - Meaning-driven dynamic gradients: Emerald (≥ 85%, `#14532D` → `#22C55E`), Amber (70–84%, `#7C2D12` → `#F59E0B`), and Crimson (< 70%, `#7F1D1D` → `#EF4444`).
   - Integrated horizontal range dial (0–100) with a live position pin and comparative status diagnosis line.
   - Black "Heart Report" trend card with a white line chart and a 3-stat summary row underneath (Temperature, Voltage, Cycle Count).
-  - Deep indigo-to-violet-to-black cinematic diagonal background (`#0A0E27` $\to$ `#1B1035` $\to$ `#000000`) with ambient glow.
+  - Deep indigo-to-violet-to-black cinematic diagonal background (`#0A0E27` → `#1B1035` → `#000000`) with ambient glow.
   - Floating pill-capsule navigation (`Dashboard`, `History`, `Insights`, `Diagnostics`) and pill connection button.
 - **Background Watcher**:
   - APScheduler polling loop automatically detects phone connection events and records readings without manual intervention.
@@ -76,14 +82,17 @@ Ion-Battery-Health-Analyser/
 │       ├── css/style.css    # Dark glassmorphism, glows & animations
 │       ├── js/app.js        # State, live polling, & Chart.js logic
 │       ├── js/chart.min.js  # Offline-ready Chart.js bundle
-│       └── assets/          # Brand logos, icons, and favicon
+│       └── assets/          # Brand logos, dark/light banners, and favicon
 ├── tests/
-│   ├── test_health.py       # Health calculation tests
-│   ├── test_db.py           # Database CRUD & aggregation tests
-│   ├── test_parser.py       # Dumpsys & sysfs parsing tests
-│   ├── test_api.py          # FastAPI endpoint integration tests
-│   ├── test_deep_scan.py    # Multi-vendor deep scan tests
-│   └── test_calibration.py # Calibration engine tests
+│   ├── test_health.py          # Health calculation tests
+│   ├── test_db.py              # Database CRUD & aggregation tests
+│   ├── test_parser.py          # Dumpsys & sysfs parsing tests
+│   ├── test_api.py             # FastAPI endpoint integration tests
+│   ├── test_deep_scan.py       # Multi-vendor deep scan & cycle tests
+│   ├── test_calibration.py     # Calibration engine tests
+│   ├── test_virtual_phones.py  # Hardware simulation & edge-case suite
+│   ├── test_prd_metrics.py     # PRD stability & metrics tests
+│   └── test_device_profiler.py # Device profiler & consensus tests
 ├── desktop.py               # Native desktop window launcher (PyWebview)
 ├── splash.py                # Frameless Adobe-style glassmorphic splash screen
 ├── Ion+.vbs                 # Silent background Windows launcher
@@ -100,10 +109,10 @@ Ion-Battery-Health-Analyser/
 To allow Ion+ to communicate with your Android phone:
 
 1. **Enable Developer Options**:
-   - Open **Settings** $\to$ **About Phone**.
+   - Open **Settings** → **About Phone**.
    - Tap **Build Number** 7 times until you see *"You are now a developer!"*.
 2. **Enable USB Debugging**:
-   - Open **Settings** $\to$ **System** $\to$ **Developer Options**.
+   - Open **Settings** → **System** → **Developer Options**.
    - Toggle **USB Debugging** to **ON**.
 3. **Connect to Laptop**:
    - Plug the phone into your computer via a USB-C cable.
