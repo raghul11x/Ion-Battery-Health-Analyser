@@ -66,18 +66,13 @@
         <span id="conn-last-seen-label" class="hidden text-[10px] text-zinc-500 font-mono tracking-tight pr-2 mt-0.5"></span>
       </div>
 
-      <!-- Seed Demo Data Button with Additive Tooltip -->
-      <div class="relative group inline-flex items-center">
-        <button id="seed-btn" class="pill-button bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 border border-white/10 text-xs flex items-center gap-1.5 transition" title="Populates a 30-day simulated dataset to preview degradation curves and insights.">
-          <span>Seed 30D</span>
-        </button>
-        <div class="pointer-events-none absolute -bottom-11 right-0 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap px-2.5 py-1 rounded-lg bg-[#0F1024]/95 border border-white/15 text-[11px] font-medium text-zinc-300 shadow-xl backdrop-blur-md">
-          Populates a 30-day simulated dataset to preview analytics
-        </div>
-      </div>
+      <!-- Seed Demo Data Button -->
+      <button id="seed-btn" class="pill-button bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 border border-white/10 text-xs flex items-center gap-1.5 transition" data-tooltip="Populates a 30-day simulated dataset to preview degradation curves and insights.">
+        <span>Seed 30D</span>
+      </button>
 
       <!-- Connect / Probe Device Pill CTA Button (Design Doc v2 §5.2) -->
-      <button id="probe-btn" class="pill-button bg-white hover:bg-zinc-200 text-black text-xs flex items-center gap-1.5 font-bold shadow-md transition" title="Scan and probe connected USB Android device">
+      <button id="probe-btn" class="pill-button bg-white hover:bg-zinc-200 text-black text-xs flex items-center gap-1.5 font-bold shadow-md transition" data-tooltip="Scan and probe connected USB Android device">
         <svg id="probe-icon" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
@@ -109,7 +104,7 @@
       </div>
 
       <!-- Manual Dismiss Close Button -->
-      <button id="toast-close-btn" class="text-zinc-400 hover:text-white transition p-1 -mr-1 rounded-lg hover:bg-white/10 shrink-0" title="Dismiss notification" aria-label="Dismiss notification">
+      <button id="toast-close-btn" class="text-zinc-400 hover:text-white transition p-1 -mr-1 rounded-lg hover:bg-white/10 shrink-0" data-tooltip="Dismiss notification" aria-label="Dismiss notification">
         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
         </svg>
@@ -523,7 +518,7 @@
                 <span>Start Live Test</span>
               </button>
 
-              <button id="cal-sim-btn" class="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-white/10 font-medium text-xs transition" title="Preview simulated 20-second charge cycle">
+              <button id="cal-sim-btn" class="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-white/10 font-medium text-xs transition" data-tooltip="Preview simulated 20-second charge cycle">
                 <span>Demo Run</span>
               </button>
 
@@ -677,6 +672,9 @@
     </section>
 
   </main>
+
+  <!-- Single Global Shared Tooltip Container -->
+  <div id="app-tooltip" class="fixed z-[9999] pointer-events-none px-2.5 py-1.5 rounded-lg bg-[#0F1024]/95 border border-white/15 text-[11px] font-medium text-zinc-200 shadow-2xl backdrop-blur-md transition-opacity duration-150 opacity-0 hidden max-w-xs" role="tooltip" aria-hidden="true"></div>
 
   <!-- Script -->
   <script src="/static/js/app.js"></script>
