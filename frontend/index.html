@@ -134,6 +134,40 @@
       <button id="reconnect-btn" class="px-3 py-1.5 rounded-lg bg-amber-400/20 hover:bg-amber-400/30 text-amber-200 text-xs font-semibold shrink-0 transition">Re-check</button>
     </div>
 
+    <!-- LIVE DEVICE ACTIVITY FEED (Collapsible Glassmorphic Strip) -->
+    <div id="device-status-panel" class="hidden rounded-2xl bg-[#0F1024]/90 border border-white/10 shadow-xl overflow-hidden backdrop-blur-md transition-all duration-300">
+      <!-- Collapsible Header Bar -->
+      <button id="device-status-toggle" type="button" class="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-white/[0.03] transition-colors focus:outline-none select-none" aria-expanded="false" aria-controls="device-status-content">
+        <div class="flex items-center gap-2.5 min-w-0 pr-2">
+          <span class="relative flex h-2 w-2 shrink-0">
+            <span id="status-feed-ping" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+          </span>
+          <span class="text-[10px] font-bold uppercase tracking-wider text-cyan-400 shrink-0">Live Device Feed</span>
+          <span class="text-zinc-600 shrink-0">·</span>
+          <!-- Inline Latest Event Preview -->
+          <span id="status-feed-latest-preview" class="text-xs text-zinc-300 truncate font-mono">
+            Awaiting device activity...
+          </span>
+        </div>
+        <div class="flex items-center gap-2.5 shrink-0 ml-2">
+          <span id="status-feed-count-badge" class="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+            0 events
+          </span>
+          <svg id="status-feed-chevron" class="w-4 h-4 text-zinc-400 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+          </svg>
+        </div>
+      </button>
+
+      <!-- Expandable Events List Container -->
+      <div id="device-status-content" class="hidden border-t border-white/[0.06] px-4 py-3 bg-black/20">
+        <div id="device-status-list" class="max-h-48 overflow-y-auto space-y-1.5 pr-1 text-xs font-mono">
+          <!-- Real events injected dynamically -->
+        </div>
+      </div>
+    </div>
+
     <!-- ================= VIEW 1: DASHBOARD HOME (EURA STYLE) ================= -->
     <section id="view-dashboard" class="space-y-10">
 

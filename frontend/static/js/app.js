@@ -19,10 +19,22 @@ const state = {
   calibrationPollTimer: null,
   cachedDevices: [],
   lastDevicesFetchTime: 0,
+  deviceStatusEvents: [],
+  statusFeedExpanded: false,
 };
 
 // DOM References
 const el = {
+  // Live Device Status Feed
+  deviceStatusPanel: document.getElementById('device-status-panel'),
+  deviceStatusToggle: document.getElementById('device-status-toggle'),
+  deviceStatusContent: document.getElementById('device-status-content'),
+  statusFeedLatestPreview: document.getElementById('status-feed-latest-preview'),
+  statusFeedCountBadge: document.getElementById('status-feed-count-badge'),
+  statusFeedChevron: document.getElementById('status-feed-chevron'),
+  deviceStatusList: document.getElementById('device-status-list'),
+  statusFeedPing: document.getElementById('status-feed-ping'),
+
   // Toast Notification
   connectToast: document.getElementById('device-connect-toast'),
   toastDeviceName: document.getElementById('toast-device-name'),
@@ -154,6 +166,16 @@ function formatDate(isoStr) {
   }
 }
 
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 // API Calls
 async function fetchStatus() {
   try {
@@ -223,6 +245,19 @@ async function fetchProbe() {
   } catch (err) {
     state.probeReport = { error: 'Request to probe failed' };
     renderProbe();
+  }
+}
+
+async function fetchDeviceStatus() {
+  try {
+    const res = await fetch('/api/device-status?limit=25');
+    if (res.ok) {
+      const data = await res.json();
+      state.deviceStatusEvents = data.events || [];
+      renderDeviceStatus();
+    }
+  } catch (err) {
+    console.warn('Failed to fetch device status feed:', err);
   }
 }
 
@@ -376,6 +411,7 @@ function updateConnectionStatus() {
     el.connDeviceLabel.textContent = `· ${name}`;
     el.connDeviceLabel.classList.remove('hidden');
     if (guidanceBanner) guidanceBanner.classList.add('hidden');
+    renderDeviceStatus();
     return;
   }
 
@@ -416,6 +452,104 @@ function updateConnectionStatus() {
     if (guidanceBanner) guidanceBanner.classList.add('hidden');
     el.connDeviceLabel.classList.add('hidden');
     updateLastSeenDeviceLabel();
+  }
+
+  renderDeviceStatus();
+}
+
+function toggleDeviceStatusFeed(forceState = null) {
+  const content = el.deviceStatusContent || document.getElementById('device-status-content');
+  const chevron = el.statusFeedChevron || document.getElementById('status-feed-chevron');
+  const toggleBtn = el.deviceStatusToggle || document.getElementById('device-status-toggle');
+  if (!content) return;
+
+  const willExpand = forceState !== null ? forceState : content.classList.contains('hidden');
+  if (willExpand) {
+    content.classList.remove('hidden');
+    if (chevron) chevron.classList.add('rotate-180');
+    if (toggleBtn) toggleBtn.setAttribute('aria-expanded', 'true');
+    state.statusFeedExpanded = true;
+    try { sessionStorage.setItem('ion_status_feed_expanded', 'true'); } catch (_) {}
+  } else {
+    content.classList.add('hidden');
+    if (chevron) chevron.classList.remove('rotate-180');
+    if (toggleBtn) toggleBtn.setAttribute('aria-expanded', 'false');
+    state.statusFeedExpanded = false;
+    try { sessionStorage.setItem('ion_status_feed_expanded', 'false'); } catch (_) {}
+  }
+}
+
+function renderDeviceStatus() {
+  const panel = el.deviceStatusPanel || document.getElementById('device-status-panel');
+  if (!panel) return;
+
+  const isConnected = !!(state.systemStatus?.active_device_count > 0 && state.systemStatus?.connected_devices?.some(d => d.state === 'device'));
+  const events = state.deviceStatusEvents || [];
+
+  // If no events recorded yet AND disconnected, hide the panel cleanly
+  if (events.length === 0 && !isConnected) {
+    panel.classList.add('hidden');
+    return;
+  }
+
+  // Otherwise show panel
+  panel.classList.remove('hidden');
+
+  const previewEl = el.statusFeedLatestPreview || document.getElementById('status-feed-latest-preview');
+  const badgeEl = el.statusFeedCountBadge || document.getElementById('status-feed-count-badge');
+  const listEl = el.deviceStatusList || document.getElementById('device-status-list');
+
+  if (events.length > 0) {
+    const latest = events[0];
+    if (previewEl) {
+      previewEl.textContent = latest.message;
+      previewEl.title = `${latest.time_display} - ${latest.message}`;
+    }
+    if (badgeEl) {
+      badgeEl.textContent = `${events.length} event${events.length === 1 ? '' : 's'}`;
+    }
+  } else {
+    if (previewEl) {
+      previewEl.textContent = 'Awaiting device activity...';
+      previewEl.title = '';
+    }
+    if (badgeEl) {
+      badgeEl.textContent = '0 events';
+    }
+  }
+
+  if (listEl) {
+    if (events.length === 0) {
+      listEl.innerHTML = '<div class="text-zinc-500 py-2 italic text-center">No device events recorded in current session.</div>';
+      return;
+    }
+
+    const html = events.map((ev, index) => {
+      const isLatest = index === 0;
+      let badgeClass = 'status-badge-default';
+      const cat = (ev.category || '').toLowerCase();
+      if (cat === 'connection') badgeClass = 'status-badge-connection';
+      else if (cat === 'probe') badgeClass = 'status-badge-probe';
+      else if (cat === 'consensus') badgeClass = 'status-badge-consensus';
+      else if (cat === 'health') badgeClass = 'status-badge-health';
+      else if (cat === 'calibration') badgeClass = 'status-badge-calibration';
+
+      const time = escapeHtml(ev.time_display || '—');
+      const categoryText = escapeHtml((ev.category || 'INFO').toUpperCase());
+      const msg = escapeHtml(ev.message || '');
+      const itemClass = isLatest ? 'status-item status-item-latest py-1 flex items-start gap-2.5' : 'status-item py-1 flex items-start gap-2.5 opacity-85 hover:opacity-100';
+      const textClass = isLatest ? 'text-zinc-100 font-medium' : 'text-zinc-400';
+
+      return `
+        <div class="${itemClass}">
+          <span class="text-zinc-500 shrink-0 font-mono text-[11px] pt-0.5">${time}</span>
+          <span class="status-badge ${badgeClass}">${categoryText}</span>
+          <span class="${textClass} flex-1 break-words leading-relaxed">${msg}</span>
+        </div>
+      `;
+    }).join('');
+
+    listEl.innerHTML = html;
   }
 }
 
@@ -1280,6 +1414,7 @@ async function handleProbe() {
     await fetch('/api/reconnect', { method: 'POST' }).catch(() => {});
     await fetchStatus();
     await fetchSnapshot();
+    await fetchDeviceStatus();
     if (state.currentTab === 'trends') await fetchHistory(state.selectedDays);
     if (state.currentTab === 'habits') await fetchInsights();
     if (state.currentTab === 'diagnostics') await fetchProbe();
@@ -1509,6 +1644,24 @@ function init() {
       dismissDeviceConnectedToast();
     });
   }
+
+  // Live Device Status Feed Collapsible Toggle & Restore
+  try {
+    const savedExpanded = sessionStorage.getItem('ion_status_feed_expanded');
+    if (savedExpanded === 'true') {
+      toggleDeviceStatusFeed(true);
+    }
+  } catch (_) {}
+
+  const statusToggle = el.deviceStatusToggle || document.getElementById('device-status-toggle');
+  if (statusToggle) {
+    statusToggle.addEventListener('click', () => {
+      toggleDeviceStatusFeed();
+    });
+  }
+
+  fetchDeviceStatus();
+  setInterval(fetchDeviceStatus, 2500);
 
   // Initialize Cursor-Tracking Glow Effect (Spotlight Hover)
   initCursorTrackingGlow();

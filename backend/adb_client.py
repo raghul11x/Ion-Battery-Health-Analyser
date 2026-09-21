@@ -677,6 +677,42 @@ class ADBClient:
                 "recommended_method": "capacity_ratio" if norm_design is not None else "trend_estimate",
             },
         }
+
+        try:
+            from backend.status_bus import emit_status
+            resolved = []
+            unresolved = []
+            if norm_full is not None:
+                resolved.append(f"charge_full={norm_full}µAh")
+            else:
+                unresolved.append("charge_full")
+            if norm_design is not None:
+                resolved.append(f"design={norm_design}µAh")
+            else:
+                unresolved.append("charge_full_design")
+            if cycle_count_raw is not None:
+                resolved.append(f"cycles={cycle_count_raw}")
+            else:
+                unresolved.append("cycle_count")
+            if charge_counter_raw is not None:
+                resolved.append("counter")
+            else:
+                unresolved.append("charge_counter")
+            if dumpsys.get("voltage") is not None:
+                resolved.append(f"{dumpsys.get('voltage')}mV")
+            if dumpsys.get("temperature_c") is not None:
+                resolved.append(f"{dumpsys.get('temperature_c')}°C")
+
+            emit_status(
+                serial,
+                "probe",
+                f"Hardware probe: {len(resolved)} metrics found ({', '.join(resolved[:3])}) | {len(unresolved)} unexposed",
+                {"resolved": resolved, "unresolved": unresolved, "cycle_count": cycle_count_raw, "charge_full_uah": norm_full, "design_uah": norm_design},
+                level="success" if len(unresolved) == 0 else "info",
+            )
+        except Exception:
+            pass
+
         return report
 
     def print_diagnostic_dump(self, dump: Dict[str, Any]) -> None:

@@ -14,6 +14,7 @@ from backend.calibration import calibration_manager
 from backend.db import db
 from backend.health import calculate_health, get_health_band, get_temperature_band
 from backend.prediction import calculate_replacement_forecast
+from backend.status_bus import get_recent_status
 from backend.watcher import watcher
 
 logger = logging.getLogger("battery_analyzer.api")
@@ -49,6 +50,17 @@ def get_system_status() -> Dict[str, Any]:
         "offline_count": len(offline),
         "device_state": "device" if active else ("unauthorized" if unauth else ("offline" if offline else "none")),
         "watcher_status": watcher.get_status(),
+    }
+
+
+@router.get("/device-status")
+def get_device_status(limit: int = Query(default=20, ge=1, le=100), serial: Optional[str] = None) -> Dict[str, Any]:
+    """Returns the live stream of real hardware and background activity events."""
+    events = get_recent_status(limit=limit, device_serial=serial)
+    return {
+        "status": "ok",
+        "count": len(events),
+        "events": events,
     }
 
 

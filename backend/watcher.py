@@ -11,6 +11,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from backend.adb_client import ADBClient
 from backend.db import db
 from backend.health import calculate_health
+from backend.status_bus import emit_status
 
 logger = logging.getLogger("battery_analyzer.watcher")
 logging.basicConfig(level=logging.INFO)
@@ -50,6 +51,7 @@ class DeviceWatcher:
         if not active_devices:
             if self.last_status.get("connected"):
                 logger.info("Device disconnected.")
+                emit_status(self.last_status.get("serial"), "connection", f"Device disconnected ({self.last_status.get('serial')})", {"serial": self.last_status.get("serial")}, level="warning")
             self.last_status["connected"] = False
             self.last_status["serial"] = None
             self.last_status["model"] = None
@@ -84,6 +86,7 @@ class DeviceWatcher:
         self.last_status["serial"] = serial
 
         if is_fresh_connect:
+            emit_status(serial, "connection", f"Connected to {target_device.get('model', 'Android Device')} ({serial})", {"serial": serial, "model": target_device.get("model")}, level="success")
             # Rule 7: Run parameter discovery once per new device serial, cached thereafter
             cached_prof = db.get_device_profile(serial)
             if not cached_prof:
@@ -180,6 +183,15 @@ class DeviceWatcher:
             cycle_count_type=cycle_count_type,
             status=status,
             health_flag=health_flag,
+        )
+
+        cycles_str = f"{cycle_count} ({cycle_count_type})" if cycle_count is not None else "Unavailable"
+        emit_status(
+            serial,
+            "health",
+            f"Health calculated: {displayed_health}% via {health_method} | Cycles: {cycles_str} | Temp: {temp_c}°C",
+            {"health_pct": displayed_health, "health_method": health_method, "cycle_count": cycle_count, "cycle_type": cycle_count_type, "voltage_mv": voltage_mv, "temperature_c": temp_c},
+            level="success" if displayed_health >= 80.0 else "info",
         )
 
         now = datetime.utcnow()

@@ -32,6 +32,7 @@ load_dotenv()
 
 from backend.adb_client import ADBClient
 from backend.db import db
+from backend.status_bus import emit_status
 
 logger = logging.getLogger("battery_analyzer.device_profiler")
 
@@ -1080,6 +1081,12 @@ class DeviceProfiler:
             f"{len(CORE_BATTERY_FIELDS) - len(unresolved_fields)} resolved locally/cached, "
             f"{len(unresolved_fields)} unresolved: {unresolved_fields}"
         )
+        emit_status(
+            serial,
+            "probe",
+            f"Device parameter profile: {len(CORE_BATTERY_FIELDS) - len(unresolved_fields)}/{len(CORE_BATTERY_FIELDS)} fields resolved locally/cached",
+            {"resolved": [f for f in CORE_BATTERY_FIELDS if f not in unresolved_fields], "unresolved": unresolved_fields},
+        )
 
         consensus_results: Dict[str, Dict[str, Any]] = {}
         consensus_detail: Optional[Dict[str, Any]] = None
@@ -1091,6 +1098,12 @@ class DeviceProfiler:
             logger.info(
                 f"[PROFILER] Running iterative fallback for unresolved fields: {unresolved_fields} "
                 f"across pool of {len(active_pool)} models (time cap: {time_cap_seconds}s)..."
+            )
+            emit_status(
+                serial,
+                "consensus",
+                f"Starting AI consensus for {len(unresolved_fields)} unresolved fields ({', '.join(unresolved_fields)}) across {len(active_pool)} models",
+                {"unresolved_fields": unresolved_fields, "model_count": len(active_pool)},
             )
             consensus_results, consensus_detail = await self.query_ai_consensus_iterative(
                 unresolved_fields=unresolved_fields,
@@ -1134,6 +1147,27 @@ class DeviceProfiler:
                     "models_agreed": ai_res.get("models_agreed", []),
                 }
 
+        for f in unresolved_fields:
+            ai_res = consensus_results.get(f, {})
+            src = ai_res.get("source", "unresolved_no_consensus")
+            if src == "ai_consensus":
+                models_str = " + ".join(ai_res.get("models_agreed", []))
+                emit_status(
+                    serial,
+                    "consensus",
+                    f"AI consensus confirmed '{f}' via {models_str} -> {ai_res.get('path')}",
+                    {"field": f, "path": ai_res.get("path"), "models": ai_res.get("models_agreed", [])},
+                    level="success",
+                )
+            else:
+                emit_status(
+                    serial,
+                    "consensus",
+                    f"AI consensus: '{f}' remains unresolved (no agreement)",
+                    {"field": f, "source": src},
+                    level="info",
+                )
+
         # Step 4: OEM-Reported SoH Detection & Iterative AI Verification
         oem_soh_val = cached_oem_soh
         oem_soh_audit = None
@@ -1157,6 +1191,15 @@ class DeviceProfiler:
                 else:
                     logger.info("[PROFILER] OEM SoH candidate found, but no AI keys configured. Keeping null until consensus verified.")
                     oem_soh_val = None
+
+        if oem_soh_val is not None:
+            emit_status(
+                serial,
+                "consensus",
+                f"OEM-reported battery health verified by AI consensus: {oem_soh_val}%",
+                {"soh_pct": oem_soh_val},
+                level="success",
+            )
 
         if consensus_detail is None:
             consensus_detail = {}

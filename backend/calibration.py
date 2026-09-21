@@ -11,6 +11,7 @@ import threading
 import time
 from typing import Any, Dict, List, Optional
 import uuid
+from backend.status_bus import emit_status
 
 logger = logging.getLogger("battery_analyzer.calibration")
 
@@ -113,6 +114,13 @@ class ActiveCalibrationManager:
 
             self._thread.start()
             logger.info(f"Started Coulomb calibration session {self.session_id} (Simulated: {simulate})")
+            emit_status(
+                device_serial,
+                "calibration",
+                f"Coulomb calibration started (Session {self.session_id}, level: {initial_level_pct}%, design: {design_capacity_mah:.0f} mAh)",
+                {"session_id": self.session_id, "initial_level": initial_level_pct, "simulate": simulate},
+                level="info",
+            )
             return self.get_status()
 
     def stop_session(self) -> Dict[str, Any]:
@@ -130,6 +138,13 @@ class ActiveCalibrationManager:
             f"Completed Coulomb calibration session {self.session_id}: "
             f"Accumulated {status['accumulated_mah']} mAh over Δ{status['delta_level_pct']}% "
             f"(Extrapolated: {status['extrapolated_capacity_mah']} mAh, SoH: {status['calibrated_health_pct']}%)"
+        )
+        emit_status(
+            self.device_serial,
+            "calibration",
+            f"Coulomb calibration completed: {status['accumulated_mah']} mAh logged over Δ{status['delta_level_pct']}% (SoH: {status['calibrated_health_pct']}%)",
+            {"session_id": self.session_id, "accumulated_mah": status["accumulated_mah"], "soh_pct": status["calibrated_health_pct"]},
+            level="success",
         )
         return status
 
