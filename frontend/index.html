@@ -463,7 +463,7 @@
                   </div>
                 </div>
                 <!-- Toggle Button -->
-                <button id="sim-cap-toggle" class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-zinc-700 transition-colors duration-200 ease-in-out focus:outline-none" role="switch" aria-checked="false">
+                <button id="sim-cap-toggle" type="button" class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-zinc-700 transition-colors duration-200 ease-in-out focus:outline-none" role="switch" aria-checked="false">
                   <span id="sim-cap-knob" class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out translate-x-0"></span>
                 </button>
               </div>
@@ -540,7 +540,7 @@
 
             <!-- Action Buttons -->
             <div class="pt-2 flex items-center gap-2">
-              <button id="cal-start-btn" class="flex-1 py-2.5 px-4 rounded-xl bg-white hover:bg-zinc-200 text-black font-bold text-xs shadow-md transition flex items-center justify-center gap-1.5">
+              <button id="cal-start-btn" type="button" class="flex-1 py-2.5 px-4 rounded-xl bg-white hover:bg-zinc-200 text-black font-bold text-xs shadow-md transition flex items-center justify-center gap-1.5">
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
@@ -548,11 +548,11 @@
                 <span>Start Live Test</span>
               </button>
 
-              <button id="cal-sim-btn" class="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-white/10 font-medium text-xs transition" data-tooltip="Preview simulated 20-second charge cycle">
+              <button id="cal-sim-btn" type="button" class="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-white/10 font-medium text-xs transition" data-tooltip="Preview simulated 20-second charge cycle">
                 <span>Demo Run</span>
               </button>
 
-              <button id="cal-stop-btn" class="py-2.5 px-3 rounded-xl bg-rose-950/70 hover:bg-rose-900 text-rose-300 border border-rose-500/30 font-semibold text-xs transition hidden">
+              <button id="cal-stop-btn" type="button" class="py-2.5 px-3 rounded-xl bg-rose-950/70 hover:bg-rose-900 text-rose-300 border border-rose-500/30 font-semibold text-xs transition hidden">
                 <span>Stop</span>
               </button>
             </div>

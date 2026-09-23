@@ -1354,7 +1354,15 @@ function renderForecastError(message = 'Forecast calculation error', subtext = '
   }
 }
 
-async function handleSimCapToggle() {
+async function handleSimCapToggle(e) {
+  if (e) {
+    if (typeof e.preventDefault === 'function') e.preventDefault();
+    if (typeof e.stopPropagation === 'function') e.stopPropagation();
+  }
+
+  // Preserve scroll position to eliminate any jump on click or reflow
+  const savedScrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0;
+
   const isConnected = AppState.connected || AppState.mode === 'seeded';
   if (!isConnected) {
     renderForecastInsufficientData('Awaiting device connection');
@@ -1365,6 +1373,9 @@ async function handleSimCapToggle() {
       el.simCapKnob?.classList.remove('translate-x-5');
       el.simCapKnob?.classList.add('translate-x-0');
     }
+    if (typeof window.scrollTo === 'function') {
+      window.scrollTo({ top: savedScrollY, behavior: 'instant' });
+    }
     return;
   }
 
@@ -1373,7 +1384,7 @@ async function handleSimCapToggle() {
   const isCapped = state.is80CapSimulated;
 
   if (!isCapped) {
-    // Toggle OFF: hide simulation, retain normal forecast
+    // Toggle OFF: hide simulation drawer, retain normal baseline forecast in hero
     forecastRequestId++;
     if (el.simCapResult) el.simCapResult.classList.add('hidden');
     if (el.simCapToggle) {
@@ -1386,10 +1397,13 @@ async function handleSimCapToggle() {
     if (state.normalForecast) {
       renderForecast(state.normalForecast);
     }
+    if (typeof window.scrollTo === 'function') {
+      window.scrollTo({ top: savedScrollY, behavior: 'instant' });
+    }
     return;
   }
 
-  // Toggle ON: show simulation side-by-side
+  // Toggle ON: update toggle button and show simulation side-by-side
   if (el.simCapToggle) {
     el.simCapToggle.setAttribute('aria-checked', 'true');
     el.simCapToggle.classList.remove('bg-zinc-700');
@@ -1398,15 +1412,41 @@ async function handleSimCapToggle() {
     el.simCapKnob?.classList.remove('translate-x-0');
   }
 
-  // If already in memory, display immediately
-  if (state.normalForecast) {
-    renderSimulatedForecast(state.normalForecast);
+  // Unhide simulation drawer
+  if (el.simCapResult) {
+    el.simCapResult.classList.remove('hidden');
   }
 
-  // Also query fresh from /api/prediction (debounced)
+  // If already in memory with calculated simulation, display immediately
+  if (state.normalForecast && state.normalForecast.simulation_80_cap) {
+    renderSimulatedForecast(state.normalForecast);
+  } else {
+    // Scoped loading state ONLY inside the simulation drawer of the forecast card
+    if (el.simCapExtraText) el.simCapExtraText.textContent = 'Calculating simulation...';
+    if (el.simCompareNormalMonths && state.normalForecast) {
+      el.simCompareNormalMonths.textContent = `~${state.normalForecast.months_remaining} mo`;
+    }
+    if (el.simCompareCappedMonths) {
+      el.simCompareCappedMonths.textContent = '...';
+    }
+    if (el.simCompareCappedDetail) {
+      el.simCompareCappedDetail.textContent = 'Simulating 80% cap...';
+    }
+  }
+
+  // Also query fresh from /api/prediction (scoped to forecast card)
   const reqId = ++forecastRequestId;
   const targetSerial = state.selectedSerial || state.snapshot?.device_serial;
-  const url = targetSerial ? `/api/prediction?serial=${encodeURIComponent(targetSerial)}` : '/api/prediction';
+  let url = '/api/prediction';
+  const queryParams = [];
+  if (targetSerial) queryParams.push(`serial=${encodeURIComponent(targetSerial)}`);
+  if (state.snapshot?.health_pct !== null && state.snapshot?.health_pct !== undefined) {
+    queryParams.push(`health=${encodeURIComponent(state.snapshot.health_pct)}`);
+  }
+  if (state.snapshot?.cycle_count !== null && state.snapshot?.cycle_count !== undefined && !isNaN(state.snapshot.cycle_count)) {
+    queryParams.push(`cycles=${encodeURIComponent(state.snapshot.cycle_count)}`);
+  }
+  if (queryParams.length) url += `?${queryParams.join('&')}`;
 
   try {
     const res = await fetch(url);
@@ -1425,6 +1465,10 @@ async function handleSimCapToggle() {
     console.warn('Simulation prediction fetch failed:', err);
     if (!state.normalForecast) {
       renderForecastError('Forecast calculation error', 'API request failed');
+    }
+  } finally {
+    if (typeof window.scrollTo === 'function') {
+      window.scrollTo({ top: savedScrollY, behavior: 'instant' });
     }
   }
 }
@@ -2093,7 +2137,13 @@ function init() {
   el.seedBtn?.addEventListener('click', handleSeed);
 
   // Calibration & Prediction actions
-  el.simCapToggle?.addEventListener('click', handleSimCapToggle);
+  el.simCapToggle?.addEventListener('click', (e) => {
+    if (e) {
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+      if (typeof e.stopPropagation === 'function') e.stopPropagation();
+    }
+    handleSimCapToggle(e);
+  });
   el.calStartBtn?.addEventListener('click', () => startCalibration(false));
   el.calSimBtn?.addEventListener('click', () => startCalibration(true));
   el.calStopBtn?.addEventListener('click', stopCalibration);
