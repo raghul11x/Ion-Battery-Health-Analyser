@@ -122,6 +122,10 @@ const el = {
   simCapKnob: document.getElementById('sim-cap-knob'),
   simCapResult: document.getElementById('sim-cap-result'),
   simCapExtraText: document.getElementById('sim-cap-extra-text'),
+  simCompareNormalMonths: document.getElementById('sim-compare-normal-months'),
+  simCompareNormalDetail: document.getElementById('sim-compare-normal-detail'),
+  simCompareCappedMonths: document.getElementById('sim-compare-capped-months'),
+  simCompareCappedDetail: document.getElementById('sim-compare-capped-detail'),
 
   // Active Coulomb Calibration
   calStatusBadge: document.getElementById('cal-status-badge'),
@@ -921,15 +925,16 @@ function renderSnapshot() {
   }
 
   // 4. PREDICTIVE REPLACEMENT FORECAST
-  // Gated to Daily 80% Charge Cap Simulator toggle: only render if toggle is active and forecast is populated
-  if (state.is80CapSimulated && state.forecastData) {
-    renderForecastPopulated(state.forecastData);
-  } else if (!state.is80CapSimulated) {
+  // Normal forecast renders automatically whenever snapshot data is available
+  if (s.replacement_forecast) {
+    state.normalForecast = s.replacement_forecast;
+    renderForecast(s.replacement_forecast);
+  } else if (!s.connected && !state.selectedSerial) {
     renderForecastIdle();
   }
 }
 
-// Forecast State Handlers (IDLE, LOADING, POPULATED, CLEARED, and Edge Cases)
+// Forecast State Handlers (Normal Baseline + On-Toggle Side-by-Side Simulation)
 let forecastRequestId = 0;
 
 function formatTargetMonthYear(dateStr) {
@@ -943,16 +948,27 @@ function formatTargetMonthYear(dateStr) {
   return dateStr;
 }
 
+function calculateProjectedDateFromDays(days) {
+  if (!days || days <= 0) return '—';
+  try {
+    const d = new Date();
+    d.setDate(d.getDate() + Math.round(days));
+    return d.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+  } catch (_) {
+    return '—';
+  }
+}
+
 function renderForecastIdle() {
   if (el.forecastMonthsText) {
     el.forecastMonthsText.textContent = '—';
     el.forecastMonthsText.classList.remove('skeleton-shimmer');
   }
   if (el.forecastSubtextLabel) {
-    el.forecastSubtextLabel.textContent = 'Toggle on to run forecast';
+    el.forecastSubtextLabel.textContent = 'Estimated To 80%';
   }
   if (el.forecastDateText) {
-    el.forecastDateText.textContent = '—';
+    el.forecastDateText.textContent = 'Awaiting connection';
   }
   if (el.forecastUrgencyPill) {
     el.forecastUrgencyPill.textContent = 'Standby';
@@ -982,57 +998,15 @@ function renderForecastIdle() {
   }
 }
 
-function renderForecastLoading() {
-  if (el.forecastMonthsText) {
-    el.forecastMonthsText.textContent = '...';
-    el.forecastMonthsText.classList.add('skeleton-shimmer');
-  }
-  if (el.forecastSubtextLabel) {
-    el.forecastSubtextLabel.textContent = 'Simulating degradation...';
-  }
-  if (el.forecastDateText) {
-    el.forecastDateText.textContent = 'Calculating trajectory...';
-  }
-  if (el.forecastUrgencyPill) {
-    el.forecastUrgencyPill.textContent = 'Simulating';
-    el.forecastUrgencyPill.className = 'px-3.5 py-1 rounded-full text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 animate-pulse';
-  }
-  if (el.forecastCurrentHealth) {
-    el.forecastCurrentHealth.textContent = '—';
-  }
-  if (el.forecastProgressBar) {
-    el.forecastProgressBar.style.width = '0%';
-  }
-  if (el.forecastCyclesLeft) {
-    el.forecastCyclesLeft.textContent = 'Analyzing cycles...';
-  }
-  if (el.forecastDailyCadence) {
-    el.forecastDailyCadence.textContent = '—';
-  }
-  if (el.simCapResult) {
-    el.simCapResult.classList.add('hidden');
-  }
-  if (el.simCapToggle) {
-    el.simCapToggle.setAttribute('aria-checked', 'true');
-    el.simCapToggle.classList.remove('bg-zinc-700');
-    el.simCapToggle.classList.add('bg-indigo-600');
-    el.simCapKnob?.classList.add('translate-x-5');
-    el.simCapKnob?.classList.remove('translate-x-0');
-  }
-}
+function renderForecast(forecast) {
+  if (!forecast || !el.forecastMonthsText) return;
+  state.normalForecast = forecast;
 
-function renderForecastPopulated(forecast) {
-  if (!forecast) {
-    renderForecastIdle();
-    return;
-  }
   if (el.forecastMonthsText) {
     el.forecastMonthsText.classList.remove('skeleton-shimmer');
   }
 
-  const sim = forecast.simulation_80_cap;
-  const monthsVal = (sim?.extended_months !== undefined && sim.extended_months !== null) ? sim.extended_months : forecast.months_remaining;
-  const targetDateRaw = sim?.projected_date_iso || forecast.projected_date_formatted || forecast.projected_date_iso || '—';
+  const targetDateRaw = forecast.projected_date_formatted || forecast.projected_date_iso || '—';
   const targetDateFormatted = formatTargetMonthYear(targetDateRaw);
 
   if (forecast.urgency === 'Service Recommended' || (forecast.current_health_pct && forecast.current_health_pct <= 80.0)) {
@@ -1044,7 +1018,7 @@ function renderForecastPopulated(forecast) {
       el.forecastUrgencyPill.className = 'px-3.5 py-1 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30';
     }
   } else {
-    if (el.forecastMonthsText) el.forecastMonthsText.textContent = `~${monthsVal} mo`;
+    if (el.forecastMonthsText) el.forecastMonthsText.textContent = `~${forecast.months_remaining} mo`;
     if (el.forecastSubtextLabel) {
       el.forecastSubtextLabel.textContent = targetDateFormatted !== '—' ? `Estimated to 80%: ${targetDateFormatted}` : 'Estimated to 80%';
     }
@@ -1074,11 +1048,43 @@ function renderForecastPopulated(forecast) {
     el.forecastProgressBar.style.width = `${progressPct}%`;
   }
 
-  if (el.simCapExtraText && sim) {
-    const extraMonths = sim.extra_months || 18.0;
-    const extraYears = (extraMonths / 12.0).toFixed(1);
+  // If 80% simulation toggle is active, update the side-by-side comparison too
+  if (state.is80CapSimulated) {
+    renderSimulatedForecast(forecast);
+  }
+}
+
+function renderSimulatedForecast(forecast) {
+  if (!forecast) return;
+  const sim = forecast.simulation_80_cap;
+  if (!sim) return;
+
+  const extraMonths = sim.extra_months || 18.0;
+  const extraYears = (extraMonths / 12.0).toFixed(1);
+
+  const normalDateFormatted = formatTargetMonthYear(forecast.projected_date_formatted || forecast.projected_date_iso);
+  const cappedDateFormatted = sim.projected_date_iso
+    ? formatTargetMonthYear(sim.projected_date_iso)
+    : calculateProjectedDateFromDays(sim.extended_days || (sim.extended_months * 30.44));
+
+  if (el.simCapExtraText) {
     el.simCapExtraText.textContent = `+${extraYears} years (~${extraMonths} extra months)`;
-    el.simCapResult?.classList.remove('hidden');
+  }
+  if (el.simCompareNormalMonths) {
+    el.simCompareNormalMonths.textContent = `~${forecast.months_remaining} mo`;
+  }
+  if (el.simCompareNormalDetail) {
+    el.simCompareNormalDetail.textContent = `${normalDateFormatted} · ~${forecast.cycles_remaining} cycles`;
+  }
+  if (el.simCompareCappedMonths) {
+    el.simCompareCappedMonths.textContent = `~${sim.extended_months} mo`;
+  }
+  if (el.simCompareCappedDetail) {
+    el.simCompareCappedDetail.textContent = `${cappedDateFormatted} · +${sim.lifespan_extension_pct || 82}% gain`;
+  }
+
+  if (el.simCapResult) {
+    el.simCapResult.classList.remove('hidden');
   }
 
   if (el.simCapToggle) {
@@ -1127,7 +1133,6 @@ function renderForecastError(message = 'Forecast calculation error', subtext = '
 
   // Revert toggle state to OFF
   state.is80CapSimulated = false;
-  state.forecastData = null;
   if (el.simCapToggle) {
     el.simCapToggle.setAttribute('aria-checked', 'false');
     el.simCapToggle.classList.remove('bg-indigo-600');
@@ -1140,7 +1145,6 @@ function renderForecastError(message = 'Forecast calculation error', subtext = '
 async function handleSimCapToggle() {
   const isConnected = !!(state.systemStatus?.active_device_count > 0 || state.snapshot?.connected || state.selectedSerial);
   if (!isConnected) {
-    renderForecastIdle();
     renderForecastInsufficientData('Awaiting device connection');
     if (el.simCapToggle) {
       el.simCapToggle.setAttribute('aria-checked', 'false');
@@ -1157,16 +1161,37 @@ async function handleSimCapToggle() {
   const isCapped = state.is80CapSimulated;
 
   if (!isCapped) {
-    // State 4: CLEARED -> Invalidate in-flight and revert to IDLE
+    // Toggle OFF: hide simulation, retain normal forecast
     forecastRequestId++;
-    state.forecastData = null;
-    renderForecastIdle();
+    if (el.simCapResult) el.simCapResult.classList.add('hidden');
+    if (el.simCapToggle) {
+      el.simCapToggle.setAttribute('aria-checked', 'false');
+      el.simCapToggle.classList.remove('bg-indigo-600');
+      el.simCapToggle.classList.add('bg-zinc-700');
+      el.simCapKnob?.classList.remove('translate-x-5');
+      el.simCapKnob?.classList.add('translate-x-0');
+    }
+    if (state.normalForecast) {
+      renderForecast(state.normalForecast);
+    }
     return;
   }
 
-  // State 2: LOADING
-  renderForecastLoading();
+  // Toggle ON: show simulation side-by-side
+  if (el.simCapToggle) {
+    el.simCapToggle.setAttribute('aria-checked', 'true');
+    el.simCapToggle.classList.remove('bg-zinc-700');
+    el.simCapToggle.classList.add('bg-indigo-600');
+    el.simCapKnob?.classList.add('translate-x-5');
+    el.simCapKnob?.classList.remove('translate-x-0');
+  }
 
+  // If already in memory, display immediately
+  if (state.normalForecast) {
+    renderSimulatedForecast(state.normalForecast);
+  }
+
+  // Also query fresh from /api/prediction (debounced)
   const reqId = ++forecastRequestId;
   const targetSerial = state.selectedSerial || state.snapshot?.device_serial;
   const url = targetSerial ? `/api/prediction?serial=${encodeURIComponent(targetSerial)}` : '/api/prediction';
@@ -1175,25 +1200,20 @@ async function handleSimCapToggle() {
     const res = await fetch(url);
     if (reqId !== forecastRequestId || !state.is80CapSimulated) return;
 
-    if (!res.ok) {
-      throw new Error(`Server returned HTTP ${res.status}`);
-    }
-
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (reqId !== forecastRequestId || !state.is80CapSimulated) return;
 
-    if (data.insufficient_data || !data.forecast) {
-      renderForecastInsufficientData(data.message || 'Not enough data yet');
-      return;
+    if (data.forecast) {
+      renderForecast(data.forecast);
+      renderSimulatedForecast(data.forecast);
     }
-
-    // State 3: POPULATED
-    state.forecastData = data.forecast;
-    renderForecastPopulated(data.forecast);
   } catch (err) {
     if (reqId !== forecastRequestId || !state.is80CapSimulated) return;
-    console.warn('Failed to calculate longevity forecast:', err);
-    renderForecastError('Forecast calculation error', 'API request failed');
+    console.warn('Simulation prediction fetch failed:', err);
+    if (!state.normalForecast) {
+      renderForecastError('Forecast calculation error', 'API request failed');
+    }
   }
 }
 

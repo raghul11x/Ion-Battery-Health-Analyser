@@ -428,7 +428,7 @@
             <div class="py-2 flex items-baseline gap-3">
               <span id="forecast-months-text" class="text-5xl md:text-6xl font-black text-white font-mono leading-none">—</span>
               <div class="flex flex-col">
-                <span id="forecast-subtext-label" class="text-xs uppercase tracking-widest text-zinc-400 font-bold">Toggle on to run forecast</span>
+                <span id="forecast-subtext-label" class="text-xs uppercase tracking-widest text-zinc-400 font-bold">Estimated To 80%</span>
                 <span id="forecast-date-text" class="text-sm font-semibold text-zinc-300">—</span>
               </div>
             </div>
@@ -449,7 +449,7 @@
             </div>
 
             <!-- 80% Charging Cap Simulator Toggle -->
-            <div class="p-4 rounded-2xl bg-[#0F1024]/80 border border-white/[0.08] space-y-2 mt-4">
+            <div class="p-4 rounded-2xl bg-[#0F1024]/80 border border-white/[0.08] space-y-2.5 mt-4">
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-2">
                   <div class="w-7 h-7 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400">
@@ -468,9 +468,30 @@
                 </button>
               </div>
 
-              <!-- Simulation Result Pill -->
-              <div id="sim-cap-result" class="text-xs text-indigo-300 font-medium pt-1 hidden">
-                ✨ Extends useful lifespan by <strong id="sim-cap-extra-text" class="text-white">+1.8 years</strong>.
+              <!-- Simulation Result & Side-by-Side Comparison (Option b) -->
+              <div id="sim-cap-result" class="pt-1.5 hidden space-y-2.5">
+                <div class="text-xs text-indigo-300 font-medium flex items-center gap-1.5">
+                  <span class="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"></span>
+                  ✨ Extends useful lifespan by <strong id="sim-cap-extra-text" class="text-white">+1.8 years</strong>.
+                </div>
+                <!-- Side-by-Side Comparison Grid -->
+                <div class="grid grid-cols-2 gap-2.5 pt-0.5">
+                  <!-- Normal / Baseline -->
+                  <div class="p-2.5 rounded-xl bg-black/40 border border-white/5 space-y-1">
+                    <div class="text-[10px] uppercase font-bold text-zinc-400 tracking-wider">Normal Habit</div>
+                    <div id="sim-compare-normal-months" class="text-lg font-black text-white font-mono leading-tight">—</div>
+                    <div id="sim-compare-normal-detail" class="text-[11px] text-zinc-400 font-mono">—</div>
+                  </div>
+                  <!-- 80% Cap Simulated -->
+                  <div class="p-2.5 rounded-xl bg-indigo-950/40 border border-indigo-500/25 space-y-1">
+                    <div class="text-[10px] uppercase font-bold text-indigo-300 tracking-wider flex items-center justify-between">
+                      <span>80% Cap</span>
+                      <span class="text-[9px] px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-200 border border-indigo-400/30">SIMULATED</span>
+                    </div>
+                    <div id="sim-compare-capped-months" class="text-lg font-black text-indigo-200 font-mono leading-tight">—</div>
+                    <div id="sim-compare-capped-detail" class="text-[11px] text-indigo-300/80 font-mono">—</div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
