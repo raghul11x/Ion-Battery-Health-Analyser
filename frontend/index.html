@@ -48,10 +48,10 @@
 
     <!-- Center: Floating Pill Capsule Nav -->
     <nav class="capsule-nav flex items-center gap-1 shadow-lg">
-      <button class="capsule-segment active" data-tab="dashboard">Dashboard</button>
-      <button class="capsule-segment" data-tab="trends">History</button>
-      <button class="capsule-segment" data-tab="habits">Insights</button>
-      <button class="capsule-segment" data-tab="diagnostics">Diagnostics</button>
+      <button class="capsule-segment ion-glow-btn ion-glow-btn-secondary active" data-tab="dashboard">Dashboard</button>
+      <button class="capsule-segment ion-glow-btn ion-glow-btn-secondary" data-tab="trends">History</button>
+      <button class="capsule-segment ion-glow-btn ion-glow-btn-secondary" data-tab="habits">Insights</button>
+      <button class="capsule-segment ion-glow-btn ion-glow-btn-secondary" data-tab="diagnostics">Diagnostics</button>
     </nav>
 
     <!-- Right: Connection Capsule & Actions -->
@@ -67,16 +67,17 @@
       </div>
 
       <!-- Seed Demo Data Button -->
-      <button id="seed-btn" class="pill-button bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 border border-white/10 text-xs flex items-center gap-1.5 transition" data-tooltip="Populates a 30-day simulated dataset to preview degradation curves and insights.">
+      <button id="seed-btn" class="pill-button ion-glow-btn ion-glow-btn-secondary bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 border border-white/10 text-xs flex items-center gap-1.5 transition" data-tooltip="Populates a 30-day simulated dataset to preview degradation curves and insights.">
         <span>Seed 30D</span>
       </button>
 
       <!-- Connect / Probe Device Pill CTA Button (Design Doc v2 §5.2) -->
-      <button id="probe-btn" class="pill-button bg-white hover:bg-zinc-200 text-black text-xs flex items-center gap-1.5 font-bold shadow-md transition" data-tooltip="Scan and probe connected USB Android device">
-        <svg id="probe-icon" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <button id="probe-btn" class="pill-button ion-glow-btn ion-glow-btn-primary text-white text-xs flex items-center gap-1.5 font-bold shadow-md transition" data-tooltip="Scan and probe connected USB Android device">
+        <span class="ion-shine" aria-hidden="true"><span></span></span>
+        <svg id="probe-icon" class="w-3.5 h-3.5 relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
-        Connect Device
+        <span class="relative z-10">Connect Device</span>
       </button>
     </div>
 
@@ -294,12 +295,17 @@
               <div class="flex items-center gap-3">
                 <!-- Additive Stale Chart Timestamp (Visible only in Disconnected State) -->
                 <span id="chart-last-synced-label" class="hidden text-[11px] font-mono text-zinc-400"></span>
+                <!-- Dataset Metric Toggles (Health % / Temp) -->
+                <div class="flex items-center gap-1 bg-black/50 p-1 rounded-full border border-white/10 text-xs">
+                  <button id="toggle-metric-health" class="chart-metric-pill ion-glow-btn ion-glow-btn-secondary active px-2.5 py-1 rounded-full text-xs font-semibold transition" data-dataset="0" data-tooltip="Toggle Battery Health % curve">Health %</button>
+                  <button id="toggle-metric-temp" class="chart-metric-pill ion-glow-btn ion-glow-btn-secondary active px-2.5 py-1 rounded-full text-xs font-semibold transition" data-dataset="1" data-tooltip="Toggle Temperature curve">Temp</button>
+                </div>
                 <!-- Timeline Filter Pills -->
                 <div class="flex items-center gap-1 bg-black/50 p-1 rounded-full border border-white/10 text-xs">
-                  <button class="time-filter-pill px-3 py-1 rounded-full font-medium text-zinc-400 hover:text-white transition" data-days="7">7D</button>
-                  <button class="time-filter-pill px-3 py-1 rounded-full font-medium text-zinc-400 hover:text-white transition" data-days="14">14D</button>
-                  <button class="time-filter-pill active px-3 py-1 rounded-full font-bold bg-white text-black shadow transition" data-days="30">30D</button>
-                  <button class="time-filter-pill px-3 py-1 rounded-full font-medium text-zinc-400 hover:text-white transition" data-days="90">90D</button>
+                  <button class="time-filter-pill ion-glow-btn ion-glow-btn-secondary px-3 py-1 rounded-full font-medium text-zinc-400 hover:text-white transition" data-days="7">7D</button>
+                  <button class="time-filter-pill ion-glow-btn ion-glow-btn-secondary px-3 py-1 rounded-full font-medium text-zinc-400 hover:text-white transition" data-days="14">14D</button>
+                  <button class="time-filter-pill ion-glow-btn ion-glow-btn-secondary active px-3 py-1 rounded-full font-bold bg-white text-black shadow transition" data-days="30">30D</button>
+                  <button class="time-filter-pill ion-glow-btn ion-glow-btn-secondary px-3 py-1 rounded-full font-medium text-zinc-400 hover:text-white transition" data-days="90">90D</button>
                 </div>
               </div>
             </div>

@@ -649,4 +649,287 @@ body {
   }
 }
 
+/* ==========================================================================
+   EURA RADIAL GLOW BUTTON SYSTEM (.ion-glow-btn)
+   Ported from RadialGlow reference with EURA Indigo-Violet Palette
+   ========================================================================== */
+
+@property --ion-pos-x { syntax: '<percentage>'; initial-value: 40%; inherits: false; }
+@property --ion-pos-y { syntax: '<percentage>'; initial-value: 140%; inherits: false; }
+@property --ion-spread-x { syntax: '<percentage>'; initial-value: 130%; inherits: false; }
+@property --ion-spread-y { syntax: '<percentage>'; initial-value: 170%; inherits: false; }
+@property --ion-color-1 { syntax: '<color>'; initial-value: #0A0E27; inherits: false; }
+@property --ion-color-2 { syntax: '<color>'; initial-value: #1E1B4B; inherits: false; }
+@property --ion-color-3 { syntax: '<color>'; initial-value: #312E81; inherits: false; }
+@property --ion-color-4 { syntax: '<color>'; initial-value: #4F46E5; inherits: false; }
+@property --ion-color-5 { syntax: '<color>'; initial-value: #0B0B10; inherits: false; }
+@property --ion-border-angle { syntax: '<angle>'; initial-value: 180deg; inherits: true; }
+@property --ion-border-color-1 { syntax: '<color>'; initial-value: rgba(165, 180, 252, 0.7); inherits: true; }
+@property --ion-border-color-2 { syntax: '<color>'; initial-value: rgba(99, 102, 241, 0.25); inherits: true; }
+@property --ion-stop-1 { syntax: '<percentage>'; initial-value: 37.35%; inherits: false; }
+@property --ion-stop-2 { syntax: '<percentage>'; initial-value: 61.36%; inherits: false; }
+@property --ion-stop-3 { syntax: '<percentage>'; initial-value: 78.42%; inherits: false; }
+@property --ion-stop-4 { syntax: '<percentage>'; initial-value: 93.52%; inherits: false; }
+@property --ion-stop-5 { syntax: '<percentage>'; initial-value: 100%; inherits: false; }
+
+.ion-glow-btn {
+  --transition: 0.25s;
+  --spark: 1.8s;
+  --speed: 1.2s;
+  --cut: 1px;
+  --bg: radial-gradient(
+    var(--ion-spread-x, 130%) var(--ion-spread-y, 170%) at var(--ion-pos-x, 40%) var(--ion-pos-y, 140%),
+    var(--ion-color-1, #0A0E27) var(--ion-stop-1, 37.35%),
+    var(--ion-color-2, #1E1B4B) var(--ion-stop-2, 61.36%),
+    var(--ion-color-3, #312E81) var(--ion-stop-3, 78.42%),
+    var(--ion-color-4, #4F46E5) var(--ion-stop-4, 93.52%),
+    var(--ion-color-5, #0B0B10) var(--ion-stop-5, 100%)
+  );
+
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: var(--bg);
+  cursor: pointer;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  transition: 
+    --ion-pos-x 0.75s, --ion-pos-y 0.75s,
+    --ion-spread-x 0.75s, --ion-spread-y 0.75s,
+    --ion-color-1 0.75s, --ion-color-2 0.75s, --ion-color-3 0.75s, --ion-color-4 0.75s, --ion-color-5 0.75s,
+    --ion-border-angle 0.75s, --ion-border-color-1 0.75s, --ion-border-color-2 0.75s,
+    --ion-stop-1 0.75s, --ion-stop-2 0.75s, --ion-stop-3 0.75s, --ion-stop-4 0.75s, --ion-stop-5 0.75s,
+    background 0.4s ease, box-shadow 0.3s ease, transform 0.15s ease, color 0.2s ease;
+}
+
+/* 1px Animated Gradient Border with Mask-Composite */
+.ion-glow-btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background-image: linear-gradient(
+    var(--ion-border-angle, 180deg),
+    var(--ion-border-color-1, rgba(165, 180, 252, 0.7)),
+    var(--ion-border-color-2, rgba(99, 102, 241, 0.25))
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 5;
+  transition: background-image 0.5s ease, opacity 0.3s ease;
+}
+
+/* --------------------------------------------------------------------------
+   PRIMARY TIER: Full Glow + Animated Conic Shine Sweep (Connect Device CTA)
+   -------------------------------------------------------------------------- */
+.ion-glow-btn-primary {
+  --ion-pos-x: 40%;
+  --ion-pos-y: 140%;
+  --ion-spread-x: 130%;
+  --ion-spread-y: 170%;
+  --ion-color-1: #0A0E27;
+  --ion-color-2: #1E1B4B;
+  --ion-color-3: #312E81;
+  --ion-color-4: #4F46E5;
+  --ion-color-5: #0B0B10;
+  --ion-stop-1: 37.35%;
+  --ion-stop-2: 61.36%;
+  --ion-stop-3: 78.42%;
+  --ion-stop-4: 93.52%;
+  --ion-stop-5: 100%;
+  --ion-border-angle: 180deg;
+  --ion-border-color-1: rgba(165, 180, 252, 0.75);
+  --ion-border-color-2: rgba(99, 102, 241, 0.35);
+  --button-line-opacity: 0.8;
+
+  color: #FFFFFF !important;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
+  box-shadow: 0 4px 20px -2px rgba(79, 70, 229, 0.45), 0 0 14px -2px rgba(99, 102, 241, 0.3);
+}
+
+.ion-glow-btn-primary:hover {
+  --ion-pos-x: 0%;
+  --ion-pos-y: 120%;
+  --ion-spread-x: 110.24%;
+  --ion-spread-y: 110.2%;
+  --ion-color-1: #0A0E27;
+  --ion-color-2: #818CF8;
+  --ion-color-3: #4F46E5;
+  --ion-color-4: #1E1B4B;
+  --ion-color-5: #0B0B10;
+  --ion-stop-1: 0%;
+  --ion-stop-2: 12%;
+  --ion-stop-3: 35.44%;
+  --ion-stop-4: 71.34%;
+  --ion-stop-5: 150%;
+  --ion-border-angle: 190deg;
+  --ion-border-color-1: rgba(224, 231, 255, 0.95);
+  --ion-border-color-2: rgba(129, 140, 248, 0.6);
+  --button-line-opacity: 1;
+
+  box-shadow: 0 6px 28px -2px rgba(99, 102, 241, 0.65), 0 0 24px 2px rgba(129, 140, 248, 0.45);
+}
+
+.ion-glow-btn-primary:active {
+  transform: scale(0.97);
+  box-shadow: 0 2px 10px rgba(79, 70, 229, 0.5);
+}
+
+/* Conic Shine Sweep Container & Animation */
+.ion-shine {
+  position: absolute;
+  inset: 0;
+  container-type: size;
+  border-radius: inherit;
+  mix-blend-mode: soft-light;
+  opacity: var(--button-line-opacity, 0.8);
+  transition: opacity 0.3s ease;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.ion-shine span {
+  position: absolute;
+  inset: 0;
+  height: 100cqh;
+  aspect-ratio: 1;
+  animation: ion-shine-slide var(--speed, 1.2s) ease-in-out infinite alternate;
+  overflow: visible;
+}
+
+.ion-shine span::before {
+  content: "";
+  position: absolute;
+  inset: -100%;
+  background: conic-gradient(
+    from calc(270deg - (90deg * 0.5)),
+    transparent 0,
+    #FFFFFF 90deg,
+    transparent 90deg
+  );
+  animation: ion-shine-spin calc(var(--speed, 1.2s) * 2) infinite linear;
+}
+
+@keyframes ion-shine-spin {
+  0% { transform: rotate(0deg); }
+  15%, 35% { transform: rotate(90deg); }
+  65%, 85% { transform: rotate(270deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes ion-shine-slide {
+  to { transform: translate(calc(100cqw - 100%), 0); }
+}
+
+/* --------------------------------------------------------------------------
+   SECONDARY TIER: Lighter / Static Variant (Border glow, no shine sweep)
+   -------------------------------------------------------------------------- */
+.ion-glow-btn-secondary {
+  --ion-pos-x: 50%;
+  --ion-pos-y: 130%;
+  --ion-spread-x: 120%;
+  --ion-spread-y: 140%;
+  --ion-color-1: #0F1024;
+  --ion-color-2: #141632;
+  --ion-color-3: #1B1B3A;
+  --ion-color-4: #282756;
+  --ion-color-5: #0B0B10;
+  --ion-stop-1: 40%;
+  --ion-stop-2: 65%;
+  --ion-stop-3: 80%;
+  --ion-stop-4: 95%;
+  --ion-stop-5: 100%;
+  --ion-border-angle: 180deg;
+  --ion-border-color-1: rgba(255, 255, 255, 0.12);
+  --ion-border-color-2: rgba(99, 102, 241, 0.18);
+
+  color: #D4D4D8;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.ion-glow-btn-secondary:hover {
+  --ion-pos-x: 50%;
+  --ion-pos-y: 110%;
+  --ion-spread-x: 110%;
+  --ion-spread-y: 120%;
+  --ion-color-1: #1E1B4B;
+  --ion-color-2: #2E2866;
+  --ion-color-3: #1F1D48;
+  --ion-color-4: #151533;
+  --ion-color-5: #0B0B10;
+  --ion-border-angle: 190deg;
+  --ion-border-color-1: rgba(165, 180, 252, 0.55);
+  --ion-border-color-2: rgba(99, 102, 241, 0.4);
+
+  color: #FFFFFF;
+  box-shadow: 0 4px 16px -2px rgba(49, 46, 129, 0.4), 0 0 10px rgba(99, 102, 241, 0.2);
+}
+
+.ion-glow-btn-secondary:active {
+  transform: scale(0.97);
+}
+
+/* Secondary tier explicitly disables any animated shine overlay */
+.ion-glow-btn-secondary .ion-shine {
+  display: none !important;
+}
+
+/* Active State Enhancements for Secondary Tier */
+.capsule-segment.ion-glow-btn-secondary.active {
+  background: #FFFFFF !important;
+  color: #0A0E27 !important;
+  box-shadow: 0 4px 14px rgba(255, 255, 255, 0.25), 0 0 12px rgba(99, 102, 241, 0.3) !important;
+}
+
+.capsule-segment.ion-glow-btn-secondary.active::after {
+  background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.85), rgba(99, 102, 241, 0.45)) !important;
+}
+
+.time-filter-pill.ion-glow-btn-secondary.active {
+  background: #FFFFFF !important;
+  color: #000000 !important;
+  box-shadow: 0 2px 10px rgba(255, 255, 255, 0.25), 0 0 8px rgba(99, 102, 241, 0.2) !important;
+}
+
+.time-filter-pill.ion-glow-btn-secondary.active::after {
+  background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.8), rgba(99, 102, 241, 0.4)) !important;
+}
+
+.chart-metric-pill.ion-glow-btn-secondary.active {
+  background: rgba(79, 70, 229, 0.32) !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.4) !important;
+}
+
+.chart-metric-pill.ion-glow-btn-secondary.active::after {
+  background-image: linear-gradient(135deg, rgba(165, 180, 252, 0.65), rgba(99, 102, 241, 0.45)) !important;
+}
+
+.chart-metric-pill.ion-glow-btn-secondary:not(.active) {
+  opacity: 0.55;
+  color: #71717A !important;
+}
+
+/* Reduced Motion: Disable animations */
+@media (prefers-reduced-motion: reduce) {
+  .ion-shine,
+  .ion-shine span,
+  .ion-shine span::before {
+    animation: none !important;
+    display: none !important;
+  }
+  .ion-glow-btn {
+    transition: none !important;
+  }
+}
+
+
 

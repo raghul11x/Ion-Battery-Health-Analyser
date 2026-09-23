@@ -1623,6 +1623,18 @@ function init() {
     });
   });
 
+  // Chart Metric Toggle Buttons (Health % / Temp)
+  document.querySelectorAll('.chart-metric-pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!state.chartInstance) return;
+      const idx = parseInt(btn.dataset.dataset, 10);
+      const isVisible = state.chartInstance.isDatasetVisible(idx);
+      state.chartInstance.setDatasetVisibility(idx, !isVisible);
+      state.chartInstance.update();
+      btn.classList.toggle('active', !isVisible);
+    });
+  });
+
   // Disconnected/standby state copy on boot
   updateHeroHeadline(false);
 
@@ -1764,11 +1776,17 @@ function initCursorTrackingGlow() {
     setupDelegatedGlow(headerActions, '.pill-button, #connection-pill');
   }
 
-  // C. Delegated tracking on Timeline Filter Pills (7D / 14D / 30D / 90D)
+  // C. Delegated tracking on Timeline Filter Pills (7D / 14D / 30D / 90D) and Metric Toggles
   const timeFilterContainer = document.querySelector('.time-filter-pill')?.parentElement;
   if (timeFilterContainer) {
     setupDelegatedGlow(timeFilterContainer, '.time-filter-pill');
   }
+
+  const chartMetricContainer = document.querySelector('.chart-metric-pill')?.parentElement;
+  if (chartMetricContainer) {
+    setupDelegatedGlow(chartMetricContainer, '.chart-metric-pill');
+  }
+
 
   // D. Surface tracking on Cards (Hero card, Health Report, Current Charge, Chemical Capacity, etc.)
   const cardElements = document.querySelectorAll('#hero-card, .eura-dark-card, .eura-indigo-card');
