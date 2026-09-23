@@ -1041,7 +1041,10 @@ class DeviceProfiler:
         """
         # Step 1: Run local probe first (always authoritative)
         fields_status, probe_data = self.evaluate_local_fields(serial)
-        deep_scan_raw = self.adb.deep_scan(serial) if hasattr(self.adb, "deep_scan") else {}
+        # Use cached deep_scan result — the batterystats + full sysfs excavation is
+        # expensive and its data (OEM registers, dischg history) does not change
+        # within the same USB connection session.
+        deep_scan_raw = self.adb.get_cached_deep_scan(serial) if hasattr(self.adb, "get_cached_deep_scan") else {}
         deep_scan_data = deep_scan_raw if isinstance(deep_scan_raw, dict) else {}
         raw_text = deep_scan_data.get("raw_dump_text")
         raw_deep_scan_text = raw_text if isinstance(raw_text, str) else ""
@@ -1258,11 +1261,126 @@ class DeviceProfiler:
         print("=" * 90 + "\n")
 
 
+async def check_model_health() -> Dict[str, Any]:
+    """
+    Startup health-check for all three primary AI model slots.
+
+    Pings OPENROUTER_MODEL_1, OPENROUTER_MODEL_2, and HF_MODEL with a 5-token
+    request.  If any slot returns HTTP 404, 422, or a body containing
+    'deprecated' / 'not found' / 'unknown model', it is replaced in
+    DEFAULT_MODEL_POOL with the first available fallback:
+        1. poolside/laguna-s-2.1:free  (OpenRouter)
+        2. nvidia/nemotron-3.5-lightning:free  (OpenRouter)
+
+    The majority-voting logic (2-of-3) is not touched — this only ensures the
+    three initial pool slots point to live models.
+
+    Returns a dict: { model_id: "ok" | "fallback:<new_model>" | "skipped" }
+    """
+    global DEFAULT_MODEL_POOL
+
+    FALLBACKS = ["poolside/laguna-s-2.1:free", "nvidia/nemotron-3.5-lightning:free"]
+
+    def _is_dead_response(status: int, body: str) -> bool:
+        if status in (404, 422):
+            return True
+        if status != 200:
+            body_lower = body.lower()
+            if any(kw in body_lower for kw in ["deprecated", "not found", "unknown model", "no such model"]):
+                return True
+        return False
+
+    async def _ping_openrouter(model: str) -> tuple:
+        if not OPENROUTER_API_KEY:
+            return model, "skipped"
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/phone-battery-health-analyzer",
+        }
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": "ping"}],
+            "max_tokens": 5,
+            "temperature": 0.0,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                res = await client.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload)
+                if _is_dead_response(res.status_code, res.text):
+                    logger.warning(f"[MODEL HEALTH] OpenRouter '{model}' is dead/deprecated (HTTP {res.status_code}). Will use fallback.")
+                    return model, "dead"
+                logger.info(f"[MODEL HEALTH] OpenRouter '{model}' → OK (HTTP {res.status_code})")
+                return model, "ok"
+        except Exception as e:
+            logger.debug(f"[MODEL HEALTH] OpenRouter '{model}' ping error: {e}")
+            return model, "ok"  # Network error ≠ deprecated; don't swap
+
+    async def _ping_hf(model: str) -> tuple:
+        if not HF_API_KEY:
+            return model, "skipped"
+        # Apply same alias mapping as call_huggingface
+        target = model
+        if target in ["meta-llama/Meta-Llama-3-8B-Instruct", "meta-llama/Meta-Llama-3-8B"]:
+            target = "meta-llama/Llama-3.1-8B-Instruct"
+        headers = {"Authorization": f"Bearer {HF_API_KEY}", "Content-Type": "application/json"}
+        payload = {"model": target, "messages": [{"role": "user", "content": "ping"}], "max_tokens": 5}
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                res = await client.post("https://router.huggingface.co/v1/chat/completions", headers=headers, json=payload)
+                if _is_dead_response(res.status_code, res.text):
+                    logger.warning(f"[MODEL HEALTH] HF '{model}' is dead/deprecated (HTTP {res.status_code}). Will use fallback.")
+                    return model, "dead"
+                logger.info(f"[MODEL HEALTH] HF '{model}' → OK (HTTP {res.status_code})")
+                return model, "ok"
+        except Exception as e:
+            logger.debug(f"[MODEL HEALTH] HF '{model}' ping error: {e}")
+            return model, "ok"
+
+    # Only check the first 3 pool slots (primary batch)
+    primary = DEFAULT_MODEL_POOL[:3]
+    tasks = []
+    for item in primary:
+        if item["provider"] == "openrouter":
+            tasks.append(_ping_openrouter(item["model"]))
+        else:
+            tasks.append(_ping_hf(item["model"]))
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    report: Dict[str, Any] = {}
+    fallback_idx = 0
+
+    for i, (item, result) in enumerate(zip(primary, results)):
+        if isinstance(result, Exception):
+            report[item["model"]] = "ok"  # gather exception = network issue, not deprecation
+            continue
+        orig_model, status = result
+        if status == "dead":
+            # Find next available fallback not already in pool
+            replacement = None
+            while fallback_idx < len(FALLBACKS):
+                candidate = FALLBACKS[fallback_idx]
+                fallback_idx += 1
+                if not any(m["model"] == candidate for m in DEFAULT_MODEL_POOL):
+                    replacement = candidate
+                    break
+            if replacement:
+                logger.info(f"[MODEL HEALTH] Swapping slot {i} from '{orig_model}' → '{replacement}'")
+                DEFAULT_MODEL_POOL[i] = {"provider": "openrouter", "model": replacement}
+                report[orig_model] = f"fallback:{replacement}"
+            else:
+                report[orig_model] = "dead_no_fallback"
+        else:
+            report[orig_model] = status
+
+    return report
+
+
 async def warmup_hf_model() -> None:
     """
-    Rule 3: Cold-start warm-up ping at app startup.
-    Fires a lightweight request to the HF model in the background so cold-start cost
-    is paid before any real device needs profiling.
+    Backwards-compatible cold-start warm-up ping for the HF model.
+    Delegates to check_model_health() for unified startup validation.
     """
     if not HF_API_KEY:
         logger.debug("[HF WARM-UP] HF_API_KEY not configured. Skipping startup warm-up ping.")

@@ -26,6 +26,9 @@ class DeviceWatcher:
         self.scheduler: Optional[BackgroundScheduler] = None
         self.last_connected_serial: Optional[str] = None
         self.last_logged_time: Optional[datetime] = None
+        # Per-serial timestamp of last *full* ADB probe (sysfs scan + DB write).
+        # Between full probes, fast ticks only update last_status from dumpsys battery.
+        self.last_full_probe_time: Dict[str, Optional[datetime]] = {}
         self.last_status: Dict[str, Any] = {
             "connected": False,
             "serial": None,
@@ -34,6 +37,7 @@ class DeviceWatcher:
             "last_log": None,
             "log_count_session": 0,
         }
+
 
     def poll_cycle(self) -> None:
         """Executes a single check and auto-logs if device is connected."""
@@ -51,7 +55,12 @@ class DeviceWatcher:
         if not active_devices:
             if self.last_status.get("connected"):
                 logger.info("Device disconnected.")
-                emit_status(self.last_status.get("serial"), "connection", f"Device disconnected ({self.last_status.get('serial')})", {"serial": self.last_status.get("serial")}, level="warning")
+                disconnected_serial = self.last_status.get("serial")
+                emit_status(disconnected_serial, "connection", f"Device disconnected ({disconnected_serial})", {"serial": disconnected_serial}, level="warning")
+                # Invalidate the deep-scan cache so next connection gets a fresh excavation
+                if disconnected_serial and hasattr(self.adb, "invalidate_deep_scan_cache"):
+                    self.adb.invalidate_deep_scan_cache(disconnected_serial)
+
             self.last_status["connected"] = False
             self.last_status["serial"] = None
             self.last_status["model"] = None
@@ -76,9 +85,11 @@ class DeviceWatcher:
         serial = target_device["serial"]
 
         is_fresh_connect = (self.last_connected_serial != serial)
-        interval_elapsed = (
-            self.last_logged_time is None
-            or (now - self.last_logged_time) >= timedelta(minutes=3)
+        # Full probe: on fresh connect, or if >= 3 min have passed since last full probe for this serial
+        last_full = self.last_full_probe_time.get(serial)
+        full_probe_needed = (
+            last_full is None
+            or (now - last_full) >= timedelta(minutes=3)
         )
 
         self.last_connected_serial = serial
@@ -107,15 +118,54 @@ class DeviceWatcher:
                     self.last_status["is_profiling"] = False
                     self.last_status["profiling_message"] = None
 
-        if is_fresh_connect or interval_elapsed:
-            logger.info(f"Auto-logging reading for device {serial} (Fresh connect: {is_fresh_connect})...")
+        if is_fresh_connect or full_probe_needed:
+            logger.info(f"Auto-logging full reading for device {serial} (Fresh connect: {is_fresh_connect})...")
             try:
                 self.log_reading_for_device(serial)
+                self.last_full_probe_time[serial] = now
             except Exception as e:
                 logger.error(f"Error during auto-log for device {serial}: {e}")
+        else:
+            # Fast tick: only refresh live telemetry (level/temp/voltage) without expensive sysfs scan
+            self._log_fast_reading(serial)
+
+
+    def _log_fast_reading(self, serial: str) -> None:
+        """
+        Light-weight live-telemetry refresh between full probes.
+
+        Executes a single `dumpsys battery` call (one ADB subprocess) to get
+        the current level, temperature, and voltage, then updates `last_status`
+        in memory.  Does NOT run scan_all_power_supplies(), does NOT write a DB
+        row — that keeps per-tick ADB overhead to a minimum while the UI still
+        shows live values between full 3-minute probe cycles.
+        """
+        try:
+            dumpsys = self.adb.probe_dumpsys_battery(serial)
+            if not dumpsys or "error" in dumpsys:
+                return
+            level = dumpsys.get("level")
+            temp = dumpsys.get("temperature_c")
+            voltage = dumpsys.get("voltage")
+            status_label = dumpsys.get("status_label", "Unknown")
+
+            # Update live status fields only
+            if level is not None:
+                self.last_status["live_level_pct"] = level
+            if temp is not None:
+                self.last_status["live_temp_c"] = temp
+            if voltage is not None:
+                self.last_status["live_voltage_mv"] = voltage
+            self.last_status["live_status"] = status_label
+            logger.debug(
+                f"[FAST TICK] {serial}: level={level}%, temp={temp}°C, volt={voltage}mV, status={status_label}"
+            )
+        except Exception as e:
+            logger.debug(f"[FAST TICK] Error for {serial}: {e}")
 
     def log_reading_for_device(self, serial: str) -> Optional[Dict[str, Any]]:
         """Probes the device, normalizes units, and commits a record to SQLite."""
+
         probe_data = self.adb.probe_device(serial)
         summary = probe_data["summary"]
         device_info = probe_data["device_info"]

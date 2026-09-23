@@ -94,6 +94,11 @@ class ADBClient:
 
     def __init__(self, adb_path: Optional[str] = None):
         self.adb_path = adb_path or find_adb_path()
+        # In-memory deep-scan cache — stores result per serial with timestamp.
+        # get_cached_deep_scan() returns cached result within TTL instead of
+        # re-running the expensive batterystats excavation on every profiling call.
+        self._deep_scan_cache: Dict[str, Dict] = {}
+        self._deep_scan_ts: Dict[str, float] = {}
 
     def is_available(self) -> bool:
         """Returns True if an ADB executable is discovered, dynamically retrying if needed."""
@@ -465,6 +470,41 @@ class ADBClient:
             "raw_dump_text": raw_dump_text,
         }
 
+    def get_cached_deep_scan(self, serial: str, max_age_seconds: float = 3600.0) -> Dict[str, Any]:
+        """
+        Returns a cached deep_scan() result for the given serial if one exists
+        and is younger than max_age_seconds (default: 1 hour).
+
+        The deep_scan() excavation (full sysfs enumeration + dumpsys batterystats
+        --charged / --history) is expensive (~10-30s on a real device) and the
+        data it captures (static OEM registers, batterystats discharge history)
+        does not change meaningfully within the same USB connection session.
+
+        This cache is per-ADBClient instance (in-memory only).  Invalidation
+        happens automatically when the TTL expires or when the calling code
+        calls `invalidate_deep_scan_cache(serial)` on disconnect.
+        """
+        import time as _time
+        now = _time.monotonic()
+        cached_at = self._deep_scan_ts.get(serial)
+        if cached_at is not None and (now - cached_at) < max_age_seconds:
+            cached = self._deep_scan_cache.get(serial)
+            if cached is not None:
+                logger.debug(f"[ADB CACHE] Returning cached deep_scan for {serial} (age={now - cached_at:.0f}s)")
+                return cached
+
+        logger.info(f"[ADB CACHE] Running fresh deep_scan for {serial}...")
+        result = self.deep_scan(serial)
+        self._deep_scan_cache[serial] = result
+        self._deep_scan_ts[serial] = now
+        return result
+
+    def invalidate_deep_scan_cache(self, serial: str) -> None:
+        """Clears the cached deep_scan result for a given serial (call on disconnect)."""
+        self._deep_scan_cache.pop(serial, None)
+        self._deep_scan_ts.pop(serial, None)
+        logger.debug(f"[ADB CACHE] Deep-scan cache invalidated for {serial}")
+
     def probe_device(self, serial: str) -> Dict[str, Any]:
         """
         Executes a complete battery and hardware probe for a given device:
@@ -473,6 +513,7 @@ class ADBClient:
         3. Identifies charge_full, charge_full_design, charge_counter, cycle_count with exact file paths.
         4. Normalizes units and generates the raw diagnostic dump.
         """
+
         props = self.get_device_props(serial)
         dumpsys = self.probe_dumpsys_battery(serial)
         power_tree = self.scan_all_power_supplies(serial)
