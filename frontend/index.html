@@ -419,8 +419,8 @@
                 <div class="eyebrow-label text-indigo-400">Longevity Forecast</div>
                 <h3 class="text-xl font-black text-white tracking-tight">Replacement Timeline</h3>
               </div>
-              <span id="forecast-urgency-pill" class="px-3.5 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                Upcoming
+              <span id="forecast-urgency-pill" class="px-3.5 py-1 rounded-full text-xs font-bold bg-zinc-800 text-zinc-400 border border-white/10">
+                Standby
               </span>
             </div>
 
@@ -428,7 +428,7 @@
             <div class="py-2 flex items-baseline gap-3">
               <span id="forecast-months-text" class="text-5xl md:text-6xl font-black text-white font-mono leading-none">—</span>
               <div class="flex flex-col">
-                <span class="text-xs uppercase tracking-widest text-zinc-400 font-bold">Estimated To 80%</span>
+                <span id="forecast-subtext-label" class="text-xs uppercase tracking-widest text-zinc-400 font-bold">Toggle on to run forecast</span>
                 <span id="forecast-date-text" class="text-sm font-semibold text-zinc-300">—</span>
               </div>
             </div>
@@ -440,11 +440,11 @@
                 <span>Service Limit: <strong class="text-rose-400">80.0%</strong></span>
               </div>
               <div class="w-full bg-black/40 h-2.5 rounded-full overflow-hidden border border-white/10">
-                <div id="forecast-progress-bar" class="h-full bg-gradient-to-r from-emerald-500 via-amber-500 to-rose-500 rounded-full transition-all duration-500" style="width: 83%;"></div>
+                <div id="forecast-progress-bar" class="h-full bg-gradient-to-r from-emerald-500 via-amber-500 to-rose-500 rounded-full transition-all duration-500" style="width: 0%;"></div>
               </div>
               <div class="flex justify-between text-[11px] text-zinc-500">
                 <span id="forecast-cycles-left">— cycles remaining</span>
-                <span id="forecast-daily-cadence">~1.0 cycles/day</span>
+                <span id="forecast-daily-cadence">— cycles/day</span>
               </div>
             </div>
 

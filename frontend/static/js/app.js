@@ -16,6 +16,8 @@ const state = {
   pollTimer: null,
   isRefreshing: false,
   is80CapSimulated: false,
+  forecastData: null,
+  forecastLoading: false,
   calibrationPollTimer: null,
   cachedDevices: [],
   lastDevicesFetchTime: 0,
@@ -110,6 +112,7 @@ const el = {
   // Forecast & Lifespan
   forecastUrgencyPill: document.getElementById('forecast-urgency-pill'),
   forecastMonthsText: document.getElementById('forecast-months-text'),
+  forecastSubtextLabel: document.getElementById('forecast-subtext-label'),
   forecastDateText: document.getElementById('forecast-date-text'),
   forecastCurrentHealth: document.getElementById('forecast-current-health'),
   forecastProgressBar: document.getElementById('forecast-progress-bar'),
@@ -634,16 +637,13 @@ function renderIdleState() {
   if (el.capFooterNote) el.capFooterNote.textContent = 'Connect phone to read hardware registers.';
   if (el.bdSourcesPill) el.bdSourcesPill.innerHTML = '';
 
-  // 6. Forecast Card
-  if (el.forecastMonthsText) el.forecastMonthsText.textContent = '—';
-  if (el.forecastDateText) el.forecastDateText.textContent = 'Awaiting connection';
-  if (el.forecastUrgencyPill) {
-    el.forecastUrgencyPill.textContent = 'Standby';
-    el.forecastUrgencyPill.className = 'px-3.5 py-1 rounded-full text-xs font-bold bg-zinc-800 text-zinc-400 border border-white/10';
+  // 6. Forecast Card (Gated to 80% toggle)
+  renderForecastIdle();
+  if (el.simCapToggle) {
+    el.simCapToggle.disabled = true;
+    el.simCapToggle.classList.add('opacity-40', 'cursor-not-allowed');
+    el.simCapToggle.setAttribute('data-tooltip', 'Connect phone to run longevity forecast');
   }
-  if (el.forecastCurrentHealth) el.forecastCurrentHealth.textContent = '—';
-  if (el.forecastCyclesLeft) el.forecastCyclesLeft.textContent = '— cycles remaining';
-  if (el.forecastProgressBar) el.forecastProgressBar.style.width = '0%';
 }
 
 function renderSnapshot() {
@@ -688,6 +688,13 @@ function renderSnapshot() {
     updateChartLastSyncedLabel();
     updateLastSeenDeviceLabel();
     el.heroHealthNumber.classList.remove('skeleton-shimmer');
+  }
+
+  // Enable 80% simulator toggle when device is active or evaluated
+  if (el.simCapToggle) {
+    el.simCapToggle.disabled = false;
+    el.simCapToggle.classList.remove('opacity-40', 'cursor-not-allowed');
+    el.simCapToggle.removeAttribute('data-tooltip');
   }
 
   // Sync richer snapshot model name to active toast if currently visible
@@ -914,34 +921,145 @@ function renderSnapshot() {
   }
 
   // 4. PREDICTIVE REPLACEMENT FORECAST
-  if (s.replacement_forecast) {
-    renderForecast(s.replacement_forecast);
+  // Gated to Daily 80% Charge Cap Simulator toggle: only render if toggle is active and forecast is populated
+  if (state.is80CapSimulated && state.forecastData) {
+    renderForecastPopulated(state.forecastData);
+  } else if (!state.is80CapSimulated) {
+    renderForecastIdle();
   }
 }
 
-// Forecast Rendering
-function renderForecast(forecast) {
-  if (!forecast || !el.forecastMonthsText) return;
+// Forecast State Handlers (IDLE, LOADING, POPULATED, CLEARED, and Edge Cases)
+let forecastRequestId = 0;
 
-  const isCapped = state.is80CapSimulated;
-  const monthsVal = isCapped ? forecast.simulation_80_cap?.extended_months : forecast.months_remaining;
+function formatTargetMonthYear(dateStr) {
+  if (!dateStr || dateStr === '—') return '—';
+  try {
+    const d = new Date(dateStr);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+    }
+  } catch (_) {}
+  return dateStr;
+}
+
+function renderForecastIdle() {
+  if (el.forecastMonthsText) {
+    el.forecastMonthsText.textContent = '—';
+    el.forecastMonthsText.classList.remove('skeleton-shimmer');
+  }
+  if (el.forecastSubtextLabel) {
+    el.forecastSubtextLabel.textContent = 'Toggle on to run forecast';
+  }
+  if (el.forecastDateText) {
+    el.forecastDateText.textContent = '—';
+  }
+  if (el.forecastUrgencyPill) {
+    el.forecastUrgencyPill.textContent = 'Standby';
+    el.forecastUrgencyPill.className = 'px-3.5 py-1 rounded-full text-xs font-bold bg-zinc-800 text-zinc-400 border border-white/10';
+  }
+  if (el.forecastCurrentHealth) {
+    el.forecastCurrentHealth.textContent = '—';
+  }
+  if (el.forecastProgressBar) {
+    el.forecastProgressBar.style.width = '0%';
+  }
+  if (el.forecastCyclesLeft) {
+    el.forecastCyclesLeft.textContent = '— cycles remaining';
+  }
+  if (el.forecastDailyCadence) {
+    el.forecastDailyCadence.textContent = '— cycles/day';
+  }
+  if (el.simCapResult) {
+    el.simCapResult.classList.add('hidden');
+  }
+  if (el.simCapToggle) {
+    el.simCapToggle.setAttribute('aria-checked', 'false');
+    el.simCapToggle.classList.remove('bg-indigo-600');
+    el.simCapToggle.classList.add('bg-zinc-700');
+    el.simCapKnob?.classList.remove('translate-x-5');
+    el.simCapKnob?.classList.add('translate-x-0');
+  }
+}
+
+function renderForecastLoading() {
+  if (el.forecastMonthsText) {
+    el.forecastMonthsText.textContent = '...';
+    el.forecastMonthsText.classList.add('skeleton-shimmer');
+  }
+  if (el.forecastSubtextLabel) {
+    el.forecastSubtextLabel.textContent = 'Simulating degradation...';
+  }
+  if (el.forecastDateText) {
+    el.forecastDateText.textContent = 'Calculating trajectory...';
+  }
+  if (el.forecastUrgencyPill) {
+    el.forecastUrgencyPill.textContent = 'Simulating';
+    el.forecastUrgencyPill.className = 'px-3.5 py-1 rounded-full text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 animate-pulse';
+  }
+  if (el.forecastCurrentHealth) {
+    el.forecastCurrentHealth.textContent = '—';
+  }
+  if (el.forecastProgressBar) {
+    el.forecastProgressBar.style.width = '0%';
+  }
+  if (el.forecastCyclesLeft) {
+    el.forecastCyclesLeft.textContent = 'Analyzing cycles...';
+  }
+  if (el.forecastDailyCadence) {
+    el.forecastDailyCadence.textContent = '—';
+  }
+  if (el.simCapResult) {
+    el.simCapResult.classList.add('hidden');
+  }
+  if (el.simCapToggle) {
+    el.simCapToggle.setAttribute('aria-checked', 'true');
+    el.simCapToggle.classList.remove('bg-zinc-700');
+    el.simCapToggle.classList.add('bg-indigo-600');
+    el.simCapKnob?.classList.add('translate-x-5');
+    el.simCapKnob?.classList.remove('translate-x-0');
+  }
+}
+
+function renderForecastPopulated(forecast) {
+  if (!forecast) {
+    renderForecastIdle();
+    return;
+  }
+  if (el.forecastMonthsText) {
+    el.forecastMonthsText.classList.remove('skeleton-shimmer');
+  }
+
+  const sim = forecast.simulation_80_cap;
+  const monthsVal = (sim?.extended_months !== undefined && sim.extended_months !== null) ? sim.extended_months : forecast.months_remaining;
+  const targetDateRaw = sim?.projected_date_iso || forecast.projected_date_formatted || forecast.projected_date_iso || '—';
+  const targetDateFormatted = formatTargetMonthYear(targetDateRaw);
 
   if (forecast.urgency === 'Service Recommended' || (forecast.current_health_pct && forecast.current_health_pct <= 80.0)) {
-    el.forecastMonthsText.textContent = '0 mo';
-    el.forecastDateText.textContent = 'Service Recommended';
-    el.forecastUrgencyPill.textContent = 'Service Limit';
-    el.forecastUrgencyPill.className = 'px-3.5 py-1 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30';
-  } else {
-    el.forecastMonthsText.textContent = `~${monthsVal} mo`;
-    el.forecastDateText.textContent = isCapped ? 'Capped Simulation' : (forecast.projected_date_formatted || forecast.projected_date_iso || '—');
-    el.forecastUrgencyPill.textContent = forecast.urgency || 'Upcoming';
-
-    if (forecast.urgency === 'Healthy') {
-      el.forecastUrgencyPill.className = 'px-3.5 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
-    } else if (forecast.urgency === 'Upcoming') {
-      el.forecastUrgencyPill.className = 'px-3.5 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30';
-    } else {
+    if (el.forecastMonthsText) el.forecastMonthsText.textContent = '0 mo';
+    if (el.forecastSubtextLabel) el.forecastSubtextLabel.textContent = 'Service Limit: 80%';
+    if (el.forecastDateText) el.forecastDateText.textContent = 'Service Recommended';
+    if (el.forecastUrgencyPill) {
+      el.forecastUrgencyPill.textContent = 'Service Limit';
       el.forecastUrgencyPill.className = 'px-3.5 py-1 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30';
+    }
+  } else {
+    if (el.forecastMonthsText) el.forecastMonthsText.textContent = `~${monthsVal} mo`;
+    if (el.forecastSubtextLabel) {
+      el.forecastSubtextLabel.textContent = targetDateFormatted !== '—' ? `Estimated to 80%: ${targetDateFormatted}` : 'Estimated to 80%';
+    }
+    if (el.forecastDateText) {
+      el.forecastDateText.textContent = targetDateFormatted !== '—' ? `Target: ${targetDateFormatted}` : 'Target: —';
+    }
+    if (el.forecastUrgencyPill) {
+      el.forecastUrgencyPill.textContent = forecast.urgency || 'Upcoming';
+      if (forecast.urgency === 'Healthy') {
+        el.forecastUrgencyPill.className = 'px-3.5 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+      } else if (forecast.urgency === 'Upcoming') {
+        el.forecastUrgencyPill.className = 'px-3.5 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30';
+      } else {
+        el.forecastUrgencyPill.className = 'px-3.5 py-1 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30';
+      }
     }
   }
 
@@ -956,36 +1074,126 @@ function renderForecast(forecast) {
     el.forecastProgressBar.style.width = `${progressPct}%`;
   }
 
-  if (el.simCapExtraText && forecast.simulation_80_cap) {
-    const extraMonths = forecast.simulation_80_cap.extra_months || 18.0;
+  if (el.simCapExtraText && sim) {
+    const extraMonths = sim.extra_months || 18.0;
     const extraYears = (extraMonths / 12.0).toFixed(1);
     el.simCapExtraText.textContent = `+${extraYears} years (~${extraMonths} extra months)`;
+    el.simCapResult?.classList.remove('hidden');
+  }
+
+  if (el.simCapToggle) {
+    el.simCapToggle.setAttribute('aria-checked', 'true');
+    el.simCapToggle.classList.remove('bg-zinc-700');
+    el.simCapToggle.classList.add('bg-indigo-600');
+    el.simCapKnob?.classList.add('translate-x-5');
+    el.simCapKnob?.classList.remove('translate-x-0');
   }
 }
 
-function handleSimCapToggle() {
-  state.is80CapSimulated = !state.is80CapSimulated;
-  const isCapped = state.is80CapSimulated;
+function renderForecastInsufficientData(message = 'Not enough data yet') {
+  if (el.forecastMonthsText) {
+    el.forecastMonthsText.textContent = '—';
+    el.forecastMonthsText.classList.remove('skeleton-shimmer');
+  }
+  if (el.forecastSubtextLabel) el.forecastSubtextLabel.textContent = message;
+  if (el.forecastDateText) el.forecastDateText.textContent = 'Needs more historical readings';
+  if (el.forecastUrgencyPill) {
+    el.forecastUrgencyPill.textContent = 'Pending';
+    el.forecastUrgencyPill.className = 'px-3.5 py-1 rounded-full text-xs font-bold bg-zinc-800 text-zinc-400 border border-white/10';
+  }
+  if (el.forecastCurrentHealth) el.forecastCurrentHealth.textContent = '—';
+  if (el.forecastProgressBar) el.forecastProgressBar.style.width = '0%';
+  if (el.forecastCyclesLeft) el.forecastCyclesLeft.textContent = 'Insufficient cycle data';
+  if (el.forecastDailyCadence) el.forecastDailyCadence.textContent = '—';
+  if (el.simCapResult) el.simCapResult.classList.add('hidden');
+}
 
+function renderForecastError(message = 'Forecast calculation error', subtext = 'API request failed') {
+  if (el.forecastMonthsText) {
+    el.forecastMonthsText.textContent = '—';
+    el.forecastMonthsText.classList.remove('skeleton-shimmer');
+  }
+  if (el.forecastSubtextLabel) el.forecastSubtextLabel.textContent = message;
+  if (el.forecastDateText) el.forecastDateText.textContent = subtext;
+  if (el.forecastUrgencyPill) {
+    el.forecastUrgencyPill.textContent = 'Error';
+    el.forecastUrgencyPill.className = 'px-3.5 py-1 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30';
+  }
+  if (el.forecastCurrentHealth) el.forecastCurrentHealth.textContent = '—';
+  if (el.forecastProgressBar) el.forecastProgressBar.style.width = '0%';
+  if (el.forecastCyclesLeft) el.forecastCyclesLeft.textContent = '—';
+  if (el.forecastDailyCadence) el.forecastDailyCadence.textContent = '—';
+  if (el.simCapResult) el.simCapResult.classList.add('hidden');
+
+  // Revert toggle state to OFF
+  state.is80CapSimulated = false;
+  state.forecastData = null;
   if (el.simCapToggle) {
-    el.simCapToggle.setAttribute('aria-checked', isCapped ? 'true' : 'false');
-    if (isCapped) {
-      el.simCapToggle.classList.remove('bg-zinc-700');
-      el.simCapToggle.classList.add('bg-indigo-600');
-      el.simCapKnob?.classList.add('translate-x-5');
-      el.simCapKnob?.classList.remove('translate-x-0');
-      el.simCapResult?.classList.remove('hidden');
-    } else {
+    el.simCapToggle.setAttribute('aria-checked', 'false');
+    el.simCapToggle.classList.remove('bg-indigo-600');
+    el.simCapToggle.classList.add('bg-zinc-700');
+    el.simCapKnob?.classList.remove('translate-x-5');
+    el.simCapKnob?.classList.add('translate-x-0');
+  }
+}
+
+async function handleSimCapToggle() {
+  const isConnected = !!(state.systemStatus?.active_device_count > 0 || state.snapshot?.connected || state.selectedSerial);
+  if (!isConnected) {
+    renderForecastIdle();
+    renderForecastInsufficientData('Awaiting device connection');
+    if (el.simCapToggle) {
+      el.simCapToggle.setAttribute('aria-checked', 'false');
       el.simCapToggle.classList.remove('bg-indigo-600');
       el.simCapToggle.classList.add('bg-zinc-700');
       el.simCapKnob?.classList.remove('translate-x-5');
       el.simCapKnob?.classList.add('translate-x-0');
-      el.simCapResult?.classList.add('hidden');
     }
+    return;
   }
 
-  if (state.snapshot?.replacement_forecast) {
-    renderForecast(state.snapshot.replacement_forecast);
+  // Toggle state
+  state.is80CapSimulated = !state.is80CapSimulated;
+  const isCapped = state.is80CapSimulated;
+
+  if (!isCapped) {
+    // State 4: CLEARED -> Invalidate in-flight and revert to IDLE
+    forecastRequestId++;
+    state.forecastData = null;
+    renderForecastIdle();
+    return;
+  }
+
+  // State 2: LOADING
+  renderForecastLoading();
+
+  const reqId = ++forecastRequestId;
+  const targetSerial = state.selectedSerial || state.snapshot?.device_serial;
+  const url = targetSerial ? `/api/prediction?serial=${encodeURIComponent(targetSerial)}` : '/api/prediction';
+
+  try {
+    const res = await fetch(url);
+    if (reqId !== forecastRequestId || !state.is80CapSimulated) return;
+
+    if (!res.ok) {
+      throw new Error(`Server returned HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    if (reqId !== forecastRequestId || !state.is80CapSimulated) return;
+
+    if (data.insufficient_data || !data.forecast) {
+      renderForecastInsufficientData(data.message || 'Not enough data yet');
+      return;
+    }
+
+    // State 3: POPULATED
+    state.forecastData = data.forecast;
+    renderForecastPopulated(data.forecast);
+  } catch (err) {
+    if (reqId !== forecastRequestId || !state.is80CapSimulated) return;
+    console.warn('Failed to calculate longevity forecast:', err);
+    renderForecastError('Forecast calculation error', 'API request failed');
   }
 }
 
@@ -1679,6 +1887,7 @@ function init() {
 
   // Disconnected/standby state copy on boot
   updateHeroHeadline(false);
+  renderForecastIdle();
 
   // Initial queries
   fetchStatus();

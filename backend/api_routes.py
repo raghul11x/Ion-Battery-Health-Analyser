@@ -532,19 +532,36 @@ class CalibrationStartRequest(BaseModel):
 def get_prediction_endpoint(
     serial: Optional[str] = Query(None),
     target: float = Query(80.0, ge=60.0, le=95.0),
+    health: Optional[float] = Query(None, ge=40.0, le=100.0),
+    cycles: Optional[int] = Query(None, ge=0),
 ) -> Dict[str, Any]:
     """Returns predictive replacement timeline, countdown, and 80%-cap simulation."""
     snap = get_snapshot(serial)
-    health = snap.get("health_pct") or 83.0
-    cycles = snap.get("cycle_count")
+    current_health = health if health is not None else snap.get("health_pct")
+    current_cycles = cycles if cycles is not None else snap.get("cycle_count")
+
+    if current_health is None:
+        if snap.get("connected") or serial:
+            return {
+                "device_serial": snap.get("device_serial"),
+                "device_model": snap.get("device_model"),
+                "connected": snap.get("connected", False),
+                "insufficient_data": True,
+                "message": "Not enough data yet",
+                "forecast": None,
+            }
+        current_health = 83.0  # Fallback for standalone preview when no device connected
+
     forecast = calculate_replacement_forecast(
-        current_health_pct=health,
-        cycle_count=cycles,
+        current_health_pct=current_health,
+        cycle_count=current_cycles,
         target_threshold_pct=target,
     )
     return {
         "device_serial": snap.get("device_serial"),
         "device_model": snap.get("device_model"),
+        "connected": snap.get("connected", False),
+        "insufficient_data": False,
         "forecast": forecast,
     }
 

@@ -59,6 +59,7 @@ def test_api_device_profile_endpoint():
 
 
 def test_api_prediction_endpoint():
+    # 1. Standalone default preview call
     res = client.get("/api/prediction")
     assert res.status_code == 200
     data = res.json()
@@ -69,6 +70,23 @@ def test_api_prediction_endpoint():
     assert "urgency" in fc
     assert "simulation_80_cap" in fc
     assert fc["simulation_80_cap"]["extra_months"] >= 0
+
+    # 2. Standalone call with explicit parameter overrides
+    res_param = client.get("/api/prediction?target=80.0&health=75.0&cycles=550")
+    assert res_param.status_code == 200
+    data_param = res_param.json()
+    assert data_param["insufficient_data"] is False
+    assert data_param["forecast"]["current_health_pct"] == 75.0
+    assert data_param["forecast"]["urgency"] == "Service Recommended"
+    assert data_param["forecast"]["months_remaining"] == 0.0
+
+    # 3. Standalone call with unknown serial (insufficient data path)
+    res_unknown = client.get("/api/prediction?serial=unknown-phone-no-data")
+    assert res_unknown.status_code == 200
+    data_unknown = res_unknown.json()
+    assert data_unknown["insufficient_data"] is True
+    assert data_unknown["forecast"] is None
+    assert "Not enough data yet" in data_unknown["message"]
 
 
 def test_api_calibration_endpoints():
