@@ -21,6 +21,8 @@ const state = {
   lastDevicesFetchTime: 0,
   deviceStatusEvents: [],
   statusFeedExpanded: false,
+  selectedSerial: null,
+  lastHistoryLivePoll: 0,
 };
 
 // DOM References
@@ -393,6 +395,12 @@ function updateConnectionStatus() {
   updateHeroHeadline(isConnected);
 
   if (isConnected) {
+    if (state.selectedSerial !== currentSerial) {
+      state.selectedSerial = currentSerial;
+      fetchSnapshot(currentSerial);
+      fetchHistory(state.selectedDays, currentSerial);
+      fetchInsights(currentSerial);
+    }
     const isNewConnection = !toastState.wasConnected || (toastState.lastSerial !== currentSerial);
     if (isNewConnection) {
       const formattedName = formatConnectedDeviceSubtitle(activeDev);
@@ -1098,7 +1106,7 @@ function renderHistoryAndChart() {
               borderColor: '#FFFFFF',
               backgroundColor: gradient,
               borderWidth: 2.5,
-              tension: 0.35,
+              tension: 0.0,
               fill: true,
               pointRadius: readings.length > 40 ? 0 : 3,
               pointHoverRadius: 6,
@@ -1113,7 +1121,7 @@ function renderHistoryAndChart() {
               borderColor: 'rgba(129, 140, 248, 0.65)',
               borderWidth: 1.5,
               borderDash: [3, 3],
-              tension: 0.35,
+              tension: 0.0,
               fill: false,
               pointRadius: 0,
               pointHoverRadius: 4,
@@ -1150,8 +1158,33 @@ function renderHistoryAndChart() {
               borderWidth: 1,
               padding: 12,
               cornerRadius: 14,
+              callbacks: {
+                label: function(context) {
+                  const r = readings[context.dataIndex];
+                  if (!r) return `${context.dataset.label}: ${context.parsed.y}`;
+                  if (context.datasetIndex === 0) {
+                    const hp = (r.health_pct !== null && r.health_pct !== undefined) ? r.health_pct : context.parsed.y;
+                    return ` Battery Health %: ${hp}%`;
+                  } else if (context.datasetIndex === 1) {
+                    const temp = (r.temperature_c !== null && r.temperature_c !== undefined) ? r.temperature_c : context.parsed.y;
+                    return ` Temp (°C): ${temp}`;
+                  }
+                  return `${context.dataset.label}: ${context.parsed.y}`;
+                },
+                afterBody: function(contexts) {
+                  if (!contexts || contexts.length === 0) return '';
+                  const r = readings[contexts[0].dataIndex];
+                  if (!r) return '';
+                  const parts = [];
+                  if (r.voltage_mv) parts.push(`Voltage: ${r.voltage_mv} mV`);
+                  if (r.cycle_count !== null && r.cycle_count !== undefined) parts.push(`Cycles: ${r.cycle_count}`);
+                  if (r.health_method) parts.push(`Method: ${r.health_method}`);
+                  return parts.length ? '\n' + parts.join(' | ') : '';
+                }
+              }
             },
           },
+
           scales: {
             x: {
               grid: { color: 'rgba(255, 255, 255, 0.03)' },
@@ -1440,10 +1473,19 @@ async function handleSeed() {
     });
 
     if (res.ok) {
-      state.selectedSerial = 'mock-phone-2a';
-      await fetchSnapshot('mock-phone-2a');
-      await fetchHistory(state.selectedDays, 'mock-phone-2a');
-      await fetchInsights('mock-phone-2a');
+      const isConn = state.systemStatus?.active_device_count > 0;
+      if (!isConn) {
+        state.selectedSerial = 'mock-phone-2a';
+        await fetchSnapshot('mock-phone-2a');
+        await fetchHistory(state.selectedDays, 'mock-phone-2a');
+        await fetchInsights('mock-phone-2a');
+      } else {
+        const activeDev = state.systemStatus?.connected_devices?.find(d => d.state === 'device');
+        const realSerial = activeDev ? activeDev.serial : state.selectedSerial;
+        if (realSerial) {
+          state.selectedSerial = realSerial;
+        }
+      }
     }
   } catch (err) {
     alert('Failed to seed demo data: ' + err.message);
@@ -1648,6 +1690,13 @@ function init() {
   state.pollTimer = setInterval(() => {
     fetchStatus();
     fetchSnapshot();
+
+    const isConn = state.systemStatus?.active_device_count > 0;
+    const now = Date.now();
+    if (isConn && (now - (state.lastHistoryLivePoll || 0) >= 10000)) {
+      state.lastHistoryLivePoll = now;
+      fetchHistory(state.selectedDays);
+    }
   }, 1000);
 
   // Initialize Toast Notification Close Button

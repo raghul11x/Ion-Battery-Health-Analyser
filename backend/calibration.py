@@ -12,6 +12,7 @@ import time
 from typing import Any, Dict, List, Optional
 import uuid
 from backend.status_bus import emit_status
+from backend.prediction import calculate_coulomb_confidence
 
 logger = logging.getLogger("battery_analyzer.calibration")
 
@@ -61,6 +62,12 @@ class ActiveCalibrationManager:
             if self.start_time and self.is_running:
                 elapsed_seconds = int((datetime.utcnow() - self.start_time).total_seconds())
 
+            confidence_metrics = calculate_coulomb_confidence(
+                delta_level_pct=delta_level,
+                sample_count=len(self.samples),
+                accumulated_mah=self.accumulated_mah,
+            )
+
             return {
                 "session_id": self.session_id,
                 "device_serial": self.device_serial,
@@ -76,6 +83,10 @@ class ActiveCalibrationManager:
                 "extrapolated_capacity_mah": extrapolated_capacity_mah,
                 "design_capacity_mah": self.design_capacity_mah,
                 "calibrated_health_pct": calibrated_health_pct,
+                "confidence_pct": confidence_metrics["confidence_pct"],
+                "error_margin_pct": confidence_metrics["error_margin_pct"],
+                "is_statistically_sound": confidence_metrics["is_statistically_sound"],
+                "confidence_grade": confidence_metrics["confidence_grade"],
                 "sample_count": len(self.samples),
                 "latest_samples": self.samples[-15:] if self.samples else [],
             }

@@ -459,3 +459,42 @@ def calculate_charge_runtime_estimate(
         "effective_capacity_mah": round(effective_mah, 0),
         "insufficient_data": False,
     }
+
+
+def calculate_coulomb_confidence(
+    delta_level_pct: int,
+    sample_count: int,
+    accumulated_mah: float,
+) -> Dict[str, Any]:
+    """
+    Computes mathematical confidence and uncertainty error bounds for a Coulomb charge test.
+    Under 2% delta: high error (insufficient integration window).
+    At 5-10% delta: moderate confidence (+/- 3-5%).
+    At 20%+ delta: high confidence (+/- 1-2%).
+    """
+    if delta_level_pct <= 0 or accumulated_mah <= 0 or sample_count < 2:
+        return {
+            "confidence_pct": 0.0,
+            "error_margin_pct": 25.0,
+            "is_statistically_sound": False,
+            "confidence_grade": "Insufficient Data",
+        }
+
+    # Error margin drops exponentially as integration delta increases
+    error_margin = max(1.2, min(25.0, 20.0 / (delta_level_pct ** 0.75)))
+    confidence = max(10.0, min(99.0, 100.0 - (error_margin * 2.5)))
+
+    if confidence >= 85.0:
+        grade = "High Confidence"
+    elif confidence >= 60.0:
+        grade = "Moderate Confidence"
+    else:
+        grade = "Preliminary"
+
+    return {
+        "confidence_pct": round(confidence, 1),
+        "error_margin_pct": round(error_margin, 1),
+        "is_statistically_sound": delta_level_pct >= 5 and sample_count >= 10,
+        "confidence_grade": grade,
+    }
+

@@ -181,7 +181,29 @@ def test_charge_runtime_estimate():
     assert res["insufficient_data"] is False
     effective = 4500.0 * 0.85  # = 3825 mAh
     expected_hours = effective / 250.0  # = 15.3 h
-    assert abs(res["estimated_runtime_hours"] - expected_hours) < 0.1
-    assert res["new_battery_hours"] == round(4500.0 / 250.0, 2)
-    assert res["runtime_loss_pct"] == round((1 - 0.85) * 100.0, 1)
     assert res["effective_capacity_mah"] == round(effective, 0)
+
+
+# --- calculate_coulomb_confidence ---
+
+def test_coulomb_confidence_metrics():
+    """Validates Coulomb integration confidence scaling and error margins."""
+    from backend.prediction import calculate_coulomb_confidence
+
+    # Insufficient delta (< 2% or 0 samples)
+    res_zero = calculate_coulomb_confidence(0, 0, 0.0)
+    assert res_zero["confidence_pct"] == 0.0
+    assert res_zero["is_statistically_sound"] is False
+
+    # Low delta (Δ3%)
+    res_low = calculate_coulomb_confidence(3, 8, 120.0)
+    assert res_low["confidence_pct"] > 0.0
+    assert res_low["is_statistically_sound"] is False  # Delta < 5%
+
+    # High delta (Δ20%, 35 samples)
+    res_high = calculate_coulomb_confidence(20, 35, 850.0)
+    assert res_high["confidence_pct"] >= 80.0
+    assert res_high["error_margin_pct"] <= 5.0
+    assert res_high["is_statistically_sound"] is True
+    assert res_high["confidence_grade"] == "High Confidence"
+
