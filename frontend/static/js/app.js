@@ -27,6 +27,114 @@ const state = {
   lastHistoryLivePoll: 0,
 };
 
+// Global Application Connection State (Single Source of Truth)
+const AppState = {
+  connected: false,
+  mode: 'idle', // 'idle' | 'connected' | 'seeded'
+  device: null,
+  snapshot: null,
+  systemStatus: null,
+  _listeners: [],
+
+  subscribe(listener) {
+    this._listeners.push(listener);
+    try {
+      listener({
+        connected: this.connected,
+        mode: this.mode,
+        device: this.device,
+        snapshot: this.snapshot,
+        systemStatus: this.systemStatus,
+      });
+    } catch (e) {
+      console.error('AppState listener error on mount:', e);
+    }
+    return () => {
+      this._listeners = this._listeners.filter(l => l !== listener);
+    };
+  },
+
+  notify() {
+    const payload = {
+      connected: this.connected,
+      mode: this.mode,
+      device: this.device,
+      snapshot: this.snapshot,
+      systemStatus: this.systemStatus,
+    };
+    for (const listener of this._listeners) {
+      try {
+        listener(payload);
+      } catch (err) {
+        console.error('AppState subscriber error:', err);
+      }
+    }
+  },
+
+  updateFromSystemStatus(status) {
+    this.systemStatus = status;
+    const isConn = status?.active_device_count > 0;
+    const activeDev = status?.connected_devices?.find(d => d.state === 'device');
+    const isConnected = !!(isConn && activeDev);
+
+    if (isConnected) {
+      const serial = activeDev.serial;
+      const wasConnected = this.connected;
+      const deviceChanged = !wasConnected || this.device?.serial !== serial || this.mode !== 'connected';
+
+      this.connected = true;
+      this.mode = 'connected';
+      this.device = activeDev;
+      state.selectedSerial = serial;
+
+      if (deviceChanged) {
+        this.notify();
+        fetchSnapshot(serial);
+        fetchHistory(state.selectedDays, serial);
+        fetchInsights(serial);
+      }
+    } else {
+      // Disconnected / idle
+      const hadSession = this.connected || this.mode !== 'idle' || state.selectedSerial !== null;
+      this.connected = false;
+      this.mode = 'idle';
+      this.device = null;
+      this.snapshot = null;
+      state.selectedSerial = null;
+      state.snapshot = null;
+      state.normalForecast = null;
+      state.is80CapSimulated = false;
+      state.deviceStatusEvents = [];
+
+      if (hadSession) {
+        this.notify();
+      }
+    }
+  },
+
+  setSnapshot(snapshot) {
+    if (!this.connected && this.mode !== 'seeded') {
+      this.snapshot = null;
+      state.snapshot = null;
+      this.notify();
+      return;
+    }
+    this.snapshot = snapshot;
+    state.snapshot = snapshot;
+    this.notify();
+  },
+
+  setSeededMode(mockSerial, mockSnapshot) {
+    this.connected = false;
+    this.mode = 'seeded';
+    this.device = { serial: mockSerial, model: mockSnapshot?.device_model || 'Nothing Phone 2a' };
+    this.snapshot = mockSnapshot;
+    state.selectedSerial = mockSerial;
+    state.snapshot = mockSnapshot;
+    this.notify();
+  }
+};
+
 // DOM References
 const el = {
   // Live Device Status Feed
@@ -200,12 +308,17 @@ async function fetchStatus() {
 
 async function fetchSnapshot(serial = null) {
   try {
-    const targetSerial = serial || state.selectedSerial;
+    // Only query a specific serial if connected or in seeded mode; otherwise fetch clean idle snapshot
+    const targetSerial = (AppState.connected || AppState.mode === 'seeded') ? (serial || state.selectedSerial) : null;
     const url = targetSerial ? `/api/snapshot?serial=${encodeURIComponent(targetSerial)}` : '/api/snapshot';
     const res = await fetch(url);
     if (res.ok) {
-      state.snapshot = await res.json();
-      renderSnapshot();
+      const data = await res.json();
+      if (AppState.connected || AppState.mode === 'seeded') {
+        AppState.setSnapshot(data);
+      } else {
+        AppState.setSnapshot(null);
+      }
     }
   } catch (err) {
     console.warn('Failed to fetch snapshot:', err);
@@ -262,7 +375,11 @@ async function fetchDeviceStatus() {
     const res = await fetch('/api/device-status?limit=25');
     if (res.ok) {
       const data = await res.json();
-      state.deviceStatusEvents = data.events || [];
+      if (AppState.connected) {
+        state.deviceStatusEvents = data.events || [];
+      } else {
+        state.deviceStatusEvents = [];
+      }
       renderDeviceStatus();
     }
   } catch (err) {
@@ -384,30 +501,12 @@ function updateHeroHeadline(isConnected) {
 
 // Renderers
 function updateConnectionStatus() {
-  const isConn = state.systemStatus?.active_device_count > 0;
   const activeDev = state.systemStatus?.connected_devices?.find(d => d.state === 'device');
-  const unauthDev = state.systemStatus?.connected_devices?.find(d => d.state === 'unauthorized');
-  const offlineDev = state.systemStatus?.connected_devices?.find(d => d.state === 'offline');
-  const isProfiling = state.systemStatus?.watcher_status?.is_profiling;
-  const profilingMsg = state.systemStatus?.watcher_status?.profiling_message || 'Profiling new device...';
-
-  const guidanceBanner = document.getElementById('connection-guidance-banner');
-  const guidanceText = document.getElementById('connection-guidance-text');
-
-  // Connection Toast Trigger Check (Design Doc v2 §5.2)
-  const isConnected = !!(isConn && activeDev);
+  const isConnected = !!(state.systemStatus?.active_device_count > 0 && activeDev);
   const currentSerial = activeDev ? (activeDev.serial || 'connected-device') : null;
 
-  // Hero Headline & Subtext Reactive Sync
-  updateHeroHeadline(isConnected);
-
+  // Connection Toast Trigger Check (Design Doc v2 §5.2)
   if (isConnected) {
-    if (state.selectedSerial !== currentSerial) {
-      state.selectedSerial = currentSerial;
-      fetchSnapshot(currentSerial);
-      fetchHistory(state.selectedDays, currentSerial);
-      fetchInsights(currentSerial);
-    }
     const isNewConnection = !toastState.wasConnected || (toastState.lastSerial !== currentSerial);
     if (isNewConnection) {
       const formattedName = formatConnectedDeviceSubtitle(activeDev);
@@ -419,57 +518,107 @@ function updateConnectionStatus() {
     toastState.wasConnected = false;
   }
 
+  // Synchronously update AppState (Single Source of Truth) which broadcasts to all subscribers
+  AppState.updateFromSystemStatus(state.systemStatus);
+}
+
+function subscribeTopBar({ connected, mode, systemStatus }) {
+  const activeDev = systemStatus?.connected_devices?.find(d => d.state === 'device');
+  const unauthDev = systemStatus?.connected_devices?.find(d => d.state === 'unauthorized');
+  const offlineDev = systemStatus?.connected_devices?.find(d => d.state === 'offline');
+  const isProfiling = systemStatus?.watcher_status?.is_profiling;
+  const profilingMsg = systemStatus?.watcher_status?.profiling_message || 'Profiling new device...';
+
   if (isProfiling) {
-    el.connDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse';
-    el.connStatusLabel.textContent = profilingMsg;
+    if (el.connDot) el.connDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse';
+    if (el.connStatusLabel) el.connStatusLabel.textContent = profilingMsg;
     const name = activeDev?.model ? activeDev.model.replace(/_/g, ' ') : (state.snapshot?.device_model || 'Android Device');
-    el.connDeviceLabel.textContent = `· ${name}`;
-    el.connDeviceLabel.classList.remove('hidden');
-    if (guidanceBanner) guidanceBanner.classList.add('hidden');
-    renderDeviceStatus();
+    if (el.connDeviceLabel) {
+      el.connDeviceLabel.textContent = `· ${name}`;
+      el.connDeviceLabel.classList.remove('hidden');
+    }
     return;
   }
 
-  if (isConn && activeDev) {
-    el.connDot.className = 'dot-live-green';
+  if (connected && activeDev) {
+    if (el.connDot) el.connDot.className = 'dot-live-green';
     const name = activeDev.model ? activeDev.model.replace(/_/g, ' ') : (state.snapshot?.device_model || 'Android Device');
-    el.connStatusLabel.textContent = 'Connected';
-    el.connDeviceLabel.textContent = `· ${name}`;
-    el.connDeviceLabel.classList.remove('hidden');
-    if (guidanceBanner) guidanceBanner.classList.add('hidden');
+    if (el.connStatusLabel) el.connStatusLabel.textContent = 'Connected';
+    if (el.connDeviceLabel) {
+      el.connDeviceLabel.textContent = `· ${name}`;
+      el.connDeviceLabel.classList.remove('hidden');
+    }
+    if (el.connLastSeenLabel) {
+      el.connLastSeenLabel.classList.add('hidden');
+      el.connLastSeenLabel.textContent = '';
+    }
+  } else if (mode === 'seeded') {
+    if (el.connDot) el.connDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400';
+    if (el.connStatusLabel) el.connStatusLabel.textContent = 'Seeded Demo';
+    if (el.connDeviceLabel) {
+      el.connDeviceLabel.textContent = `· Nothing Phone 2a`;
+      el.connDeviceLabel.classList.remove('hidden');
+    }
     if (el.connLastSeenLabel) {
       el.connLastSeenLabel.classList.add('hidden');
       el.connLastSeenLabel.textContent = '';
     }
   } else if (unauthDev || state.snapshot?.health_status === 'unauthorized' || state.snapshot?.connection_state === 'unauthorized') {
-    el.connDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse';
-    el.connStatusLabel.textContent = 'Unauthorized';
+    if (el.connDot) el.connDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse';
+    if (el.connStatusLabel) el.connStatusLabel.textContent = 'Unauthorized';
     const sName = unauthDev?.serial ? `(${unauthDev.serial.slice(0, 8)}...)` : '';
-    el.connDeviceLabel.textContent = `· Phone detected ${sName}`;
-    el.connDeviceLabel.classList.remove('hidden');
-    if (guidanceBanner && guidanceText) {
-      guidanceText.innerHTML = `<strong>Action Required on Phone:</strong> Unlock your phone screen and tap <strong>&quot;Allow USB debugging&quot;</strong> (check <em>&quot;Always allow from this computer&quot;</em>).`;
-      guidanceBanner.classList.remove('hidden');
+    if (el.connDeviceLabel) {
+      el.connDeviceLabel.textContent = `· Phone detected ${sName}`;
+      el.connDeviceLabel.classList.remove('hidden');
     }
   } else if (offlineDev || state.snapshot?.health_status === 'offline' || state.snapshot?.connection_state === 'offline') {
-    el.connDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400';
-    el.connStatusLabel.textContent = 'Offline';
+    if (el.connDot) el.connDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400';
+    if (el.connStatusLabel) el.connStatusLabel.textContent = 'Offline';
     const sName = offlineDev?.serial ? `(${offlineDev.serial.slice(0, 8)}...)` : '';
-    el.connDeviceLabel.textContent = `· Phone offline ${sName}`;
-    el.connDeviceLabel.classList.remove('hidden');
-    if (guidanceBanner && guidanceText) {
-      guidanceText.innerHTML = `<strong>Device Offline:</strong> Please unplug and reconnect your USB cable, or toggle USB debugging in Developer Options.`;
-      guidanceBanner.classList.remove('hidden');
+    if (el.connDeviceLabel) {
+      el.connDeviceLabel.textContent = `· Phone offline ${sName}`;
+      el.connDeviceLabel.classList.remove('hidden');
     }
   } else {
-    el.connDot.className = 'dot-idle-gray';
-    el.connStatusLabel.textContent = 'Disconnected';
-    if (guidanceBanner) guidanceBanner.classList.add('hidden');
-    el.connDeviceLabel.classList.add('hidden');
+    if (el.connDot) el.connDot.className = 'dot-idle-gray';
+    if (el.connStatusLabel) el.connStatusLabel.textContent = 'Disconnected';
+    if (el.connDeviceLabel) el.connDeviceLabel.classList.add('hidden');
     updateLastSeenDeviceLabel();
   }
+}
 
-  renderDeviceStatus();
+function subscribeGuidanceBanner({ systemStatus }) {
+  const unauthDev = systemStatus?.connected_devices?.find(d => d.state === 'unauthorized');
+  const offlineDev = systemStatus?.connected_devices?.find(d => d.state === 'offline');
+  const guidanceBanner = document.getElementById('connection-guidance-banner');
+  const guidanceText = document.getElementById('connection-guidance-text');
+  if (!guidanceBanner) return;
+
+  if (unauthDev || state.snapshot?.health_status === 'unauthorized' || state.snapshot?.connection_state === 'unauthorized') {
+    if (guidanceText) {
+      guidanceText.innerHTML = `<strong>Action Required on Phone:</strong> Unlock your phone screen and tap <strong>&quot;Allow USB debugging&quot;</strong> (check <em>&quot;Always allow from this computer&quot;</em>).`;
+    }
+    guidanceBanner.classList.remove('hidden');
+  } else if (offlineDev || state.snapshot?.health_status === 'offline' || state.snapshot?.connection_state === 'offline') {
+    if (guidanceText) {
+      guidanceText.innerHTML = `<strong>Device Offline:</strong> Please unplug and reconnect your USB cable, or toggle USB debugging in Developer Options.`;
+    }
+    guidanceBanner.classList.remove('hidden');
+  } else {
+    guidanceBanner.classList.add('hidden');
+  }
+}
+
+function subscribeHeroHeadline({ connected }) {
+  updateHeroHeadline(connected);
+}
+
+function masterDashboardSubscriber({ connected, mode, snapshot }) {
+  if (connected || mode === 'seeded') {
+    renderSnapshot();
+  } else {
+    renderIdleState();
+  }
 }
 
 function toggleDeviceStatusFeed(forceState = null) {
@@ -498,23 +647,18 @@ function renderDeviceStatus() {
   const panel = el.deviceStatusPanel || document.getElementById('device-status-panel');
   if (!panel) return;
 
-  const isConnected = !!(state.systemStatus?.active_device_count > 0 && state.systemStatus?.connected_devices?.some(d => d.state === 'device'));
-  const events = state.deviceStatusEvents || [];
+  const isConnected = AppState.connected;
+  const isSeeded = AppState.mode === 'seeded';
+  const events = isConnected ? (state.deviceStatusEvents || []) : [];
 
-  // If no events recorded yet AND disconnected, hide the panel cleanly
-  if (events.length === 0 && !isConnected) {
-    panel.classList.add('hidden');
-    return;
-  }
-
-  // Otherwise show panel
   panel.classList.remove('hidden');
 
   const previewEl = el.statusFeedLatestPreview || document.getElementById('status-feed-latest-preview');
   const badgeEl = el.statusFeedCountBadge || document.getElementById('status-feed-count-badge');
   const listEl = el.deviceStatusList || document.getElementById('device-status-list');
+  const pingEl = el.statusFeedPing || document.getElementById('status-feed-ping');
 
-  if (events.length > 0) {
+  if (isConnected && events.length > 0) {
     const latest = events[0];
     if (previewEl) {
       previewEl.textContent = latest.message;
@@ -524,49 +668,58 @@ function renderDeviceStatus() {
     if (badgeEl) {
       badgeEl.textContent = `${events.length} event${events.length === 1 ? '' : 's'}`;
     }
-  } else {
+    if (pingEl) pingEl.classList.remove('hidden');
+    if (listEl) {
+      listEl.innerHTML = events.map((ev, index) => {
+        const isLatest = index === 0;
+        let badgeClass = 'status-badge-default';
+        const cat = (ev.category || '').toLowerCase();
+        if (cat === 'connection') badgeClass = 'status-badge-connection';
+        else if (cat === 'probe') badgeClass = 'status-badge-probe';
+        else if (cat === 'consensus') badgeClass = 'status-badge-consensus';
+        else if (cat === 'health') badgeClass = 'status-badge-health';
+        else if (cat === 'calibration') badgeClass = 'status-badge-calibration';
+
+        const time = escapeHtml(ev.time_display || '—');
+        const categoryText = escapeHtml((ev.category || 'INFO').toUpperCase());
+        const msg = escapeHtml(ev.message || '');
+        const itemClass = isLatest ? 'status-item status-item-latest py-1 flex items-start gap-2.5' : 'status-item py-1 flex items-start gap-2.5 opacity-85 hover:opacity-100';
+        const textClass = isLatest ? 'text-zinc-100 font-medium' : 'text-zinc-400';
+
+        return `
+          <div class="${itemClass}">
+            <span class="text-zinc-500 shrink-0 font-mono text-[11px] pt-0.5">${time}</span>
+            <span class="status-badge ${badgeClass}">${categoryText}</span>
+            <span class="${textClass} flex-1 break-words leading-relaxed">${msg}</span>
+          </div>
+        `;
+      }).join('');
+    }
+  } else if (isSeeded) {
     if (previewEl) {
-      previewEl.textContent = 'Awaiting device activity...';
-      previewEl.removeAttribute('title');
+      previewEl.textContent = 'Seeded demo session active (mock-phone-2a)';
       previewEl.removeAttribute('data-tooltip');
     }
     if (badgeEl) {
-      badgeEl.textContent = '0 events';
+      badgeEl.textContent = 'Seeded';
     }
-  }
-
-  if (listEl) {
-    if (events.length === 0) {
-      listEl.innerHTML = '<div class="text-zinc-500 py-2 italic text-center">No device events recorded in current session.</div>';
-      return;
+    if (pingEl) pingEl.classList.add('hidden');
+    if (listEl) {
+      listEl.innerHTML = '<div class="text-zinc-500 py-2 italic text-center">Seeded demo session active. Connect phone for live telemetry.</div>';
     }
-
-    const html = events.map((ev, index) => {
-      const isLatest = index === 0;
-      let badgeClass = 'status-badge-default';
-      const cat = (ev.category || '').toLowerCase();
-      if (cat === 'connection') badgeClass = 'status-badge-connection';
-      else if (cat === 'probe') badgeClass = 'status-badge-probe';
-      else if (cat === 'consensus') badgeClass = 'status-badge-consensus';
-      else if (cat === 'health') badgeClass = 'status-badge-health';
-      else if (cat === 'calibration') badgeClass = 'status-badge-calibration';
-
-      const time = escapeHtml(ev.time_display || '—');
-      const categoryText = escapeHtml((ev.category || 'INFO').toUpperCase());
-      const msg = escapeHtml(ev.message || '');
-      const itemClass = isLatest ? 'status-item status-item-latest py-1 flex items-start gap-2.5' : 'status-item py-1 flex items-start gap-2.5 opacity-85 hover:opacity-100';
-      const textClass = isLatest ? 'text-zinc-100 font-medium' : 'text-zinc-400';
-
-      return `
-        <div class="${itemClass}">
-          <span class="text-zinc-500 shrink-0 font-mono text-[11px] pt-0.5">${time}</span>
-          <span class="status-badge ${badgeClass}">${categoryText}</span>
-          <span class="${textClass} flex-1 break-words leading-relaxed">${msg}</span>
-        </div>
-      `;
-    }).join('');
-
-    listEl.innerHTML = html;
+  } else {
+    // Neutral Idle / Standby mode
+    if (previewEl) {
+      previewEl.textContent = 'No active session — connect device to view live telemetry';
+      previewEl.removeAttribute('data-tooltip');
+    }
+    if (badgeEl) {
+      badgeEl.textContent = 'Standby';
+    }
+    if (pingEl) pingEl.classList.add('hidden');
+    if (listEl) {
+      listEl.innerHTML = '<div class="text-zinc-500 py-2 italic text-center">No active device session. Plug in to start logging events.</div>';
+    }
   }
 }
 
@@ -581,18 +734,22 @@ function renderIdleState() {
   updateHeroHeadline(false);
 
   // 2. Hero Card (EURA Bio-Age Style)
-  el.heroCard.classList.remove('hero-gradient-healthy', 'hero-gradient-fair', 'hero-gradient-poor');
-  el.heroCard.classList.add('hero-gradient-unknown');
+  if (el.heroCard) {
+    el.heroCard.classList.remove('hero-gradient-healthy', 'hero-gradient-fair', 'hero-gradient-poor');
+    el.heroCard.classList.add('hero-gradient-unknown');
+  }
 
   // Fix 2: Hero Number Skeleton Shimmer
-  el.heroHealthNumber.textContent = '--';
-  el.heroHealthNumber.classList.add('skeleton-shimmer');
+  if (el.heroHealthNumber) {
+    el.heroHealthNumber.textContent = '--';
+    el.heroHealthNumber.classList.add('skeleton-shimmer');
+  }
 
-  el.heroStatusPill.textContent = 'Awaiting Device';
-  el.heroStatusHeading.textContent = 'No Device Connected';
-  el.heroStatusSubtext.textContent = 'Connect phone over USB-C to compute real chemical health.';
-  el.rangeDialMarker.style.left = '0%';
-  el.heroMethodBadge.textContent = 'Standby';
+  if (el.heroStatusPill) el.heroStatusPill.textContent = 'Awaiting Device';
+  if (el.heroStatusHeading) el.heroStatusHeading.textContent = 'No Device Connected';
+  if (el.heroStatusSubtext) el.heroStatusSubtext.textContent = 'Connect phone over USB-C to compute real chemical health.';
+  if (el.rangeDialMarker) el.rangeDialMarker.style.left = '0%';
+  if (el.heroMethodBadge) el.heroMethodBadge.textContent = 'Standby';
 
   const oemBadge = document.getElementById('hero-oem-soh-badge');
   if (oemBadge) oemBadge.classList.add('hidden');
@@ -609,24 +766,26 @@ function renderIdleState() {
   updateLastSeenDeviceLabel();
 
   // 3. Three-Stat Row (Heart Report)
-  el.statTemp.textContent = '—';
-  el.statTempLabel.textContent = 'Awaiting connection';
-  el.statVoltage.textContent = '—';
-  el.statCycles.textContent = 'Unavailable';
+  if (el.statTemp) el.statTemp.textContent = '—';
+  if (el.statTempLabel) el.statTempLabel.textContent = 'Awaiting connection';
+  if (el.statVoltage) el.statVoltage.textContent = '—';
+  if (el.statCycles) el.statCycles.textContent = 'Unavailable';
   const sublabel = document.getElementById('stat-cycles-sublabel');
   if (sublabel) sublabel.textContent = 'No cycle data';
 
   // 4. Current Charge Card
-  el.snapLevelText.textContent = '—';
-  el.snapStatusBadge.textContent = 'Disconnected';
-  el.snapStatusBadge.className = 'px-3 py-0.5 rounded-full text-xs font-semibold bg-zinc-800 text-zinc-400 border border-white/10';
-  el.snapChargeSpeedText.textContent = 'Connect phone over USB-C';
-  el.snapLastSync.textContent = 'Standby';
+  if (el.snapLevelText) el.snapLevelText.textContent = '—';
+  if (el.snapStatusBadge) {
+    el.snapStatusBadge.textContent = 'Disconnected';
+    el.snapStatusBadge.className = 'px-3 py-0.5 rounded-full text-xs font-semibold bg-zinc-800 text-zinc-400 border border-white/10';
+  }
+  if (el.snapChargeSpeedText) el.snapChargeSpeedText.textContent = 'Connect phone over USB-C';
+  if (el.snapLastSync) el.snapLastSync.textContent = 'Standby';
 
   // 5. Chemical Capacity Card
-  el.capFullText.textContent = '—';
+  if (el.capFullText) el.capFullText.textContent = '—';
   if (el.capFullSubtext) el.capFullSubtext.classList.add('hidden');
-  el.capDesignText.textContent = '—';
+  if (el.capDesignText) el.capDesignText.textContent = '—';
   if (el.capRetentionText) el.capRetentionText.textContent = '—';
   if (el.capFadeText) el.capFadeText.textContent = '—';
   if (el.capBadge) el.capBadge.textContent = 'Hardware Standby';
@@ -648,18 +807,58 @@ function renderIdleState() {
     el.simCapToggle.classList.add('opacity-40', 'cursor-not-allowed');
     el.simCapToggle.setAttribute('data-tooltip', 'Connect phone to run longevity forecast');
   }
+
+  // 7. Coulomb Calibration Card (Reset on idle)
+  if (state.calibrationPollTimer) {
+    clearInterval(state.calibrationPollTimer);
+    state.calibrationPollTimer = null;
+  }
+  if (el.calStatusBadge) {
+    el.calStatusBadge.textContent = 'Idle';
+    el.calStatusBadge.className = 'px-3 py-0.5 rounded-full text-xs font-semibold bg-zinc-800 text-zinc-400 border border-white/10 font-mono';
+  }
+  if (el.calCurrentText) el.calCurrentText.textContent = '0 mA';
+  if (el.calAccumulatedText) el.calAccumulatedText.textContent = '0 mAh';
+  if (el.calVerdictBox) el.calVerdictBox.classList.add('hidden');
+  if (el.calExtrapolatedText) el.calExtrapolatedText.textContent = '— mAh';
+  if (el.calHealthPctText) el.calHealthPctText.textContent = '—% SoH';
+  if (el.calComparisonSubtext) el.calComparisonSubtext.textContent = 'Validated against OEM design specification.';
+  if (el.calStopBtn) el.calStopBtn.classList.add('hidden');
+  if (el.calStartBtn) {
+    el.calStartBtn.disabled = true;
+    el.calStartBtn.setAttribute('data-tooltip', 'Connect phone to calibrate');
+  }
+  if (el.calSimBtn) el.calSimBtn.disabled = false;
+
+  // 8. Mathematical Degradation Breakdown Card (Reset on idle)
+  if (el.bdFadeText) el.bdFadeText.textContent = '—';
+  if (el.bdCycleText) el.bdCycleText.textContent = '—';
+  if (el.bdCalendarText) el.bdCalendarText.textContent = '—';
+  if (el.bdStressText) el.bdStressText.textContent = '—';
+  if (el.bdFinalText) el.bdFinalText.textContent = '--';
+  if (el.breakdownProvenanceNote) {
+    el.breakdownProvenanceNote.textContent = 'Standby · Connect phone to calculate multi-factor degradation model.';
+  }
+
+  // 9. Live Device Feed Bar (Neutral Standby)
+  renderDeviceStatus();
 }
 
 function renderSnapshot() {
-  const s = state.snapshot;
-  if (!s || (s.health_pct === null && s.health_pct === undefined && !s.connected) || (!s.connected && !s.device_serial)) {
+  if (!AppState.connected && AppState.mode !== 'seeded') {
+    renderIdleState();
+    return;
+  }
+
+  const s = AppState.snapshot || state.snapshot;
+  if (!s || (s.health_pct === null && s.health_pct === undefined)) {
     renderIdleState();
     return;
   }
 
   // Active connected phone vs seeded/cached evaluation
   if (el.heroEyebrow) {
-    if (s.connected) {
+    if (AppState.connected) {
       el.heroEyebrow.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"></span>Live Biometric Evaluation';
       el.heroEyebrow.className = 'eyebrow-label text-indigo-400 flex items-center gap-2';
     } else {
@@ -669,7 +868,7 @@ function renderSnapshot() {
   }
 
   // Active connected state restorations (Fix 1, Fix 2, Fix 3, Fix 5)
-  if (s.connected) {
+  if (AppState.connected) {
     updateHeroHeadline(true);
     el.heroHealthNumber.classList.remove('skeleton-shimmer');
     if (el.chartCanvasContainer) {
@@ -687,9 +886,12 @@ function renderSnapshot() {
     // Seeded / historical evaluation (not connected)
     updateHeroHeadline(false);
     if (el.chartCanvasContainer) {
-      el.chartCanvasContainer.classList.add('chart-stale-dimmed');
+      el.chartCanvasContainer.classList.remove('chart-stale-dimmed');
     }
-    updateChartLastSyncedLabel();
+    if (el.chartLastSyncedLabel) {
+      el.chartLastSyncedLabel.classList.remove('hidden');
+      el.chartLastSyncedLabel.textContent = 'Seeded Demo Preview';
+    }
     updateLastSeenDeviceLabel();
     el.heroHealthNumber.classList.remove('skeleton-shimmer');
   }
@@ -699,6 +901,16 @@ function renderSnapshot() {
     el.simCapToggle.disabled = false;
     el.simCapToggle.classList.remove('opacity-40', 'cursor-not-allowed');
     el.simCapToggle.removeAttribute('data-tooltip');
+  }
+
+  // Enable Coulomb calibration start button only when real phone is actively connected
+  if (el.calStartBtn) {
+    el.calStartBtn.disabled = !AppState.connected;
+    if (AppState.connected) {
+      el.calStartBtn.removeAttribute('data-tooltip');
+    } else {
+      el.calStartBtn.setAttribute('data-tooltip', 'Connect phone to calibrate');
+    }
   }
 
   // Sync richer snapshot model name to active toast if currently visible
@@ -1143,7 +1355,7 @@ function renderForecastError(message = 'Forecast calculation error', subtext = '
 }
 
 async function handleSimCapToggle() {
-  const isConnected = !!(state.systemStatus?.active_device_count > 0 || state.snapshot?.connected || state.selectedSerial);
+  const isConnected = AppState.connected || AppState.mode === 'seeded';
   if (!isConnected) {
     renderForecastInsufficientData('Awaiting device connection');
     if (el.simCapToggle) {
@@ -1219,6 +1431,10 @@ async function handleSimCapToggle() {
 
 // Active Coulomb Calibration
 async function startCalibration(simulate = false) {
+  if (!AppState.connected && !simulate) {
+    alert('Please connect an Android phone over USB-C to run empirical Coulomb calibration.');
+    return;
+  }
   try {
     if (el.calStartBtn) el.calStartBtn.disabled = true;
     if (el.calSimBtn) el.calSimBtn.disabled = true;
@@ -1704,14 +1920,18 @@ async function handleSeed() {
       const isConn = state.systemStatus?.active_device_count > 0;
       if (!isConn) {
         state.selectedSerial = 'mock-phone-2a';
-        await fetchSnapshot('mock-phone-2a');
+        const snapRes = await fetch('/api/snapshot?serial=mock-phone-2a');
+        const snapData = snapRes.ok ? await snapRes.json() : null;
         await fetchHistory(state.selectedDays, 'mock-phone-2a');
         await fetchInsights('mock-phone-2a');
+        AppState.setSeededMode('mock-phone-2a', snapData);
       } else {
         const activeDev = state.systemStatus?.connected_devices?.find(d => d.state === 'device');
         const realSerial = activeDev ? activeDev.serial : state.selectedSerial;
         if (realSerial) {
           state.selectedSerial = realSerial;
+          await fetchHistory(state.selectedDays, realSerial);
+          await fetchInsights(realSerial);
         }
       }
     }
@@ -1905,9 +2125,11 @@ function init() {
     });
   });
 
-  // Disconnected/standby state copy on boot
-  updateHeroHeadline(false);
-  renderForecastIdle();
+  // Register subscribers to AppState (Single Source of Truth)
+  AppState.subscribe(subscribeTopBar);
+  AppState.subscribe(subscribeGuidanceBanner);
+  AppState.subscribe(subscribeHeroHeadline);
+  AppState.subscribe(masterDashboardSubscriber);
 
   // Initial queries
   fetchStatus();
