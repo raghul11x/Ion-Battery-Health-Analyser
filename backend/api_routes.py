@@ -307,10 +307,13 @@ def get_snapshot(serial: Optional[str] = None) -> Dict[str, Any]:
         c_val = latest.get("cycle_count")
         cf = latest.get("charge_full_uah")
         cfd = latest.get("charge_full_design_uah")
+        chargeable_now = eff_cap or cf
         retention = None
         fade = None
-        if cf and cfd and cfd > 0:
-            retention = round((cf / float(cfd)) * 100.0, 2)
+        if chargeable_now and cfd and cfd > 0:
+            retention = round((chargeable_now / float(cfd)) * 100.0, 2)
+            if h_val is not None and abs(retention - h_val) < 0.1:
+                retention = h_val
             fade = round(max(0.0, 100.0 - retention), 2)
 
         forecast = calculate_replacement_forecast(current_health_pct=h_val, cycle_count=c_val) if h_val is not None else None
@@ -330,7 +333,7 @@ def get_snapshot(serial: Optional[str] = None) -> Dict[str, Any]:
         }
         disc_breakdown = {
             "maximum_battery_capacity": cfd,
-            "maximum_chargeable_capacity_now": cf,
+            "maximum_chargeable_capacity_now": chargeable_now,
             "capacity_retention_pct": retention,
             "capacity_fade_pct": fade,
             "cycle_fatigue_pct": None,
@@ -355,7 +358,7 @@ def get_snapshot(serial: Optional[str] = None) -> Dict[str, Any]:
             "cycle_count_display": str(cached_cycle) if cached_cycle is not None else "Unavailable",
             "status": "Disconnected",
             "maximum_battery_capacity_uah": cfd,
-            "maximum_chargeable_capacity_uah": cf,
+            "maximum_chargeable_capacity_uah": chargeable_now,
             "capacity_retention_pct": retention,
             "capacity_fade_pct": fade,
             "breakdown": disc_breakdown,
@@ -412,7 +415,7 @@ def get_raw_diagnostic(serial: Optional[str] = None) -> Dict[str, Any]:
 @router.get("/history")
 def get_history(
     serial: Optional[str] = None,
-    limit: int = Query(default=150, ge=10, le=500),
+    limit: int = Query(default=500, ge=10, le=1000),
     days: Optional[int] = Query(default=None, ge=1, le=365),
 ) -> Dict[str, Any]:
     """Returns chronological reading entries for trend graphing."""
@@ -603,8 +606,11 @@ def get_app_battery_drain(
 
     # If target is mock/seed, seed synthetic Nothing Phone 2a checkin data if not present
     if target_serial == "mock-phone-2a" or (not target_serial and not active):
-        existing_mock = db.get_app_drain_readings(serial="mock-phone-2a", window_hours=window_hours, sort_by=sort_by, limit=limit)
+        if not target_serial:
+            target_serial = "mock-phone-2a"
+        existing_mock = db.get_app_drain_readings(serial="mock-phone-2a", window_hours=0, limit=1)
         if not existing_mock:
+            from datetime import timedelta
             from backend.adb_client import (
                 SYNTHETIC_NOTHING_PHONE_2A_CHECKIN,
                 SYNTHETIC_NOTHING_PHONE_2A_CHARGED,
@@ -623,7 +629,17 @@ def get_app_battery_drain(
                 uid_map=uid_map,
                 serial="mock-phone-2a",
             )
-            db.insert_app_power_readings("mock-phone-2a", mock_parsed)
+            now = datetime.utcnow()
+            recent_apps = [r for r in mock_parsed if r.get("uid") in [10123, 10199, 10156]]
+            mid_apps = [r for r in mock_parsed if r.get("uid") in [1000, 10045]]
+            older_apps = [r for r in mock_parsed if r.get("uid") not in [10123, 10199, 10156, 1000, 10045]]
+
+            if recent_apps:
+                db.insert_app_power_readings("mock-phone-2a", recent_apps, timestamp=now - timedelta(hours=2))
+            if mid_apps:
+                db.insert_app_power_readings("mock-phone-2a", mid_apps, timestamp=now - timedelta(days=3))
+            if older_apps:
+                db.insert_app_power_readings("mock-phone-2a", older_apps, timestamp=now - timedelta(days=10))
 
     # If real device is connected and DB currently has no records for it, run an on-demand scan
     if is_connected and target_serial:

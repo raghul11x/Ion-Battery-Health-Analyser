@@ -149,3 +149,55 @@ def test_api_reconnect_and_unauthorized_state():
         assert "connection_guidance" in snap
 
 
+def test_api_snapshot_capacity_retention_consistency():
+    """
+    Verifies that the API snapshot returns capacity_retention_pct and capacity_fade_pct
+    consistent with effective_capacity_uah, maximum_battery_capacity_uah, and health_pct.
+    """
+    # Query with the recorded Nothing Phone 2a serial
+    res = client.get("/api/snapshot?serial=00058348P001026")
+    assert res.status_code == 200
+    snap = res.json()
+    assert snap["health_pct"] is not None
+    assert snap["capacity_retention_pct"] is not None
+    assert snap["capacity_fade_pct"] is not None
+    assert snap["capacity_retention_pct"] == snap["health_pct"]
+    assert round(snap["capacity_retention_pct"] + snap["capacity_fade_pct"], 2) == 100.0
+    assert snap["maximum_chargeable_capacity_uah"] == snap["effective_capacity_uah"]
+
+
+def test_api_app_drain_filtering_and_sorting():
+    """
+    Verifies that GET /api/app-drain properly supports:
+    1. Multi-window counts (24h < 7d <= all)
+    2. Distinct sort orderings for wakelock_ms, cpu_bg_ms, and estimated_mah.
+    """
+    res_24_wake = client.get("/api/app-drain?window=24h&sort_by=wakelock_ms&serial=mock-phone-2a")
+    assert res_24_wake.status_code == 200
+    items_24_wake = res_24_wake.json()["items"]
+    assert len(items_24_wake) >= 3
+
+    # Verify descending wakelock order
+    wl_vals = [it["wakelock_ms"] for it in items_24_wake]
+    assert wl_vals == sorted(wl_vals, reverse=True)
+
+    # Verify cpu_bg_ms sorting produces a distinct top app
+    res_24_cpu = client.get("/api/app-drain?window=24h&sort_by=cpu_bg_ms&serial=mock-phone-2a")
+    items_24_cpu = res_24_cpu.json()["items"]
+    cpu_vals = [it["cpu_bg_ms"] for it in items_24_cpu]
+    assert cpu_vals == sorted(cpu_vals, reverse=True)
+    assert items_24_cpu[0]["display_name"] == "YouTube"
+
+    # Verify estimated_mah sorting
+    res_24_mah = client.get("/api/app-drain?window=24h&sort_by=estimated_mah&serial=mock-phone-2a")
+    items_24_mah = res_24_mah.json()["items"]
+    mah_vals = [it["estimated_mah"] for it in items_24_mah]
+    assert mah_vals == sorted(mah_vals, reverse=True)
+
+    # Verify multi-window progression
+    res_7d = client.get("/api/app-drain?window=7d&sort_by=wakelock_ms&serial=mock-phone-2a")
+    res_all = client.get("/api/app-drain?window=all&sort_by=wakelock_ms&serial=mock-phone-2a")
+    assert len(items_24_wake) < len(res_7d.json()["items"]) <= len(res_all.json()["items"])
+
+
+

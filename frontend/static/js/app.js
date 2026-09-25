@@ -100,6 +100,10 @@ const AppState = {
         fetchInsights(serial);
       }
     } else {
+      // If currently displaying seeded demo evaluation, do not let an empty poll kick out to idle
+      if (this.mode === 'seeded') {
+        return;
+      }
       // Disconnected / idle
       const hadSession = this.connected || this.mode !== 'idle' || state.selectedSerial !== null;
       this.connected = false;
@@ -341,7 +345,7 @@ async function fetchHistory(days = 30, serial = null) {
   try {
     const targetSerial = serial || state.selectedSerial;
     const serialParam = targetSerial ? `&serial=${encodeURIComponent(targetSerial)}` : '';
-    const res = await fetch(`/api/history?days=${days}&limit=150${serialParam}`);
+    const res = await fetch(`/api/history?days=${days}&limit=500${serialParam}`);
     if (res.ok) {
       const data = await res.json();
       state.history = data.readings || [];
@@ -1570,8 +1574,22 @@ async function stopCalibration() {
 }
 
 function renderHistoryAndChart() {
-  const readings = state.history;
-  el.historyCountBadge.textContent = `${readings.length} readings`;
+  const readings = state.history || [];
+  if (el.historyCountBadge) {
+    if (readings.length > 0) {
+      const firstTs = new Date(readings[0].timestamp).getTime();
+      const lastTs = new Date(readings[readings.length - 1].timestamp).getTime();
+      const spanDays = Math.max(1, Math.round((lastTs - firstTs) / (1000 * 60 * 60 * 24)));
+      const filterDays = state.selectedDays || 30;
+      if (spanDays < filterDays) {
+        el.historyCountBadge.textContent = `${readings.length} readings · ${spanDays}D recorded`;
+      } else {
+        el.historyCountBadge.textContent = `${readings.length} readings · ${filterDays}D range`;
+      }
+    } else {
+      el.historyCountBadge.textContent = `0 readings`;
+    }
+  }
 
   // 1. Chart.js (EURA Heart Report Aesthetic: Clean White Curve)
   if (el.chartCanvas) {
@@ -2142,17 +2160,18 @@ async function updateLastSeenDeviceLabel() {
 async function fetchAppDrain(force = false) {
   const isConnected = AppState.connected;
   const isSeeded = AppState.mode === 'seeded';
-  if (!isConnected && !isSeeded) {
+  const hasTarget = Boolean(state.selectedSerial || state.snapshot?.device_serial);
+  if (!isConnected && !isSeeded && !hasTarget) {
     renderAppDrain(null, true);
     return;
   }
 
   const listEl = el.appDrainList || document.getElementById('app-drain-list');
-  if (state.appDrain.loading) return;
+  if (state.appDrain.loading && !force) return;
   state.appDrain.loading = true;
 
   try {
-    const targetSerial = (isConnected || isSeeded) ? (state.selectedSerial || (isSeeded ? 'mock-phone-2a' : '')) : '';
+    const targetSerial = state.selectedSerial || (isSeeded ? 'mock-phone-2a' : (state.snapshot?.device_serial || ''));
     const res = await fetch(`/api/app-drain?window=${state.appDrain.window}&sort_by=${state.appDrain.sort_by}&serial=${encodeURIComponent(targetSerial)}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
@@ -2160,7 +2179,7 @@ async function fetchAppDrain(force = false) {
     renderAppDrain(data, false);
   } catch (err) {
     console.error('[APP DRAIN] Fetch failed:', err);
-    if (listEl) {
+    if (listEl && (!state.appDrain.data || !state.appDrain.data.items)) {
       listEl.innerHTML = `<div class="py-6 text-center text-zinc-500 text-xs font-mono">Unable to retrieve app battery drain telemetry (${escapeHtml(err.message)}).</div>`;
     }
   } finally {
@@ -2194,7 +2213,8 @@ function renderAppDrain(data, isStandby = false) {
     thermalBanner.classList.add('hidden');
   }
 
-  const items = data.items || [];
+  const sortKey = state.appDrain.sort_by || 'wakelock_ms';
+  const items = [...(data.items || [])];
   if (items.length === 0) {
     listEl.innerHTML = `
       <div class="py-8 text-center text-zinc-500 text-xs font-mono">
@@ -2204,8 +2224,14 @@ function renderAppDrain(data, isStandby = false) {
     return;
   }
 
+  // Strictly sort descending by selected metric
+  items.sort((a, b) => {
+    const valA = a[sortKey] ?? 0;
+    const valB = b[sortKey] ?? 0;
+    return valB - valA;
+  });
+
   // Calculate highest metric value to normalize relative progress bar
-  const sortKey = state.appDrain.sort_by || 'wakelock_ms';
   let maxVal = 1;
   items.forEach(it => {
     const val = it[sortKey] || 0;
@@ -2231,7 +2257,31 @@ function renderAppDrain(data, isStandby = false) {
       </span>
     ` : '';
 
-    const estMahHtml = estMah ? `
+    let primaryMetricHtml = '';
+    if (sortKey === 'cpu_bg_ms') {
+      primaryMetricHtml = `
+        <div class="text-right">
+          <div class="text-xs font-black font-mono text-indigo-300">${cpuBgSec}s CPU</div>
+          <div class="text-[10px] font-mono text-zinc-500">Wakelock: ${wakelockDisplay}</div>
+        </div>
+      `;
+    } else if (sortKey === 'estimated_mah') {
+      primaryMetricHtml = `
+        <div class="text-right">
+          <div class="text-xs font-black font-mono text-indigo-300">${estMah || '—'}</div>
+          <div class="text-[10px] font-mono text-zinc-500">Wakelock: ${wakelockDisplay}</div>
+        </div>
+      `;
+    } else {
+      primaryMetricHtml = `
+        <div class="text-right">
+          <div class="text-xs font-bold font-mono text-white">${wakelockDisplay}</div>
+          <div class="text-[10px] font-mono text-zinc-500">${wakelockCount} locks</div>
+        </div>
+      `;
+    }
+
+    const estMahSub = (sortKey !== 'estimated_mah' && estMah) ? `
       <div class="text-right">
         <div class="text-xs font-black font-mono text-indigo-300">${estMah}</div>
         <div class="text-[9px] uppercase font-mono text-zinc-500">Est. Power</div>
@@ -2255,11 +2305,8 @@ function renderAppDrain(data, isStandby = false) {
           </div>
 
           <div class="flex items-center gap-4 shrink-0">
-            <div class="text-right">
-              <div class="text-xs font-bold font-mono text-white">${wakelockDisplay}</div>
-              <div class="text-[10px] font-mono text-zinc-500">${wakelockCount} locks</div>
-            </div>
-            ${estMahHtml}
+            ${primaryMetricHtml}
+            ${estMahSub}
           </div>
         </div>
 
@@ -2349,7 +2396,10 @@ function init() {
       btn.classList.add('active', 'bg-indigo-600', 'text-white');
       btn.classList.remove('text-zinc-400');
       state.appDrain.sort_by = btn.dataset.sort;
-      fetchAppDrain();
+      if (state.appDrain.data && Array.isArray(state.appDrain.data.items)) {
+        renderAppDrain(state.appDrain.data, false);
+      }
+      fetchAppDrain(true);
     });
   });
 
@@ -2363,7 +2413,7 @@ function init() {
       btn.classList.add('active', 'bg-white', 'text-black', 'font-bold');
       btn.classList.remove('text-zinc-400', 'font-medium');
       state.appDrain.window = btn.dataset.window;
-      fetchAppDrain();
+      fetchAppDrain(true);
     });
   });
 
@@ -2380,6 +2430,31 @@ function init() {
   fetchHistory(state.selectedDays);
   fetchInsights();
   fetchAppDrain();
+
+  // Test Verification URL query parameter hook
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('seed') === '1') {
+      setTimeout(async () => {
+        await handleSeed();
+        const sortParam = params.get('sort');
+        if (sortParam) {
+          const btn = document.querySelector(`.app-drain-sort-pill[data-sort="${sortParam}"]`);
+          if (btn) btn.click();
+        }
+        const windowParam = params.get('window');
+        if (windowParam) {
+          const btn = document.querySelector(`.app-drain-window-pill[data-window="${windowParam}"]`);
+          if (btn) btn.click();
+        }
+        const daysParam = params.get('days');
+        if (daysParam) {
+          const btn = document.querySelector(`.time-filter-pill[data-days="${daysParam}"]`);
+          if (btn) btn.click();
+        }
+      }, 700);
+    }
+  } catch (_) {}
 
   // Background polling loop (1s for real-time connect/disconnect detection)
   state.pollTimer = setInterval(() => {

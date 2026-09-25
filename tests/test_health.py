@@ -192,6 +192,12 @@ def test_apple_standard_calibration_for_user_phone():
     assert details["charge_full_uah"] == 4998000
     assert 4050000 <= details["effective_capacity_uah"] <= 4150000
     assert "apple_standard" in details
+    # Mathematical invariant: retention & fade must match evaluated health, NEVER the uncalibrated 100.16%
+    assert details["capacity_retention_pct"] == pct
+    assert details["capacity_fade_pct"] == round(100.0 - pct, 2)
+    assert details["breakdown"]["maximum_chargeable_capacity_now"] == details["effective_capacity_uah"]
+    assert details["breakdown"]["capacity_retention_pct"] == pct
+    assert details["breakdown"]["capacity_fade_pct"] == round(100.0 - pct, 2)
 
 
 def test_brand_new_phone_does_not_trigger_static_override():
@@ -223,4 +229,30 @@ def test_real_dynamic_degradation_does_not_override():
     assert raw_ratio == 83.0
     assert details["is_uncalibrated_static_register"] is False
     assert details["effective_capacity_uah"] == 4150000
+
+
+def test_capacity_retention_and_fade_mathematical_consistency():
+    """
+    Zero-hallucination invariant:
+    Max Chemically Chargeable Capacity / Max Battery Capacity == Capacity Retention.
+    Capacity Retention + Capacity Fade == 100.0%.
+    Retention strictly agrees with displayed health.
+    """
+    pct, raw_ratio, recalibrated, method, details = calculate_health(
+        charge_full_uah=4998000,
+        charge_full_design_uah=499000,
+        cycle_count=706,
+        voltage_mv=4263,
+        temperature_c=34.0,
+    )
+    eff_cap = details["effective_capacity_uah"]
+    design_cap = details["charge_full_design_uah"]
+    retention = details["capacity_retention_pct"]
+    fade = details["capacity_fade_pct"]
+
+    # 4112 / 4990 = 82.4%
+    assert round((eff_cap / float(design_cap)) * 100.0, 1) == round(retention, 1)
+    assert round(retention + fade, 2) == 100.0
+    assert retention == pct
+
 

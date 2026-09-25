@@ -172,6 +172,8 @@ def build_breakdown(
         and maximum_chargeable_capacity_now > 0
     ):
         retention = round((maximum_chargeable_capacity_now / float(maximum_battery_capacity)) * 100.0, 2)
+        if displayed_health_pct is not None and abs(retention - displayed_health_pct) < 0.1:
+            retention = displayed_health_pct
         fade = round(max(0.0, 100.0 - retention), 2)
 
     cycle_fatigue = apple_model.get("cycle_wear_pct") if apple_model else (0.0 if (cycle_count and cycle_count > 0) else None)
@@ -348,9 +350,10 @@ def calculate_health(
             source = "sysfs hardware capacity registers"
 
         if not (is_cycle_unresolved and raw_ratio >= 98.5 and history_days is not None and history_days >= 7.0):
+            chargeable_now = effective_capacity_uah if effective_capacity_uah is not None else norm_full
             breakdown = build_breakdown(
                 maximum_battery_capacity=norm_design,
-                maximum_chargeable_capacity_now=norm_full,
+                maximum_chargeable_capacity_now=chargeable_now,
                 displayed_health_pct=displayed_health,
                 apple_model=apple_model,
                 cycle_count=cycle_count,
@@ -478,9 +481,10 @@ def calculate_health(
             trend_ratio = (current_capacity_est / baseline_cap) * 100.0
             recalibrated = trend_ratio > 100.0
             displayed_health = min(100.0, max(0.0, round(trend_ratio, 1)))
+            eff_cap = int(current_capacity_est)
             breakdown = build_breakdown(
-                maximum_battery_capacity=norm_design,
-                maximum_chargeable_capacity_now=norm_full,
+                maximum_battery_capacity=norm_design or (int(baseline_cap) if baseline_cap else None),
+                maximum_chargeable_capacity_now=eff_cap,
                 displayed_health_pct=displayed_health,
                 apple_model=apple_model,
                 cycle_count=cycle_count,
@@ -527,7 +531,7 @@ def calculate_health(
 
     breakdown = build_breakdown(
         maximum_battery_capacity=norm_design,
-        maximum_chargeable_capacity_now=norm_full,
+        maximum_chargeable_capacity_now=effective_cap or norm_full,
         displayed_health_pct=displayed_health,
         apple_model=apple_model,
         cycle_count=cycle_count,

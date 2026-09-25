@@ -452,7 +452,7 @@ class Database:
     def get_history(
         self,
         device_serial: Optional[str] = None,
-        limit: int = 150,
+        limit: int = 500,
         days: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """
@@ -951,14 +951,6 @@ class Database:
                 query = query.filter(AppPowerReading.device_serial == serial)
 
             all_readings = query.all()
-            if not all_readings:
-                # If window yielded nothing, check latest available readings
-                if serial:
-                    latest_query = session.query(AppPowerReading).filter(AppPowerReading.device_serial == serial)
-                else:
-                    latest_query = session.query(AppPowerReading)
-                all_readings = latest_query.order_by(desc(AppPowerReading.timestamp)).limit(limit * 5).all()
-
             if not all_readings:
                 return []
 
