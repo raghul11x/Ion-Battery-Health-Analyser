@@ -52,9 +52,8 @@
       #60a5fa 10%, #e879f9 15%, #60a5fa 20%, #5eead4 25%, #60a5fa 30%);
   background-size: 300%, 200%;
   background-position: 50% 50%, 50% 50%;
-  filter: blur(10px) opacity(50%) saturate(200%);
-  -webkit-mask-image: radial-gradient(ellipse at 100% 0%, black 40%, transparent 70%);
-  mask-image: radial-gradient(ellipse at 100% 0%, black 40%, transparent 70%);
+  filter: blur(7px) opacity(68%) saturate(200%);
+  /* Full-viewport — no corner mask */
 }
 
 .ion-aurora-overlay {
@@ -98,9 +97,9 @@ body {
   user-select: none;
 }
 
-/* Cinematic Diagonal Backdrop for Dashboard Header/Hero */
+/* Cinematic Hero Zone — semi-transparent so aurora shows through */
 .cinematic-backdrop {
-  background: var(--bg-gradient);
+  background: rgba(10, 14, 39, 0.78);
   position: relative;
   overflow: hidden;
 }
