@@ -2326,7 +2326,23 @@ function renderAppDrain(data, isStandby = false) {
   }).join('');
 }
 
+function updateAppDrainWindowPills(targetWindow) {
+  const currentWindow = (targetWindow || state.appDrain?.window || '24h').toLowerCase();
+  if (state.appDrain) state.appDrain.window = currentWindow;
+  document.querySelectorAll('.app-drain-window-pill').forEach(b => {
+    const isMatch = (b.dataset.window || '').toLowerCase() === currentWindow;
+    if (isMatch) {
+      b.classList.add('active', 'bg-white', 'text-black', 'font-bold', 'shadow');
+      b.classList.remove('text-zinc-400', 'font-medium');
+    } else {
+      b.classList.remove('active', 'bg-white', 'text-black', 'font-bold', 'shadow');
+      b.classList.add('text-zinc-400', 'font-medium');
+    }
+  });
+}
+
 function subscribeTopBatteryDrainers({ connected, mode }) {
+  updateAppDrainWindowPills(state.appDrain?.window || '24h');
   if (connected || mode === 'seeded') {
     fetchAppDrain();
   } else {
@@ -2406,16 +2422,13 @@ function init() {
   document.querySelectorAll('.app-drain-window-pill').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.preventDefault();
-      document.querySelectorAll('.app-drain-window-pill').forEach(b => {
-        b.classList.remove('active', 'bg-white', 'text-black', 'font-bold');
-        b.classList.add('text-zinc-400', 'font-medium');
-      });
-      btn.classList.add('active', 'bg-white', 'text-black', 'font-bold');
-      btn.classList.remove('text-zinc-400', 'font-medium');
-      state.appDrain.window = btn.dataset.window;
+      updateAppDrainWindowPills(btn.dataset.window);
       fetchAppDrain(true);
     });
   });
+
+  // Ensure default window pill active styling (24H) is explicitly applied on boot
+  updateAppDrainWindowPills(state.appDrain?.window || '24h');
 
   // Register subscribers to AppState (Single Source of Truth)
   AppState.subscribe(subscribeTopBar);
@@ -2444,8 +2457,10 @@ function init() {
         }
         const windowParam = params.get('window');
         if (windowParam) {
-          const btn = document.querySelector(`.app-drain-window-pill[data-window="${windowParam}"]`);
+          const normWindow = (windowParam === '168' ? '7d' : (windowParam === '0' ? 'all' : windowParam)).toLowerCase();
+          const btn = document.querySelector(`.app-drain-window-pill[data-window="${normWindow}"]`);
           if (btn) btn.click();
+          else updateAppDrainWindowPills(normWindow);
         }
         const daysParam = params.get('days');
         if (daysParam) {
