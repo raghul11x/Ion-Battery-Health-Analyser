@@ -5,6 +5,7 @@ Spins up the FastAPI backend in a daemon thread and presents the native desktop 
 
 from __future__ import annotations
 import argparse
+import ctypes
 import os
 import sys
 import threading
@@ -32,6 +33,65 @@ else:
     BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 ICON_PATH = os.path.join(BASE_DIR, "frontend", "static", "assets", "favicon.ico")
+
+# Explicitly prevent PyWebview from delegating navigation/new windows to external OS browser
+webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = False
+
+
+def check_webview2_available() -> bool:
+    """Verifies that Microsoft Edge WebView2 runtime is installed on Windows."""
+    if sys.platform != "win32":
+        return True
+    try:
+        import webview.platforms.winforms as wf
+        return bool(wf._is_chromium())
+    except Exception:
+        pass
+
+    # Direct registry inspection as fallback
+    try:
+        import winreg
+        keys = [
+            r"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+            r"SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+        ]
+        for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+            for k in keys:
+                try:
+                    with winreg.OpenKey(root, k) as h:
+                        val, _ = winreg.QueryValueEx(h, "pv")
+                        if val and val != "0.0.0.0":
+                            return True
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return False
+
+
+def show_webview2_missing_dialog(detail: str = ""):
+    """Displays a native Windows error dialog instructing the user to install WebView2."""
+    if sys.platform == "win32":
+        msg = (
+            "Microsoft Edge WebView2 Runtime is required to run Ion+.\n\n"
+            "The application could not find or initialize the WebView2 Runtime engine.\n\n"
+            "Please download and install the Evergreen WebView2 Runtime from Microsoft:\n"
+            "https://developer.microsoft.com/en-us/microsoft-edge/webview2/\n\n"
+        )
+        if detail:
+            msg += f"Details: {detail}\n\n"
+        msg += "The application will now exit."
+        try:
+            ctypes.windll.user32.MessageBoxW(
+                0,
+                msg,
+                "Ion+ — Microsoft Edge WebView2 Required",
+                0x10 | 0x0,  # MB_ICONERROR | MB_OK
+            )
+        except Exception:
+            print(f"[FATAL ERROR] Microsoft Edge WebView2 Runtime is required. {detail}")
+    else:
+        print(f"[FATAL ERROR] Microsoft Edge WebView2 Runtime is required. {detail}")
 
 
 def run_server():
@@ -61,14 +121,18 @@ def is_server_ready() -> bool:
 
 def main():
     parser = argparse.ArgumentParser(description="Ion+ Battery Health Analyzer Desktop")
-    parser.add_argument("--browser", action="store_true", help="Launch in default web browser instead of PyWebview window")
     parser.add_argument("--port", type=int, default=PORT, help="Port to bind FastAPI server")
     parser.add_argument("--no-splash", action="store_true", help="Disable startup splash screen")
     args = parser.parse_args()
 
+    # Pre-flight check: ensure WebView2 runtime is present before initializing UI
+    if not check_webview2_available():
+        show_webview2_missing_dialog("Microsoft Edge WebView2 Runtime was not detected.")
+        sys.exit(1)
+
     # 1. Initialize Adobe-Style Loading Splash Screen
     splash = None
-    if not args.no_splash and not args.browser:
+    if not args.no_splash:
         try:
             from splash import AdobeSplashScreen
             splash = AdobeSplashScreen()
@@ -117,17 +181,8 @@ def main():
         splash.close()
         splash = None
 
-    # 5. Launch UI (Browser or Native EdgeChromium Window)
-    if args.browser:
-        import webbrowser
-        webbrowser.open(BASE_URL)
-        try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            sys.exit(0)
-    else:
-        # Launch native PyWebview window
+    # 5. Launch native PyWebview window (Strictly native window, zero browser fallback)
+    try:
         window = webview.create_window(
             title="Ion+",
             url=BASE_URL,
@@ -144,9 +199,17 @@ def main():
             debug=False,
             icon=ICON_PATH if os.path.isfile(ICON_PATH) else None,
         )
+    except Exception as e:
+        if splash:
+            splash.close()
+            splash = None
+        show_webview2_missing_dialog(str(e))
+        sys.exit(1)
+    finally:
         # Cleanly terminate all background threads and watcher
         os._exit(0)
 
 
 if __name__ == "__main__":
     main()
+

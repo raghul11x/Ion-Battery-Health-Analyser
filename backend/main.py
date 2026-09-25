@@ -55,10 +55,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Enable CORS for local API access
+# Enable CORS for local native desktop window access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://127.0.0.1:8765",
+        "http://localhost:8765",
+        "http://127.0.0.1",
+        "http://localhost",
+        "app://pywebview",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
