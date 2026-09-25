@@ -40,7 +40,7 @@
   </div>
 
   <!-- TOP BAR & CAPSULE NAVIGATION (Design Doc v2 §5.2) -->
-  <header class="sticky top-0 z-40 w-full px-6 py-4 flex items-center justify-between backdrop-blur-md bg-[#0B0B10]/80 border-b border-white/[0.06]">
+  <header class="sticky top-0 z-40 w-full px-6 py-4 flex items-center justify-between">
     
     <!-- Left: Brand / Title -->
     <div class="relative z-10 flex items-center gap-3">
@@ -140,8 +140,8 @@
       <button id="reconnect-btn" class="px-3 py-1.5 rounded-lg bg-amber-400/20 hover:bg-amber-400/30 text-amber-200 text-xs font-semibold shrink-0 transition">Re-check</button>
     </div>
 
-    <!-- LIVE DEVICE ACTIVITY FEED (Collapsible Glassmorphic Strip) -->
-    <div id="device-status-panel" class="hidden rounded-2xl bg-[#0F1024]/90 border border-white/10 shadow-xl overflow-hidden backdrop-blur-md transition-all duration-300">
+    <!-- LIVE DEVICE ACTIVITY FEED (Collapsible Strip) -->
+    <div id="device-status-panel" class="hidden rounded-2xl bg-[#0F1024] border border-white/10 shadow-xl overflow-hidden transition-all duration-300">
       <!-- Collapsible Header Bar -->
       <button id="device-status-toggle" type="button" class="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-white/[0.03] transition-colors focus:outline-none select-none" aria-expanded="false" aria-controls="device-status-content">
         <div class="flex items-center gap-2.5 min-w-0 pr-2">
