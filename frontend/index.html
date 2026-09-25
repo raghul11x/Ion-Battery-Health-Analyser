@@ -30,18 +30,18 @@
     }
   </script>
 </head>
-<body class="bg-[#0B0B10] text-white flex flex-col min-h-screen">
+<body class="bg-[#0B0B10] text-white flex flex-col min-h-screen relative">
+
+  <!-- Aurora / AnimatedRays Application Background -->
+  <div class="ion-aurora-wrap" aria-hidden="true">
+    <div class="ion-aurora-base">
+      <div class="ion-aurora-overlay"></div>
+    </div>
+  </div>
 
   <!-- TOP BAR & CAPSULE NAVIGATION (Design Doc v2 §5.2) -->
   <header class="sticky top-0 z-40 w-full px-6 py-4 flex items-center justify-between backdrop-blur-md bg-[#0B0B10]/80 border-b border-white/[0.06]">
     
-    <!-- Aurora / AnimatedRays Accent Effect (Header Corner-Masked) -->
-    <div class="ion-aurora-wrap" aria-hidden="true">
-      <div class="ion-aurora-base">
-        <div class="ion-aurora-overlay"></div>
-      </div>
-    </div>
-
     <!-- Left: Brand / Title -->
     <div class="relative z-10 flex items-center gap-3">
       <img src="/static/assets/icon-1024.png" alt="Ion+" class="w-9 h-9 rounded-xl shadow-lg border border-white/10">
@@ -127,7 +127,7 @@
   </div>
 
   <!-- MAIN SCROLLABLE CONTENT -->
-  <main class="flex-1 w-full max-w-7xl mx-auto px-6 py-8 space-y-10">
+  <main class="relative z-10 flex-1 w-full max-w-7xl mx-auto px-6 py-8 space-y-10">
 
     <!-- USB Connection Guidance Banner (Unauthorized / Offline / Missing Debugging) -->
     <div id="connection-guidance-banner" class="hidden p-4 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-200 text-xs sm:text-sm flex items-center justify-between gap-3 shadow-lg">

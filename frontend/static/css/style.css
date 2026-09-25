@@ -28,12 +28,12 @@
 }
 
 /* ==========================================================================
-   Header Aurora / AnimatedRays Accent Effect
-   Ported Corner-Masked Radial Accent with GPU Performance Safeguards
+   Application Aurora / AnimatedRays Background
+   Ported Full-App Animated Rail Background with GPU Performance Safeguards
    ========================================================================== */
 
 .ion-aurora-wrap {
-  position: absolute;
+  position: fixed;
   inset: 0;
   overflow: hidden;
   pointer-events: none;
@@ -68,6 +68,7 @@
     repeating-linear-gradient(100deg,
       #60a5fa 10%, #e879f9 15%, #60a5fa 20%, #5eead4 25%, #60a5fa 30%);
   background-size: 200%, 100%;
+  background-attachment: fixed;
   mix-blend-mode: difference;
   animation: ion-aurora-pan 60s linear infinite;
   will-change: background-position;
