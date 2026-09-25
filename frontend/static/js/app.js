@@ -2350,8 +2350,50 @@ function subscribeTopBatteryDrainers({ connected, mode }) {
   }
 }
 
+/**
+ * Aurora / AnimatedRays Lifecycle Management
+ * Pauses continuous GPU background-position animation when the window loses focus
+ * or is minimized/hidden, preventing idle battery drain.
+ */
+function initAuroraAnimationLifecycle() {
+  const auroraWrap = document.querySelector('.ion-aurora-wrap');
+  if (!auroraWrap) return;
+
+  function setAuroraPaused(paused) {
+    if (paused) {
+      auroraWrap.classList.add('ion-aurora-paused');
+    } else {
+      auroraWrap.classList.remove('ion-aurora-paused');
+    }
+  }
+
+  // 1. Pause on window blur (window loses focus or user switches tasks)
+  window.addEventListener('blur', () => {
+    setAuroraPaused(true);
+  });
+
+  // 2. Resume on window focus (only if document is visible)
+  window.addEventListener('focus', () => {
+    if (!document.hidden) {
+      setAuroraPaused(false);
+    }
+  });
+
+  // 3. Pause when window is minimized or document is hidden
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      setAuroraPaused(true);
+    } else if (document.hasFocus()) {
+      setAuroraPaused(false);
+    }
+  });
+}
+
 // Boot
 function init() {
+  // Initialize Aurora animation lifecycle (pause on blur / minimize, resume on focus)
+  initAuroraAnimationLifecycle();
+
   // Capsule Nav clicks
   el.capsuleSegments.forEach(seg => {
     seg.addEventListener('click', () => switchTab(seg.dataset.tab));

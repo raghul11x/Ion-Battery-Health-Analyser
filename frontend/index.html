@@ -35,8 +35,15 @@
   <!-- TOP BAR & CAPSULE NAVIGATION (Design Doc v2 §5.2) -->
   <header class="sticky top-0 z-40 w-full px-6 py-4 flex items-center justify-between backdrop-blur-md bg-[#0B0B10]/80 border-b border-white/[0.06]">
     
+    <!-- Aurora / AnimatedRays Accent Effect (Header Corner-Masked) -->
+    <div class="ion-aurora-wrap" aria-hidden="true">
+      <div class="ion-aurora-base">
+        <div class="ion-aurora-overlay"></div>
+      </div>
+    </div>
+
     <!-- Left: Brand / Title -->
-    <div class="flex items-center gap-3">
+    <div class="relative z-10 flex items-center gap-3">
       <img src="/static/assets/icon-1024.png" alt="Ion+" class="w-9 h-9 rounded-xl shadow-lg border border-white/10">
       <div>
         <div class="eyebrow-label text-cyan-400 text-[10px] tracking-wider uppercase font-bold">INTELLIGENCE AT THE CORE</div>
@@ -47,7 +54,7 @@
     </div>
 
     <!-- Center: Floating Pill Capsule Nav -->
-    <nav class="capsule-nav flex items-center gap-1 shadow-lg">
+    <nav class="relative z-10 capsule-nav flex items-center gap-1 shadow-lg">
       <button class="capsule-segment ion-glow-btn ion-glow-btn-secondary active" data-tab="dashboard">Dashboard</button>
       <button class="capsule-segment ion-glow-btn ion-glow-btn-secondary" data-tab="trends">History</button>
       <button class="capsule-segment ion-glow-btn ion-glow-btn-secondary" data-tab="habits">Insights</button>
@@ -55,7 +62,7 @@
     </nav>
 
     <!-- Right: Connection Capsule & Actions -->
-    <div class="relative flex flex-col items-end">
+    <div class="relative z-10 flex flex-col items-end">
       <div class="flex items-center gap-3">
         <!-- Status Pill with Additive Last-Seen Subtext -->
         <div id="connection-pill" class="h-[34px] px-4 rounded-full bg-[#0F1024] border border-white/10 text-xs flex items-center gap-2.5 shadow-inner whitespace-nowrap">

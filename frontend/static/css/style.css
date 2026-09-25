@@ -22,6 +22,67 @@
   --text-primary: #FFFFFF;
   --text-secondary: #A1A1AA;
   --text-muted: #71717A;
+
+  /* Aurora Header Accent */
+  --aurora-stripe: rgba(139, 92, 246, 0.14); /* violet, tuned to EURA palette */
+}
+
+/* ==========================================================================
+   Header Aurora / AnimatedRays Accent Effect
+   Ported Corner-Masked Radial Accent with GPU Performance Safeguards
+   ========================================================================== */
+
+.ion-aurora-wrap {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.ion-aurora-base {
+  position: absolute;
+  inset: 0;
+  background-image:
+    repeating-linear-gradient(100deg,
+      var(--aurora-stripe) 0%, var(--aurora-stripe) 7%,
+      transparent 10%, transparent 12%,
+      var(--aurora-stripe) 16%),
+    repeating-linear-gradient(100deg,
+      #60a5fa 10%, #e879f9 15%, #60a5fa 20%, #5eead4 25%, #60a5fa 30%);
+  background-size: 300%, 200%;
+  background-position: 50% 50%, 50% 50%;
+  filter: blur(10px) opacity(50%) saturate(200%);
+  -webkit-mask-image: radial-gradient(ellipse at 100% 0%, black 40%, transparent 70%);
+  mask-image: radial-gradient(ellipse at 100% 0%, black 40%, transparent 70%);
+}
+
+.ion-aurora-overlay {
+  position: absolute;
+  inset: 0;
+  background-image:
+    repeating-linear-gradient(100deg,
+      var(--aurora-stripe) 0%, var(--aurora-stripe) 7%,
+      transparent 10%, transparent 12%,
+      var(--aurora-stripe) 16%),
+    repeating-linear-gradient(100deg,
+      #60a5fa 10%, #e879f9 15%, #60a5fa 20%, #5eead4 25%, #60a5fa 30%);
+  background-size: 200%, 100%;
+  mix-blend-mode: difference;
+  animation: ion-aurora-pan 60s linear infinite;
+  will-change: background-position;
+}
+
+@keyframes ion-aurora-pan {
+  0%   { background-position: 50% 50%, 50% 50%; }
+  50%  { background-position: 350% 50%, 350% 50%; }
+  100% { background-position: 50% 50%, 50% 50%; }
+}
+
+/* Pause when the window loses focus or is minimized */
+.ion-aurora-paused .ion-aurora-overlay,
+.ion-aurora-wrap.ion-aurora-paused .ion-aurora-overlay {
+  animation-play-state: paused !important;
 }
 
 body {

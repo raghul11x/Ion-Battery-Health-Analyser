@@ -193,6 +193,21 @@ def main():
             text_select=False,
         )
 
+        def on_window_minimized():
+            try:
+                window.evaluate_js("document.querySelector('.ion-aurora-wrap')?.classList.add('ion-aurora-paused')")
+            except Exception:
+                pass
+
+        def on_window_restored():
+            try:
+                window.evaluate_js("document.querySelector('.ion-aurora-wrap')?.classList.remove('ion-aurora-paused')")
+            except Exception:
+                pass
+
+        window.events.minimized += on_window_minimized
+        window.events.restored += on_window_restored
+
         # Start native desktop window loop
         webview.start(
             gui="edgechromium",
