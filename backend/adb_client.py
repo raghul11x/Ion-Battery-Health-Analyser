@@ -99,6 +99,8 @@ class ADBClient:
         # re-running the expensive batterystats excavation on every profiling call.
         self._deep_scan_cache: Dict[str, Dict] = {}
         self._deep_scan_ts: Dict[str, float] = {}
+        # UID-to-package resolution cache per device serial
+        self._uid_package_cache: Dict[str, Dict[int, str]] = {}
 
     def is_available(self) -> bool:
         """Returns True if an ADB executable is discovered, dynamically retrying if needed."""
@@ -500,10 +502,92 @@ class ADBClient:
         return result
 
     def invalidate_deep_scan_cache(self, serial: str) -> None:
-        """Clears the cached deep_scan result for a given serial (call on disconnect)."""
+        """Clears the cached deep_scan result and package name cache for a given serial (call on disconnect)."""
         self._deep_scan_cache.pop(serial, None)
         self._deep_scan_ts.pop(serial, None)
-        logger.debug(f"[ADB CACHE] Deep-scan cache invalidated for {serial}")
+        self._uid_package_cache.pop(serial, None)
+        logger.debug(f"[ADB CACHE] Deep-scan and package caches invalidated for {serial}")
+
+    KNOWN_SYSTEM_UIDS: Dict[int, str] = {
+        0: "root",
+        1000: "android (Android System)",
+        1001: "com.android.phone (Telephony)",
+        1013: "mediaserver",
+        1020: "multicast",
+        1027: "com.android.nfc",
+        1068: "dnsmasq",
+        1073: "audioserver",
+        1074: "cameraserver",
+    }
+
+    def pull_batterystats_checkin(self, serial: str, timeout: float = 15.0) -> str:
+        """
+        Pulls machine-parseable batterystats checkin data from the device.
+        Runs `adb shell dumpsys batterystats --checkin`.
+        """
+        stdout, stderr, code = self.run_shell(serial, "dumpsys batterystats --checkin", timeout=timeout)
+        if code != 0 or not stdout:
+            logger.warning(f"[ADB] Failed to pull batterystats --checkin for {serial}: {stderr or f'Exit code {code}'}")
+            return ""
+        return stdout
+
+    def pull_batterystats_charged(self, serial: str, timeout: float = 12.0) -> str:
+        """
+        Pulls human-readable dumpsys batterystats --charged for secondary estimated power consumption figures.
+        """
+        stdout, stderr, code = self.run_shell(serial, "dumpsys batterystats --charged", timeout=timeout)
+        if code != 0 or not stdout:
+            logger.warning(f"[ADB] Failed to pull batterystats --charged for {serial}: {stderr or f'Exit code {code}'}")
+            return ""
+        return stdout
+
+    def resolve_package_names(self, uids: List[int], serial: Optional[str] = None) -> Dict[int, str]:
+        """
+        Maps UID integers to Android package names using `adb shell pm list packages -U`.
+        Results are cached in memory per device serial for session-lifetime reuse.
+        Unresolved or removed UIDs gracefully fallback to `UID: <id> (Uninstalled / System)`.
+        """
+        serial_key = serial or "default"
+        if serial_key not in self._uid_package_cache:
+            self._uid_package_cache[serial_key] = {}
+
+        cache = self._uid_package_cache[serial_key]
+        missing_uids = [u for u in uids if u not in cache]
+
+        if missing_uids and serial:
+            stdout, stderr, code = self.run_shell(serial, "pm list packages -U", timeout=12.0)
+            if code == 0 and stdout:
+                # Format: package:com.example.app uid:10123
+                for line in stdout.splitlines():
+                    line = line.strip()
+                    if not line.startswith("package:"):
+                        continue
+                    parts = line.split()
+                    pkg_part = parts[0].replace("package:", "").strip() if len(parts) > 0 else ""
+                    for p in parts[1:]:
+                        if p.startswith("uid:"):
+                            raw_uid = p.replace("uid:", "").strip()
+                            for u_str in raw_uid.split(","):
+                                if u_str.isdigit():
+                                    u_int = int(u_str)
+                                    if u_int not in cache:
+                                        cache[u_int] = pkg_part
+                                    elif pkg_part not in cache[u_int]:
+                                        cache[u_int] = f"{cache[u_int]}, {pkg_part}"
+
+        resolved: Dict[int, str] = {}
+        for u in uids:
+            if u in cache:
+                resolved[u] = cache[u]
+            elif u in self.KNOWN_SYSTEM_UIDS:
+                resolved[u] = self.KNOWN_SYSTEM_UIDS[u]
+                cache[u] = self.KNOWN_SYSTEM_UIDS[u]
+            else:
+                fallback_name = f"UID: {u} (Uninstalled / System)"
+                resolved[u] = fallback_name
+                cache[u] = fallback_name
+
+        return resolved
 
     def probe_device(self, serial: str) -> Dict[str, Any]:
         """
@@ -823,6 +907,47 @@ def run_cli_probe() -> None:
             continue
 
         client.probe_device(serial)
+
+
+# Representative synthetic batterystats fixtures for virtual device testing (Nothing Phone 2a)
+SYNTHETIC_NOTHING_PHONE_2A_CHECKIN = """9,0,i,vers,16,180,com.nothing.os,Nothing Phone 2a
+9,0,i,uidac,1000,1001,10045,10123,10156,10199,10999
+9,1000,l,wl,sync,120000,f,4,30000,p,12,0,bp,0,-1,w,-1
+9,1000,l,cpu,45000,12000,0,0
+9,1000,l,m,120450,89200,450,210,15000,0,0,0
+9,1000,l,w,0,0,45000,230000,180000
+9,10123,l,wl,*alarm*,450000,f,25,180000,p,45,0,bp,0,-1,w,-1
+9,10123,l,cpu,120000,35000,0,0
+9,10123,l,m,450000,120000,890,340,32000,0,0,0
+9,10123,l,gpr,45000,3
+9,10156,l,wl,AudioMix,85000,f,10,65000,p,20,0,bp,0,-1,w,-1
+9,10156,l,cpu,340000,45000,0,0
+9,10156,l,m,890000,450000,1200,600,65000,0,0,0
+9,10199,l,wl,LocationManagerService,250000,f,15,120000,p,30,0,bp,0,-1,w,-1
+9,10199,l,cpu,90000,22000,0,0
+9,10199,l,gpr,180000,12
+9,10045,l,wl,GCM_CONN,30000,f,2,15000,p,5,0,bp,0,-1,w,-1
+9,10045,l,cpu,25000,5000,0,0
+9,10999,l,wl,uninstalled_bg,42000,f,1,20000,p,8,0,bp,0,-1,w,-1
+9,10999,l,cpu,15000,2000,0,0
+"""
+
+SYNTHETIC_NOTHING_PHONE_2A_CHARGED = """Estimated power use (mAh):
+    Capacity: 5000, Computed drain: 685, actual drain: 650-700
+    Uid 10156: 182.6 ( cpu=140.0 wake=12.6 data=30.0 )
+    Uid 10123: 145.2 ( cpu=95.0 wake=20.2 data=30.0 )
+    Uid 10199: 98.4 ( cpu=45.0 wake=15.4 gps=38.0 )
+    Uid 1000: 64.1 ( cpu=40.0 wake=14.1 data=10.0 )
+    Uid 10045: 35.8 ( cpu=22.0 wake=5.8 data=8.0 )
+    Uid 10999: 18.5 ( cpu=12.0 wake=6.5 )
+"""
+
+SYNTHETIC_NOTHING_PHONE_2A_PACKAGES = """package:android uid:1000
+package:com.google.android.youtube uid:10156
+package:com.instagram.android uid:10123
+package:com.google.android.apps.maps uid:10199
+package:com.whatsapp uid:10045
+"""
 
 
 if __name__ == "__main__":

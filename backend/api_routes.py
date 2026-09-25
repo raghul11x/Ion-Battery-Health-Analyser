@@ -566,6 +566,120 @@ def get_prediction_endpoint(
     }
 
 
+@router.get("/app-drain")
+def get_app_battery_drain(
+    window: str = Query(default="24h", description="Time window, e.g. 1h, 24h, 7d, 30d, all"),
+    sort_by: str = Query(default="wakelock_ms", description="Sort by: wakelock_ms, cpu_bg_ms, estimated_mah"),
+    limit: int = Query(default=10, ge=1, le=50),
+    serial: Optional[str] = Query(default=None),
+) -> Dict[str, Any]:
+    """
+    Returns application battery drain attribution based on dumpsys batterystats counters.
+    Ranked descending by wakelock time by default, with options to rank by background CPU or estimated power.
+    Correlates with device thermal history to detect elevated operating stress during background activity.
+    """
+    window_lower = window.lower().strip()
+    if window_lower.endswith("h"):
+        try:
+            window_hours = int(window_lower[:-1])
+        except ValueError:
+            window_hours = 24
+    elif window_lower.endswith("d"):
+        try:
+            window_hours = int(window_lower[:-1]) * 24
+        except ValueError:
+            window_hours = 24
+    elif window_lower == "all":
+        window_hours = 0
+    else:
+        window_hours = 24
+
+    devices = adb.get_devices() if adb.is_available() else []
+    active = [d for d in devices if d.get("state") == "device"]
+
+    connected_serial = active[0]["serial"] if active else None
+    target_serial = serial or connected_serial
+    is_connected = bool(connected_serial and (target_serial == connected_serial))
+
+    # If target is mock/seed, seed synthetic Nothing Phone 2a checkin data if not present
+    if target_serial == "mock-phone-2a" or (not target_serial and not active):
+        existing_mock = db.get_app_drain_readings(serial="mock-phone-2a", window_hours=window_hours, sort_by=sort_by, limit=limit)
+        if not existing_mock:
+            from backend.adb_client import (
+                SYNTHETIC_NOTHING_PHONE_2A_CHECKIN,
+                SYNTHETIC_NOTHING_PHONE_2A_CHARGED,
+            )
+            from backend.app_battery_stats import parse_batterystats_checkin
+            uid_map = {
+                1000: "android",
+                10156: "com.google.android.youtube",
+                10123: "com.instagram.android",
+                10199: "com.google.android.apps.maps",
+                10045: "com.whatsapp",
+            }
+            mock_parsed = parse_batterystats_checkin(
+                checkin_text=SYNTHETIC_NOTHING_PHONE_2A_CHECKIN,
+                charged_text=SYNTHETIC_NOTHING_PHONE_2A_CHARGED,
+                uid_map=uid_map,
+                serial="mock-phone-2a",
+            )
+            db.insert_app_power_readings("mock-phone-2a", mock_parsed)
+
+    # If real device is connected and DB currently has no records for it, run an on-demand scan
+    if is_connected and target_serial:
+        curr_items = db.get_app_drain_readings(serial=target_serial, window_hours=window_hours, sort_by=sort_by, limit=limit)
+        if not curr_items:
+            try:
+                watcher.run_app_drain_scan(target_serial)
+            except Exception as e:
+                logger.warning(f"[API NOTE] Immediate app drain scan note for {target_serial}: {e}")
+
+    # Query DB for top apps
+    items = db.get_app_drain_readings(
+        serial=target_serial,
+        window_hours=window_hours,
+        sort_by=sort_by,
+        limit=limit,
+    )
+
+    # Query thermal correlation summary
+    thermal_data = db.get_thermal_correlation_summary(
+        serial=target_serial,
+        window_hours=window_hours,
+    )
+
+    # Tag items with thermal stress flag if correlation exists
+    has_stress = thermal_data.get("has_thermal_stress", False)
+    max_t = thermal_data.get("max_temp_c")
+
+    for idx, item in enumerate(items):
+        if has_stress and (item.get("wakelock_ms", 0) > 60000 or idx < 3):
+            item["has_thermal_correlation"] = True
+            item["thermal_flag"] = f"Elevated device temperature ({max_t}°C peak) during background activity"
+        else:
+            item["has_thermal_correlation"] = False
+            item["thermal_flag"] = None
+
+    snap = get_snapshot(target_serial) if target_serial else {}
+
+    return {
+        "status": "ok",
+        "device_serial": target_serial,
+        "device_model": snap.get("device_model") or ("Nothing Phone 2a" if target_serial == "mock-phone-2a" else None),
+        "connected": is_connected,
+        "window": window,
+        "window_hours": window_hours,
+        "sort_by": sort_by,
+        "total_apps": len(items),
+        "thermal_correlation": has_stress,
+        "thermal_summary": thermal_data.get("thermal_summary", "Normal thermal baseline."),
+        "thermal_peak_c": max_t,
+        "thermal_avg_c": thermal_data.get("avg_temp_c"),
+        "items": items,
+        "disclaimer": "Counters trace to dumpsys batterystats --checkin. Estimated power figures derived from OEM power_profile.xml approximations.",
+    }
+
+
 @router.post("/calibration/start")
 def start_calibration(payload: Optional[CalibrationStartRequest] = None) -> Dict[str, Any]:
     """Starts an active Coulomb counting charge calibration session."""

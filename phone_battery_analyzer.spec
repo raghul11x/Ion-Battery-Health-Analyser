@@ -48,6 +48,7 @@ a = Analysis(
         'backend.prediction',
         'backend.calibration',
         'backend.status_bus',
+        'backend.app_battery_stats',
         'splash',
     ],
     hookspath=[],

@@ -25,6 +25,12 @@ const state = {
   statusFeedExpanded: false,
   selectedSerial: null,
   lastHistoryLivePoll: 0,
+  appDrain: {
+    window: '24h',
+    sort_by: 'wakelock_ms',
+    data: null,
+    loading: false,
+  },
 };
 
 // Global Application Connection State (Single Source of Truth)
@@ -259,6 +265,12 @@ const el = {
   bdFinalText: document.getElementById('bd-final-text'),
   bdSourcesPill: document.getElementById('bd-sources-pill'),
   breakdownProvenanceNote: document.getElementById('breakdown-provenance-note'),
+
+  // App Drain Attribution
+  appDrainCard: document.getElementById('app-drain-card'),
+  appDrainList: document.getElementById('app-drain-list'),
+  appDrainThermalBanner: document.getElementById('app-drain-thermal-banner'),
+  appDrainThermalText: document.getElementById('app-drain-thermal-text'),
 };
 
 // Utilities
@@ -2124,6 +2136,157 @@ async function updateLastSeenDeviceLabel() {
   labelEl.classList.remove('hidden');
 }
 
+// ==========================================
+// APP BATTERY DRAIN ATTRIBUTION SUB-SYSTEM
+// ==========================================
+async function fetchAppDrain(force = false) {
+  const isConnected = AppState.connected;
+  const isSeeded = AppState.mode === 'seeded';
+  if (!isConnected && !isSeeded) {
+    renderAppDrain(null, true);
+    return;
+  }
+
+  const listEl = el.appDrainList || document.getElementById('app-drain-list');
+  if (state.appDrain.loading) return;
+  state.appDrain.loading = true;
+
+  try {
+    const targetSerial = (isConnected || isSeeded) ? (state.selectedSerial || (isSeeded ? 'mock-phone-2a' : '')) : '';
+    const res = await fetch(`/api/app-drain?window=${state.appDrain.window}&sort_by=${state.appDrain.sort_by}&serial=${encodeURIComponent(targetSerial)}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    state.appDrain.data = data;
+    renderAppDrain(data, false);
+  } catch (err) {
+    console.error('[APP DRAIN] Fetch failed:', err);
+    if (listEl) {
+      listEl.innerHTML = `<div class="py-6 text-center text-zinc-500 text-xs font-mono">Unable to retrieve app battery drain telemetry (${escapeHtml(err.message)}).</div>`;
+    }
+  } finally {
+    state.appDrain.loading = false;
+  }
+}
+
+function renderAppDrain(data, isStandby = false) {
+  const listEl = el.appDrainList || document.getElementById('app-drain-list');
+  const thermalBanner = el.appDrainThermalBanner || document.getElementById('app-drain-thermal-banner');
+  const thermalText = el.appDrainThermalText || document.getElementById('app-drain-thermal-text');
+  if (!listEl) return;
+
+  if (isStandby || !data || !data.items) {
+    if (thermalBanner) thermalBanner.classList.add('hidden');
+    listEl.innerHTML = `
+      <div class="py-8 text-center text-zinc-500 text-xs font-mono">
+        Standby Mode — Connect device via USB-C to analyze application battery drain.
+      </div>
+    `;
+    return;
+  }
+
+  // Handle thermal correlation banner
+  if (data.thermal_correlation && thermalBanner) {
+    if (thermalText) {
+      thermalText.textContent = `Thermal Correlation: ${data.thermal_summary || 'Elevated device temperature during background activity.'}`;
+    }
+    thermalBanner.classList.remove('hidden');
+  } else if (thermalBanner) {
+    thermalBanner.classList.add('hidden');
+  }
+
+  const items = data.items || [];
+  if (items.length === 0) {
+    listEl.innerHTML = `
+      <div class="py-8 text-center text-zinc-500 text-xs font-mono">
+        No background drain events recorded in this ${data.window || '24h'} window.
+      </div>
+    `;
+    return;
+  }
+
+  // Calculate highest metric value to normalize relative progress bar
+  const sortKey = state.appDrain.sort_by || 'wakelock_ms';
+  let maxVal = 1;
+  items.forEach(it => {
+    const val = it[sortKey] || 0;
+    if (val > maxVal) maxVal = val;
+  });
+
+  listEl.innerHTML = items.map((app, idx) => {
+    const rank = idx + 1;
+    const displayName = escapeHtml(app.display_name || app.package_name || 'App');
+    const pkgName = escapeHtml(app.package_name || '');
+    const wakelockDisplay = escapeHtml(app.wakelock_duration_display || '0s');
+    const wakelockCount = app.wakelock_count || 0;
+    const cpuBgSec = Math.round((app.cpu_bg_ms || 0) / 1000);
+    const estMah = app.estimated_mah !== null && app.estimated_mah !== undefined ? `${app.estimated_mah} mAh` : null;
+
+    const currVal = app[sortKey] || 0;
+    const pctBar = Math.min(100, Math.max(6, Math.round((currVal / maxVal) * 100)));
+
+    const thermalTagHtml = app.has_thermal_correlation ? `
+      <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/30 flex items-center gap-1 shrink-0" data-tooltip="${escapeHtml(app.thermal_flag || 'Elevated temperature during wakelock')}">
+        <span class="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse"></span>
+        Thermal Stress
+      </span>
+    ` : '';
+
+    const estMahHtml = estMah ? `
+      <div class="text-right">
+        <div class="text-xs font-black font-mono text-indigo-300">${estMah}</div>
+        <div class="text-[9px] uppercase font-mono text-zinc-500">Est. Power</div>
+      </div>
+    ` : '';
+
+    return `
+      <div class="p-3.5 rounded-2xl bg-black/40 hover:bg-black/60 border border-white/5 transition flex flex-col gap-2">
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex items-center gap-3 min-w-0">
+            <span class="w-6 h-6 rounded-full bg-indigo-950/60 border border-indigo-500/30 text-indigo-300 font-mono text-[11px] font-black flex items-center justify-center shrink-0">
+              ${rank}
+            </span>
+            <div class="min-w-0 truncate">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-bold text-white truncate">${displayName}</span>
+                ${thermalTagHtml}
+              </div>
+              <div class="text-[10px] font-mono text-zinc-500 truncate">${pkgName}</div>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-4 shrink-0">
+            <div class="text-right">
+              <div class="text-xs font-bold font-mono text-white">${wakelockDisplay}</div>
+              <div class="text-[10px] font-mono text-zinc-500">${wakelockCount} locks</div>
+            </div>
+            ${estMahHtml}
+          </div>
+        </div>
+
+        <!-- Relative Drain Progress Bar & Counters -->
+        <div class="flex items-center gap-3 pt-1">
+          <div class="flex-1 bg-black/50 h-1.5 rounded-full overflow-hidden border border-white/5">
+            <div class="h-full bg-gradient-to-r from-indigo-500 to-teal-400 rounded-full transition-all duration-500" style="width: ${pctBar}%;"></div>
+          </div>
+          <div class="flex items-center gap-2 text-[10px] font-mono text-zinc-400 shrink-0">
+            <span>Bg CPU: <strong class="text-zinc-300">${cpuBgSec}s</strong></span>
+            ${app.radio_active_ms > 0 ? `<span>Radio: <strong class="text-zinc-300">${Math.round(app.radio_active_ms / 1000)}s</strong></span>` : ''}
+            ${app.gps_active_ms > 0 ? `<span>GPS: <strong class="text-zinc-300">${Math.round(app.gps_active_ms / 1000)}s</strong></span>` : ''}
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function subscribeTopBatteryDrainers({ connected, mode }) {
+  if (connected || mode === 'seeded') {
+    fetchAppDrain();
+  } else {
+    renderAppDrain(null, true);
+  }
+}
+
 // Boot
 function init() {
   // Capsule Nav clicks
@@ -2175,17 +2338,48 @@ function init() {
     });
   });
 
+  // App Battery Drain Sort & Window Pill Event Listeners
+  document.querySelectorAll('.app-drain-sort-pill').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      document.querySelectorAll('.app-drain-sort-pill').forEach(b => {
+        b.classList.remove('active', 'bg-indigo-600', 'text-white');
+        b.classList.add('text-zinc-400');
+      });
+      btn.classList.add('active', 'bg-indigo-600', 'text-white');
+      btn.classList.remove('text-zinc-400');
+      state.appDrain.sort_by = btn.dataset.sort;
+      fetchAppDrain();
+    });
+  });
+
+  document.querySelectorAll('.app-drain-window-pill').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      document.querySelectorAll('.app-drain-window-pill').forEach(b => {
+        b.classList.remove('active', 'bg-white', 'text-black', 'font-bold');
+        b.classList.add('text-zinc-400', 'font-medium');
+      });
+      btn.classList.add('active', 'bg-white', 'text-black', 'font-bold');
+      btn.classList.remove('text-zinc-400', 'font-medium');
+      state.appDrain.window = btn.dataset.window;
+      fetchAppDrain();
+    });
+  });
+
   // Register subscribers to AppState (Single Source of Truth)
   AppState.subscribe(subscribeTopBar);
   AppState.subscribe(subscribeGuidanceBanner);
   AppState.subscribe(subscribeHeroHeadline);
   AppState.subscribe(masterDashboardSubscriber);
+  AppState.subscribe(subscribeTopBatteryDrainers);
 
   // Initial queries
   fetchStatus();
   fetchSnapshot();
   fetchHistory(state.selectedDays);
   fetchInsights();
+  fetchAppDrain();
 
   // Background polling loop (1s for real-time connect/disconnect detection)
   state.pollTimer = setInterval(() => {
@@ -2197,6 +2391,7 @@ function init() {
     if (isConn && (now - (state.lastHistoryLivePoll || 0) >= 10000)) {
       state.lastHistoryLivePoll = now;
       fetchHistory(state.selectedDays);
+      fetchAppDrain();
     }
   }, 1000);
 

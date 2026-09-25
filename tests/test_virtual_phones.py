@@ -445,6 +445,56 @@ def test_virtual_dual_phones_concurrent():
         record("Virtual Dual Phones Concurrent", False, f"Exception: {e}\n{traceback.format_exc()}")
 
 
+# ---------------------------------------------------------------------------
+# Virtual Phone 11: Nothing Phone 2a (Batterystats Checkin & App Drain)
+# ---------------------------------------------------------------------------
+def test_virtual_nothing_phone_2a_app_drain():
+    try:
+        from backend.adb_client import (
+            SYNTHETIC_NOTHING_PHONE_2A_CHECKIN,
+            SYNTHETIC_NOTHING_PHONE_2A_CHARGED,
+            SYNTHETIC_NOTHING_PHONE_2A_PACKAGES,
+        )
+        from backend.app_battery_stats import parse_batterystats_checkin
+
+        serial = "virtual-nothing-phone-2a"
+        mock_adb = ADBClient()
+        mock_adb.is_available = MagicMock(return_value=True)
+
+        def mock_shell(s, cmd, timeout=None):
+            if "dumpsys batterystats --checkin" in cmd:
+                return (SYNTHETIC_NOTHING_PHONE_2A_CHECKIN, "", 0)
+            if "dumpsys batterystats --charged" in cmd:
+                return (SYNTHETIC_NOTHING_PHONE_2A_CHARGED, "", 0)
+            if "pm list packages -U" in cmd:
+                return (SYNTHETIC_NOTHING_PHONE_2A_PACKAGES, "", 0)
+            return ("", "", 0)
+
+        mock_adb.run_shell = MagicMock(side_effect=mock_shell)
+
+        checkin = mock_adb.pull_batterystats_checkin(serial)
+        assert len(checkin) > 0
+        assert "Nothing Phone 2a" in checkin
+
+        charged = mock_adb.pull_batterystats_charged(serial)
+        assert "Estimated power use (mAh):" in charged
+
+        pkg_map = mock_adb.resolve_package_names([1000, 10123, 10156, 10199, 10045, 10999], serial=serial)
+        assert pkg_map[10156] == "com.google.android.youtube"
+        assert pkg_map[10123] == "com.instagram.android"
+        assert "Uninstalled" in pkg_map[10999]
+
+        parsed = parse_batterystats_checkin(checkin, charged, pkg_map, serial=serial)
+        assert len(parsed) >= 5
+        top = parsed[0]
+        assert top["wakelock_ms"] > 0
+        assert top["display_name"] is not None
+
+        record("Virtual Nothing Phone 2a (App Drain Attribution)", True, f"Parsed {len(parsed)} apps, Top: {top['display_name']} ({top['wakelock_duration_display']})")
+    except Exception as e:
+        record("Virtual Nothing Phone 2a (App Drain Attribution)", False, f"Exception: {e}\n{traceback.format_exc()}")
+
+
 if __name__ == "__main__":
     print("\n" + "="*70)
     print("RUNNING VIRTUAL PHONE DIAGNOSTIC & STRESS SUITE")
@@ -459,6 +509,7 @@ if __name__ == "__main__":
     test_virtual_corrupted_sysfs()
     test_virtual_flaky_reconnection()
     test_virtual_dual_phones_concurrent()
+    test_virtual_nothing_phone_2a_app_drain()
     print("="*70)
     passed_count = sum(1 for r in results if r["passed"])
     total_count = len(results)

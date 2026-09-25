@@ -199,6 +199,38 @@ class CalibrationRecord(Base):
         }
 
 
+class AppPowerReading(Base):
+    """Stores per-application battery drain attribution metrics from dumpsys batterystats."""
+    __tablename__ = "app_power_readings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    device_serial = Column(String(64), index=True, nullable=False)
+    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    package_name = Column(String(256), nullable=False)
+    wakelock_ms = Column(Integer, default=0)
+    wakelock_count = Column(Integer, default=0)
+    cpu_fg_ms = Column(Integer, default=0)
+    cpu_bg_ms = Column(Integer, default=0)
+    radio_active_ms = Column(Integer, default=0)
+    gps_active_ms = Column(Integer, default=0)
+    estimated_mah = Column(Float, nullable=True)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "device_serial": self.device_serial,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+            "package_name": self.package_name,
+            "wakelock_ms": self.wakelock_ms,
+            "wakelock_count": self.wakelock_count,
+            "cpu_fg_ms": self.cpu_fg_ms,
+            "cpu_bg_ms": self.cpu_bg_ms,
+            "radio_active_ms": self.radio_active_ms,
+            "gps_active_ms": self.gps_active_ms,
+            "estimated_mah": round(self.estimated_mah, 2) if self.estimated_mah is not None else None,
+        }
+
+
 class Database:
     """Database management interface."""
 
@@ -210,6 +242,15 @@ class Database:
 
     def init_db(self) -> None:
         """Creates tables and runs auto-migrations for new columns."""
+        # Ensure SQLite executes with WAL pragma and 5s busy timeout
+        try:
+            with self.engine.connect() as conn:
+                conn.execute(text("PRAGMA journal_mode=WAL;"))
+                conn.execute(text("PRAGMA busy_timeout=5000;"))
+                conn.commit()
+        except Exception as e:
+            logger.debug(f"SQLite PRAGMA setup note: {e}")
+
         Base.metadata.create_all(self.engine)
         self._run_migrations()
         self.fix_existing_anomalies()
@@ -248,6 +289,23 @@ class Database:
                 if "oem_reported_soh" not in existing_dp_cols:
                     logger.info("Migrating database: adding oem_reported_soh to device_profiles...")
                     conn.execute(text("ALTER TABLE device_profiles ADD COLUMN oem_reported_soh REAL"))
+
+                # Migrations for app_power_readings
+                result_apr = conn.execute(text("PRAGMA table_info(app_power_readings)"))
+                existing_apr_cols = {row[1] for row in result_apr.fetchall()}
+                if existing_apr_cols:
+                    for col_name, col_type in [
+                        ("wakelock_ms", "INTEGER DEFAULT 0"),
+                        ("wakelock_count", "INTEGER DEFAULT 0"),
+                        ("cpu_fg_ms", "INTEGER DEFAULT 0"),
+                        ("cpu_bg_ms", "INTEGER DEFAULT 0"),
+                        ("radio_active_ms", "INTEGER DEFAULT 0"),
+                        ("gps_active_ms", "INTEGER DEFAULT 0"),
+                        ("estimated_mah", "REAL"),
+                    ]:
+                        if col_name not in existing_apr_cols:
+                            logger.info(f"Migrating database: adding {col_name} to app_power_readings...")
+                            conn.execute(text(f"ALTER TABLE app_power_readings ADD COLUMN {col_name} {col_type}"))
 
                 conn.commit()
         except Exception as e:
@@ -828,6 +886,190 @@ class Database:
                 q = q.filter(CalibrationRecord.device_serial == device_serial)
             records = q.order_by(desc(CalibrationRecord.timestamp)).limit(20).all()
             return [r.to_dict() for r in records]
+        finally:
+            session.close()
+
+    def insert_app_power_readings(
+        self,
+        serial: str,
+        readings: List[Dict[str, Any]],
+        timestamp: Optional[datetime] = None,
+    ) -> int:
+        """
+        Persists a batch of app power readings captured during a Deep Scan.
+        Preserves history across batterystats resets.
+        """
+        if not readings:
+            return 0
+        ts = timestamp or datetime.utcnow()
+        session = self.get_session()
+        count = 0
+        try:
+            for r in readings:
+                pkg = r.get("package_name")
+                if not pkg:
+                    continue
+                record = AppPowerReading(
+                    device_serial=serial,
+                    timestamp=ts,
+                    package_name=pkg,
+                    wakelock_ms=int(r.get("wakelock_ms") or 0),
+                    wakelock_count=int(r.get("wakelock_count") or 0),
+                    cpu_fg_ms=int(r.get("cpu_fg_ms") or 0),
+                    cpu_bg_ms=int(r.get("cpu_bg_ms") or 0),
+                    radio_active_ms=int(r.get("radio_active_ms") or 0),
+                    gps_active_ms=int(r.get("gps_active_ms") or 0),
+                    estimated_mah=float(r["estimated_mah"]) if r.get("estimated_mah") is not None else None,
+                )
+                session.add(record)
+                count += 1
+            session.commit()
+            return count
+        except Exception as e:
+            session.rollback()
+            logger.error(f"[DB ERROR] Error inserting app power readings: {e}")
+            return 0
+        finally:
+            session.close()
+
+    def get_app_drain_readings(
+        self,
+        serial: Optional[str] = None,
+        window_hours: int = 24,
+        sort_by: str = "wakelock_ms",
+        limit: int = 10,
+    ) -> List[Dict[str, Any]]:
+        """
+        Retrieves top battery draining apps within the specified time window,
+        aggregating raw device counters and secondary power estimates.
+        """
+        session = self.get_session()
+        try:
+            cutoff = datetime.utcnow() - timedelta(hours=window_hours) if window_hours > 0 else datetime.min
+            query = session.query(AppPowerReading).filter(AppPowerReading.timestamp >= cutoff)
+            if serial:
+                query = query.filter(AppPowerReading.device_serial == serial)
+
+            all_readings = query.all()
+            if not all_readings:
+                # If window yielded nothing, check latest available readings
+                if serial:
+                    latest_query = session.query(AppPowerReading).filter(AppPowerReading.device_serial == serial)
+                else:
+                    latest_query = session.query(AppPowerReading)
+                all_readings = latest_query.order_by(desc(AppPowerReading.timestamp)).limit(limit * 5).all()
+
+            if not all_readings:
+                return []
+
+            # Group by package_name: accumulate max observed counters in this window
+            pkg_map: Dict[str, Dict[str, Any]] = {}
+            from backend.app_battery_stats import format_duration_ms, get_app_display_name
+
+            for row in all_readings:
+                pkg = row.package_name
+                if pkg not in pkg_map:
+                    pkg_map[pkg] = {
+                        "package_name": pkg,
+                        "display_name": get_app_display_name(pkg),
+                        "wakelock_ms": row.wakelock_ms or 0,
+                        "wakelock_count": row.wakelock_count or 0,
+                        "cpu_fg_ms": row.cpu_fg_ms or 0,
+                        "cpu_bg_ms": row.cpu_bg_ms or 0,
+                        "radio_active_ms": row.radio_active_ms or 0,
+                        "gps_active_ms": row.gps_active_ms or 0,
+                        "estimated_mah": row.estimated_mah,
+                        "last_seen": row.timestamp,
+                    }
+                else:
+                    curr = pkg_map[pkg]
+                    curr["wakelock_ms"] = max(curr["wakelock_ms"], row.wakelock_ms or 0)
+                    curr["wakelock_count"] = max(curr["wakelock_count"], row.wakelock_count or 0)
+                    curr["cpu_fg_ms"] = max(curr["cpu_fg_ms"], row.cpu_fg_ms or 0)
+                    curr["cpu_bg_ms"] = max(curr["cpu_bg_ms"], row.cpu_bg_ms or 0)
+                    curr["radio_active_ms"] = max(curr["radio_active_ms"], row.radio_active_ms or 0)
+                    curr["gps_active_ms"] = max(curr["gps_active_ms"], row.gps_active_ms or 0)
+                    if row.estimated_mah is not None:
+                        curr["estimated_mah"] = max(curr["estimated_mah"] or 0.0, row.estimated_mah)
+                    if row.timestamp and (curr["last_seen"] is None or row.timestamp > curr["last_seen"]):
+                        curr["last_seen"] = row.timestamp
+
+            items = list(pkg_map.values())
+            for item in items:
+                item["cpu_total_ms"] = item["cpu_fg_ms"] + item["cpu_bg_ms"]
+                item["wakelock_duration_display"] = format_duration_ms(item["wakelock_ms"])
+                item["is_estimated_power"] = True
+                item["estimated_power_note"] = "Derived from OEM power_profile.xml approximations; secondary signal."
+                if item["last_seen"]:
+                    item["last_seen_iso"] = item["last_seen"].isoformat()
+
+            # Sort field handling: wakelock_ms, cpu_bg_ms, estimated_mah
+            if sort_by == "cpu_bg_ms":
+                items.sort(key=lambda x: (x["cpu_bg_ms"], x["wakelock_ms"]), reverse=True)
+            elif sort_by == "estimated_mah":
+                items.sort(key=lambda x: (x["estimated_mah"] or 0.0, x["wakelock_ms"]), reverse=True)
+            else:  # default wakelock_ms
+                items.sort(key=lambda x: (x["wakelock_ms"], x["cpu_bg_ms"], x["estimated_mah"] or 0.0), reverse=True)
+
+            return items[:limit]
+        finally:
+            session.close()
+
+    def get_thermal_correlation_summary(
+        self,
+        serial: Optional[str] = None,
+        window_hours: int = 24,
+    ) -> Dict[str, Any]:
+        """
+        Cross-references temperature_c in battery_readings for the same time window.
+        Detects if high operating temperatures (>35.0°C) occurred during device activity.
+        """
+        session = self.get_session()
+        try:
+            cutoff = datetime.utcnow() - timedelta(hours=window_hours) if window_hours > 0 else datetime.min
+            query = session.query(BatteryReading).filter(BatteryReading.timestamp >= cutoff)
+            if serial:
+                query = query.filter(BatteryReading.device_serial == serial)
+
+            readings = query.all()
+            if not readings:
+                return {
+                    "has_thermal_stress": False,
+                    "avg_temp_c": None,
+                    "max_temp_c": None,
+                    "elevated_readings_count": 0,
+                    "thermal_summary": "No historical thermal logs recorded in this window.",
+                }
+
+            temps = [r.temperature_c for r in readings if r.temperature_c is not None]
+            if not temps:
+                return {
+                    "has_thermal_stress": False,
+                    "avg_temp_c": None,
+                    "max_temp_c": None,
+                    "elevated_readings_count": 0,
+                    "thermal_summary": "Thermal telemetry unavailable for this window.",
+                }
+
+            avg_t = round(sum(temps) / len(temps), 1)
+            max_t = round(max(temps), 1)
+            elevated_count = sum(1 for t in temps if t >= 35.0)
+            has_stress = max_t >= 35.0 or avg_t >= 33.0
+
+            if max_t >= 40.0:
+                summary = f"Severe thermal stress detected: peak {max_t}°C reached ({elevated_count} readings ≥35°C)."
+            elif has_stress:
+                summary = f"Elevated device temperature during background activity (peak {max_t}°C, avg {avg_t}°C)."
+            else:
+                summary = f"Operating temperature remained normal (peak {max_t}°C, avg {avg_t}°C)."
+
+            return {
+                "has_thermal_stress": has_stress,
+                "avg_temp_c": avg_t,
+                "max_temp_c": max_t,
+                "elevated_readings_count": elevated_count,
+                "thermal_summary": summary,
+            }
         finally:
             session.close()
 

@@ -29,6 +29,9 @@ class DeviceWatcher:
         # Per-serial timestamp of last *full* ADB probe (sysfs scan + DB write).
         # Between full probes, fast ticks only update last_status from dumpsys battery.
         self.last_full_probe_time: Dict[str, Optional[datetime]] = {}
+        # Per-serial timestamp of last *deep scan* (batterystats pull + app drain attribution).
+        # Follows a 15-minute TTL cadence to avoid excessive ADB overhead.
+        self.last_deep_scan_time: Dict[str, Optional[datetime]] = {}
         self.last_status: Dict[str, Any] = {
             "connected": False,
             "serial": None,
@@ -60,6 +63,8 @@ class DeviceWatcher:
                 # Invalidate the deep-scan cache so next connection gets a fresh excavation
                 if disconnected_serial and hasattr(self.adb, "invalidate_deep_scan_cache"):
                     self.adb.invalidate_deep_scan_cache(disconnected_serial)
+                if disconnected_serial in self.last_deep_scan_time:
+                    self.last_deep_scan_time.pop(disconnected_serial, None)
 
             self.last_status["connected"] = False
             self.last_status["serial"] = None
@@ -128,6 +133,63 @@ class DeviceWatcher:
         else:
             # Fast tick: only refresh live telemetry (level/temp/voltage) without expensive sysfs scan
             self._log_fast_reading(serial)
+
+        # Deep Scan (15-min TTL): app battery stats attribution pull
+        last_deep = self.last_deep_scan_time.get(serial)
+        deep_scan_needed = (
+            last_deep is None
+            or (now - last_deep) >= timedelta(minutes=15)
+        )
+        if is_fresh_connect or deep_scan_needed:
+            try:
+                self.run_app_drain_scan(serial)
+                self.last_deep_scan_time[serial] = now
+            except Exception as e:
+                logger.warning(f"Note during app drain scan for {serial}: {e}")
+
+
+    def run_app_drain_scan(self, serial: str) -> List[Dict[str, Any]]:
+        """
+        Executes an app battery drain scan using dumpsys batterystats:
+        1. Pulls machine-parseable checkin output (pull_batterystats_checkin).
+        2. Pulls power-profile secondary estimation (pull_batterystats_charged).
+        3. Identifies and resolves unique UIDs to package names (resolve_package_names).
+        4. Parses and structures the readings with zero hallucinated data.
+        5. Persists the snapshot into SQLite app_power_readings table.
+        """
+        try:
+            from backend.app_battery_stats import parse_batterystats_checkin
+            logger.info(f"[DEEP SCAN] Running app battery drain scan for {serial} (15m cadence)...")
+            checkin_raw = self.adb.pull_batterystats_checkin(serial) if hasattr(self.adb, "pull_batterystats_checkin") else ""
+            if not checkin_raw:
+                return []
+
+            charged_raw = self.adb.pull_batterystats_charged(serial) if hasattr(self.adb, "pull_batterystats_charged") else ""
+
+            # Discover unique UIDs in checkin to resolve in batch
+            uids = set()
+            for line in checkin_raw.splitlines():
+                toks = line.strip().split(",")
+                if len(toks) >= 4 and toks[1].isdigit():
+                    uids.add(int(toks[1]))
+
+            uid_map = self.adb.resolve_package_names(list(uids), serial=serial) if hasattr(self.adb, "resolve_package_names") else {}
+
+            parsed_readings = parse_batterystats_checkin(
+                checkin_text=checkin_raw,
+                charged_text=charged_raw,
+                uid_map=uid_map,
+                serial=serial,
+            )
+
+            if parsed_readings:
+                inserted = db.insert_app_power_readings(serial, parsed_readings)
+                logger.info(f"[DEEP SCAN] Saved {inserted} app power records to DB for {serial}.")
+
+            return parsed_readings
+        except Exception as e:
+            logger.error(f"[DEEP SCAN ERROR] Failed app battery drain scan for {serial}: {e}")
+            return []
 
 
     def _log_fast_reading(self, serial: str) -> None:
