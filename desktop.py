@@ -191,6 +191,8 @@ def main():
             min_size=(980, 660),
             background_color="#0B0B10",
             text_select=False,
+            maximized=True,
+            focus=True,
         )
 
         def on_window_minimized():
@@ -208,8 +210,24 @@ def main():
         window.events.minimized += on_window_minimized
         window.events.restored += on_window_restored
 
+        def on_started(w):
+            """Ensures window opens in active foreground maximized state."""
+            try:
+                time.sleep(0.1)
+                w.maximize()
+                if sys.platform == "win32":
+                    user32 = ctypes.windll.user32
+                    hwnd = user32.FindWindowW(None, "Ion+")
+                    if hwnd:
+                        user32.ShowWindow(hwnd, 3)  # SW_MAXIMIZE
+                        user32.SetForegroundWindow(hwnd)
+            except Exception:
+                pass
+
         # Start native desktop window loop
         webview.start(
+            on_started,
+            window,
             gui="edgechromium",
             debug=False,
             icon=ICON_PATH if os.path.isfile(ICON_PATH) else None,
