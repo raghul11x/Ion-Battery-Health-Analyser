@@ -52,8 +52,8 @@
       #60a5fa 10%, #e879f9 15%, #60a5fa 20%, #5eead4 25%, #60a5fa 30%);
   background-size: 300%, 200%;
   background-position: 50% 50%, 50% 50%;
-  filter: blur(7px) opacity(68%) saturate(200%);
-  /* Full-viewport — no corner mask */
+  filter: opacity(28%) saturate(180%);
+  /* No blur — transparent aurora shimmer */
 }
 
 .ion-aurora-overlay {
@@ -97,9 +97,9 @@ body {
   user-select: none;
 }
 
-/* Cinematic Hero Zone — semi-transparent so aurora shows through */
+/* Cinematic Hero Zone */
 .cinematic-backdrop {
-  background: rgba(10, 14, 39, 0.78);
+  background: var(--bg-gradient);
   position: relative;
   overflow: hidden;
 }

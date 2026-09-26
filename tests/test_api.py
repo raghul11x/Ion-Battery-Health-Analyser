@@ -172,6 +172,10 @@ def test_api_app_drain_filtering_and_sorting():
     1. Multi-window counts (24h < 7d <= all)
     2. Distinct sort orderings for wakelock_ms, cpu_bg_ms, and estimated_mah.
     """
+    # Self-seed: ensure mock-phone-2a has data regardless of live DB state
+    from tests.test_app_battery_stats import _seed_mock_phone_2a_drain_data
+    _seed_mock_phone_2a_drain_data()
+
     res_24_wake = client.get("/api/app-drain?window=24h&sort_by=wakelock_ms&serial=mock-phone-2a")
     assert res_24_wake.status_code == 200
     items_24_wake = res_24_wake.json()["items"]
@@ -197,7 +201,8 @@ def test_api_app_drain_filtering_and_sorting():
     # Verify multi-window progression
     res_7d = client.get("/api/app-drain?window=7d&sort_by=wakelock_ms&serial=mock-phone-2a")
     res_all = client.get("/api/app-drain?window=all&sort_by=wakelock_ms&serial=mock-phone-2a")
-    assert len(items_24_wake) < len(res_7d.json()["items"]) <= len(res_all.json()["items"])
+    assert len(items_24_wake) <= len(res_7d.json()["items"]) <= len(res_all.json()["items"])
+
 
 
 

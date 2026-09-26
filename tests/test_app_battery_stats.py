@@ -37,6 +37,35 @@ from backend.watcher import DeviceWatcher
 client = TestClient(app)
 
 
+def _seed_mock_phone_2a_drain_data():
+    """Insert deterministic app-power rows for mock-phone-2a so API tests are self-contained."""
+    from backend.db import Database
+    _db = Database()
+    _db.insert_app_power_readings("mock-phone-2a", [
+        {
+            "package_name": "com.google.android.youtube",
+            "wakelock_ms": 180000, "wakelock_count": 40,
+            "cpu_fg_ms": 210000, "cpu_bg_ms": 90000,
+            "radio_active_ms": 30000, "gps_active_ms": 0,
+            "estimated_mah": 85.5,
+        },
+        {
+            "package_name": "com.instagram.android",
+            "wakelock_ms": 120000, "wakelock_count": 25,
+            "cpu_fg_ms": 95000, "cpu_bg_ms": 40000,
+            "radio_active_ms": 22000, "gps_active_ms": 0,
+            "estimated_mah": 52.0,
+        },
+        {
+            "package_name": "com.whatsapp",
+            "wakelock_ms": 60000, "wakelock_count": 15,
+            "cpu_fg_ms": 40000, "cpu_bg_ms": 20000,
+            "radio_active_ms": 8000, "gps_active_ms": 0,
+            "estimated_mah": 28.3,
+        },
+    ])
+
+
 SAMPLE_CHECKIN_DATA = """9,0,i,vers,16,180,com.test.os,TestDevice
 9,0,i,uidac,1000,10123,10156,10999
 9,1000,l,wl,sync,60000,f,2,25000,p,10,0,bp,0,-1,w,-1
@@ -259,7 +288,9 @@ def test_thermal_correlation_detection():
 
 def test_api_app_drain_endpoint():
     """Verifies REST API endpoint GET /api/app-drain returns valid structure."""
-    # Seed mock-phone-2a readings into DB
+    # Self-seed: insert synthetic app-drain data for mock-phone-2a
+    _seed_mock_phone_2a_drain_data()
+
     res = client.get("/api/app-drain?window=24h&sort_by=wakelock_ms&serial=mock-phone-2a")
     assert res.status_code == 200
     data = res.json()
