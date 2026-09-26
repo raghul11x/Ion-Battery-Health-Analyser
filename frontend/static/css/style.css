@@ -28,126 +28,83 @@
 }
 
 /* ==========================================================================
-   Application Aurora / AnimatedRays Background
-   Ported Full-App Animated Rail Background with GPU Performance Safeguards
+   Application Aurora Background (AuroraHero Port)
+   Fluted-glass displacement, difference-blend overlay, smooth pan
    ========================================================================== */
 
+.aurora-hero-wrapper.ion-aurora-wrap,
 .ion-aurora-wrap {
   position: fixed;
   inset: 0;
   overflow: hidden;
   pointer-events: none;
   z-index: 0;
-  /* No background — body provides the dark #0B0B10 base */
+  --stripe-color: #fff;
+  --bg-filter: blur(10px) invert(100%);
+  background: var(--stripe-color);
 }
 
-/* Vertical ray columns — forest green / gold / dark red — no blur */
-.ion-aurora-base {
-  position: absolute;
-  inset: 0;
-  background-image:
-    /* Layer 1: vertical bottom-fade so columns emerge from darkness */
-    linear-gradient(to top,
-      #0B0B10 0%,
-      rgba(11, 11, 16, 0.75) 20%,
-      transparent 48%
-    ),
-    /* Layer 2: the column beams */
-    linear-gradient(90deg,
-      transparent 0%,
-      transparent 36%,
-
-      /* — Green cluster (36–48%) — */
-      rgba(22, 82, 11, 0)    37%,
-      rgba(34, 112, 17, 0.88) 37.6%,
-      rgba(22, 82, 11, 0)    38.2%,
-
-      rgba(16, 60,  8, 0)    39%,
-      rgba(26,  90, 13, 0.80) 39.6%,
-      rgba(16, 60,  8, 0)    40.2%,
-
-      rgba(44, 130, 22, 0)   41%,
-      rgba(56, 158, 28, 0.92) 41.6%,
-      rgba(44, 130, 22, 0)   42.2%,
-
-      transparent 43%,
-
-      /* — Gold / olive cluster (44–50%) — */
-      rgba(105,  80,  0, 0)  44.5%,
-      rgba(135, 103,  0, 0.88) 45.1%,
-      rgba(105,  80,  0, 0)  45.7%,
-
-      rgba(88,  66,  0, 0)   46.5%,
-      rgba(115,  88,  0, 0.82) 47.1%,
-      rgba(88,  66,  0, 0)   47.7%,
-
-      rgba(110,  84,  0, 0)  48.5%,
-      rgba(140, 107,  0, 0.86) 49.1%,
-      rgba(110,  84,  0, 0)  49.7%,
-
-      transparent 51%,
-      transparent 57%,
-
-      /* — Red / dark-red cluster (57–72%) — */
-      rgba(130,  24,  5, 0)  57.5%,
-      rgba(158,  32,  8, 0.92) 58.1%,
-      rgba(130,  24,  5, 0)  58.7%,
-
-      rgba(108,  18,  3, 0)  59.5%,
-      rgba(138,  24,  6, 0.84) 60.1%,
-      rgba(108,  18,  3, 0)  60.7%,
-
-      rgba(122,  20,  4, 0)  61.5%,
-      rgba(152,  28,  8, 0.88) 62.1%,
-      rgba(122,  20,  4, 0)  62.7%,
-
-      /* — Mixed green amid red (63–69%) — */
-      rgba(24,  88, 12, 0)   63.5%,
-      rgba(36, 112, 18, 0.84) 64.1%,
-      rgba(24,  88, 12, 0)   64.7%,
-
-      rgba(112,  18,  3, 0)  65.5%,
-      rgba(140,  22,  5, 0.80) 66.1%,
-      rgba(112,  18,  3, 0)  66.7%,
-
-      rgba(20,  78, 10, 0)   67.5%,
-      rgba(32, 102, 16, 0.82) 68.1%,
-      rgba(20,  78, 10, 0)   68.7%,
-
-      rgba(128,  22,  5, 0)  69.5%,
-      rgba(155,  28,  7, 0.78) 70.1%,
-      rgba(128,  22,  5, 0)  70.7%,
-
-      transparent 72%,
-      transparent 100%
-    );
-  /* No filter:blur */
-}
-
-/* Breathing overlay — animates so pause-on-minimize works */
-.ion-aurora-overlay {
-  position: absolute;
-  inset: 0;
-  /* Same column positions, slightly shifted, for a depth/flicker effect */
-  background-image: linear-gradient(90deg,
-    transparent 0%,
-    transparent 36%,
-    rgba(30, 108, 15, 0.18) 38%, rgba(30, 108, 15, 0) 38.6%,
-    rgba(120, 92, 0, 0.16)  45.4%, rgba(120, 92, 0, 0) 46%,
-    rgba(145, 28, 7, 0.18)  58.4%, rgba(145, 28, 7, 0) 59%,
-    rgba(30, 100, 15, 0.14) 64.4%, rgba(30, 100, 15, 0) 65%,
-    rgba(142, 25, 6, 0.14)  66.4%, rgba(142, 25, 6, 0) 67%,
-    transparent 72%,
-    transparent 100%
-  );
-  animation: ion-aurora-breathe 9s ease-in-out infinite alternate;
-  will-change: opacity;
+@keyframes smoothBg {
+  from { background-position: 50% 50%, 50% 50%; }
+  to   { background-position: 350% 50%, 350% 50%; }
 }
 
 @keyframes ion-aurora-breathe {
-  0%   { opacity: 0.55; }
-  45%  { opacity: 1.0;  }
-  100% { opacity: 0.65; }
+  from { background-position: 50% 50%, 50% 50%; }
+  to   { background-position: 350% 50%, 350% 50%; }
+}
+
+.aurora-hero-bg,
+.ion-aurora-base {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  inset: 0;
+  --stripes: repeating-linear-gradient(
+    100deg, 
+    var(--stripe-color) 0%, 
+    var(--stripe-color) 7%, 
+    transparent 10%, 
+    transparent 12%, 
+    var(--stripe-color) 16%
+  );
+  --rainbow: repeating-linear-gradient(
+    100deg, 
+    #60a5fa 10%, 
+    #e879f9 15%, 
+    #60a5fa 20%, 
+    #5eead4 25%, 
+    #60a5fa 30%
+  );
+  background-image: var(--stripes), var(--rainbow);
+  background-size: 300%, 200%;
+  background-position: 50% 50%, 50% 50%;
+  filter: var(--bg-filter);
+  mask-image: radial-gradient(ellipse at 100% 0%, black 40%, transparent 70%);
+  -webkit-mask-image: radial-gradient(ellipse at 100% 0%, black 40%, transparent 70%);
+}
+
+.aurora-hero-bg .ion-aurora-overlay,
+.ion-aurora-base .ion-aurora-overlay {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--stripes), var(--rainbow);
+  background-size: 200%, 100%;
+  animation: smoothBg 60s linear infinite;
+  background-attachment: fixed;
+  mix-blend-mode: difference;
+}
+
+.aurora-content {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  backdrop-filter: contrast(0.9) blur(7px) url(#fluted);
+  -webkit-backdrop-filter: contrast(0.9) blur(7px) url(#fluted);
+  mix-blend-mode: difference;
+  filter: invert(1);
 }
 
 /* Pause when the window loses focus or is minimized */
