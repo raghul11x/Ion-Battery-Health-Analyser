@@ -485,8 +485,26 @@ def seed_mock_data(payload: SeedRequest) -> Dict[str, Any]:
 
 @router.get("/devices")
 def list_devices() -> List[Dict[str, Any]]:
-    """Returns all devices seen in database history."""
-    return db.get_devices()
+    """Returns all devices seen in database history, merged with any currently connected USB device."""
+    db_devs = db.get_devices()
+    known_serials = {d["serial"] for d in db_devs}
+
+    if adb.is_available():
+        for dev in adb.get_devices():
+            if dev.get("state") == "device" and dev["serial"] not in known_serials:
+                props = adb.get_device_props(dev["serial"])
+                model_name = props.get("model") or dev.get("model") or "Android Device"
+                if props.get("manufacturer") and props["manufacturer"] != "Unknown":
+                    model_name = f"{props['manufacturer']} {model_name}"
+                db_devs.insert(0, {
+                    "serial": dev["serial"],
+                    "model": model_name,
+                    "readings_count": 0,
+                    "last_seen": datetime.utcnow().isoformat(),
+                    "active": True,
+                })
+                known_serials.add(dev["serial"])
+    return db_devs
 
 
 @router.get("/device-profile")

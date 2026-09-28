@@ -124,6 +124,12 @@ const AppState = {
 
   setSnapshot(snapshot) {
     if (!this.connected && this.mode !== 'seeded') {
+      if (snapshot?.connection_state === 'unauthorized' || snapshot?.connection_state === 'offline') {
+        this.snapshot = snapshot;
+        state.snapshot = snapshot;
+        this.notify();
+        return;
+      }
       this.snapshot = null;
       state.snapshot = null;
       this.notify();
@@ -330,11 +336,7 @@ async function fetchSnapshot(serial = null) {
     const res = await fetch(url);
     if (res.ok) {
       const data = await res.json();
-      if (AppState.connected || AppState.mode === 'seeded') {
-        AppState.setSnapshot(data);
-      } else {
-        AppState.setSnapshot(null);
-      }
+      AppState.setSnapshot(data);
     }
   } catch (err) {
     console.warn('Failed to fetch snapshot:', err);
@@ -502,10 +504,25 @@ function updateHeroHeadline(isConnected) {
   const subtextEl = el.heroHeadlineSubtext || document.getElementById('hero-headline-subtext');
   if (!headlineEl) return;
 
+  const unauthDev = state.systemStatus?.connected_devices?.find(d => d.state === 'unauthorized');
+  const offlineDev = state.systemStatus?.connected_devices?.find(d => d.state === 'offline');
+  const isUnauth = unauthDev || state.snapshot?.connection_state === 'unauthorized' || state.snapshot?.health_status === 'unauthorized';
+  const isOffline = offlineDev || state.snapshot?.connection_state === 'offline' || state.snapshot?.health_status === 'offline';
+
   if (isConnected) {
     headlineEl.textContent = 'Genuine Battery Degradation.';
     if (subtextEl) {
       subtextEl.textContent = 'Real capacity loss computed directly from OEM hardware full-charge counters vs factory design specifications.';
+    }
+  } else if (isUnauth) {
+    headlineEl.textContent = 'Authorization Required.';
+    if (subtextEl) {
+      subtextEl.textContent = 'Unlock your phone screen and tap "Allow USB debugging" (check "Always allow from this computer") to fetch results.';
+    }
+  } else if (isOffline) {
+    headlineEl.textContent = 'Device Offline.';
+    if (subtextEl) {
+      subtextEl.textContent = 'Your phone was detected in an offline state. Reconnect the USB cable or toggle USB debugging in Developer Options.';
     }
   } else {
     headlineEl.textContent = 'Plug In to Begin.';
@@ -740,10 +757,23 @@ function renderDeviceStatus() {
 }
 
 function renderIdleState() {
+  const unauthDev = state.systemStatus?.connected_devices?.find(d => d.state === 'unauthorized');
+  const offlineDev = state.systemStatus?.connected_devices?.find(d => d.state === 'offline');
+  const isUnauth = unauthDev || state.snapshot?.connection_state === 'unauthorized' || state.snapshot?.health_status === 'unauthorized';
+  const isOffline = offlineDev || state.snapshot?.connection_state === 'offline' || state.snapshot?.health_status === 'offline';
+
   // 1. Eyebrow
   if (el.heroEyebrow) {
-    el.heroEyebrow.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-zinc-500"></span>Standby Mode';
-    el.heroEyebrow.className = 'eyebrow-label text-zinc-400 flex items-center gap-2';
+    if (isUnauth) {
+      el.heroEyebrow.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>Action Required on Phone';
+      el.heroEyebrow.className = 'eyebrow-label text-amber-300 flex items-center gap-2';
+    } else if (isOffline) {
+      el.heroEyebrow.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>Connection Offline';
+      el.heroEyebrow.className = 'eyebrow-label text-amber-300 flex items-center gap-2';
+    } else {
+      el.heroEyebrow.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-zinc-500"></span>Standby Mode';
+      el.heroEyebrow.className = 'eyebrow-label text-zinc-400 flex items-center gap-2';
+    }
   }
 
   // 1b. Fix 1: State-aware Hero Headline & Subtext
@@ -761,11 +791,26 @@ function renderIdleState() {
     el.heroHealthNumber.classList.add('skeleton-shimmer');
   }
 
-  if (el.heroStatusPill) el.heroStatusPill.textContent = 'Awaiting Device';
-  if (el.heroStatusHeading) el.heroStatusHeading.textContent = 'No Device Connected';
-  if (el.heroStatusSubtext) el.heroStatusSubtext.textContent = 'Connect phone over USB-C to compute real chemical health.';
+  if (isUnauth) {
+    if (el.heroStatusPill) el.heroStatusPill.textContent = 'Unauthorized';
+    if (el.heroStatusHeading) el.heroStatusHeading.textContent = 'Tap "Allow USB Debugging"';
+    if (el.heroStatusSubtext) {
+      const sName = (unauthDev?.serial || state.snapshot?.device_serial || '').slice(0, 10);
+      el.heroStatusSubtext.textContent = `Phone detected${sName ? ' (' + sName + ')' : ''}. Please unlock your screen and approve the USB debugging prompt.`;
+    }
+    if (el.heroMethodBadge) el.heroMethodBadge.textContent = 'Awaiting Approval';
+  } else if (isOffline) {
+    if (el.heroStatusPill) el.heroStatusPill.textContent = 'Device Offline';
+    if (el.heroStatusHeading) el.heroStatusHeading.textContent = 'Reconnect USB Cable';
+    if (el.heroStatusSubtext) el.heroStatusSubtext.textContent = 'Device is in offline state. Reconnect cable or toggle USB debugging in Developer Options.';
+    if (el.heroMethodBadge) el.heroMethodBadge.textContent = 'Offline';
+  } else {
+    if (el.heroStatusPill) el.heroStatusPill.textContent = 'Awaiting Device';
+    if (el.heroStatusHeading) el.heroStatusHeading.textContent = 'No Device Connected';
+    if (el.heroStatusSubtext) el.heroStatusSubtext.textContent = 'Connect phone over USB-C to compute real chemical health.';
+    if (el.heroMethodBadge) el.heroMethodBadge.textContent = 'Standby';
+  }
   if (el.rangeDialMarker) el.rangeDialMarker.style.left = '0%';
-  if (el.heroMethodBadge) el.heroMethodBadge.textContent = 'Standby';
 
   const oemBadge = document.getElementById('hero-oem-soh-badge');
   if (oemBadge) oemBadge.classList.add('hidden');
@@ -867,7 +912,7 @@ function renderSnapshot() {
   }
 
   const s = AppState.snapshot || state.snapshot;
-  if (!s || (s.health_pct === null && s.health_pct === undefined)) {
+  if (!s) {
     renderIdleState();
     return;
   }
@@ -2402,7 +2447,20 @@ function init() {
   // Action Buttons
   el.probeBtn?.addEventListener('click', handleProbe);
   document.getElementById('reconnect-btn')?.addEventListener('click', handleProbe);
+  document.getElementById('rescan-adb-btn')?.addEventListener('click', handleProbe);
   el.seedBtn?.addEventListener('click', handleSeed);
+
+  // Standby connection guide accordion
+  const guideToggle = document.getElementById('toggle-connection-guide-btn');
+  const guideSteps = document.getElementById('connection-guide-steps');
+  const guideChevron = document.getElementById('guide-chevron');
+  if (guideToggle && guideSteps) {
+    guideToggle.addEventListener('click', () => {
+      const isHidden = guideSteps.classList.contains('hidden');
+      guideSteps.classList.toggle('hidden', !isHidden);
+      guideChevron?.classList.toggle('rotate-180', isHidden);
+    });
+  }
 
   // Calibration & Prediction actions
   el.simCapToggle?.addEventListener('click', (e) => {

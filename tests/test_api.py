@@ -204,5 +204,54 @@ def test_api_app_drain_filtering_and_sorting():
     assert len(items_24_wake) <= len(res_7d.json()["items"]) <= len(res_all.json()["items"])
 
 
+def test_api_devices_merges_active_connected(monkeypatch):
+    """Verifies that GET /api/devices includes currently active USB devices even before readings are saved."""
+    from backend import api_routes
+    from unittest.mock import MagicMock
+
+    mock_adb = MagicMock()
+    mock_adb.is_available.return_value = True
+    mock_adb.get_devices.return_value = [
+        {"serial": "brand-new-oneplus-10r", "state": "device", "model": "CPH2423"}
+    ]
+    mock_adb.get_device_props.return_value = {
+        "model": "OnePlus 10R 5G",
+        "manufacturer": "OnePlus",
+    }
+    monkeypatch.setattr(api_routes, "adb", mock_adb)
+
+    res = client.get("/api/devices")
+    assert res.status_code == 200
+    devices = res.json()
+    serials = [d["serial"] for d in devices]
+    assert "brand-new-oneplus-10r" in serials
+    match = next(d for d in devices if d["serial"] == "brand-new-oneplus-10r")
+    assert "OnePlus" in match["model"]
+
+
+def test_sysfs_probing_oem_paths():
+    """Verifies that probe_sysfs_paths successfully queries oplus_chg and mtk-battery paths."""
+    from backend.adb_client import ADBClient
+    from unittest.mock import MagicMock
+
+    client_adb = ADBClient()
+
+    def mock_shell(serial, cmd):
+        if "oplus_chg/charge_full" in cmd:
+            return "5000000\n", "", 0
+        if "oplus_chg/charge_full_design" in cmd:
+            return "5000000\n", "", 0
+        if "oplus_chg/cycle_count" in cmd:
+            return "85\n", "", 0
+        return "", "", 1
+
+    client_adb.run_shell = MagicMock(side_effect=mock_shell)
+    res = client_adb.probe_sysfs_paths("oneplus-serial")
+    assert res["charge_full_uah"] == 5000000
+    assert res["charge_full_design_uah"] == 5000000
+    assert res["cycle_count"] == 85
+
+
+
 
 

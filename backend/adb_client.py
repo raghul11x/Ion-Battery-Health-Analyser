@@ -291,6 +291,11 @@ class ADBClient:
             "/sys/class/power_supply/bms",
             "/sys/class/power_supply/fg",
             "/sys/class/power_supply/main",
+            "/sys/class/power_supply/oplus_chg",
+            "/sys/class/power_supply/mtk-battery",
+            "/sys/class/power_supply/mtk_gauge",
+            "/sys/class/power_supply/bbc_battery",
+            "/sys/class/power_supply/google,battery",
         ]
         result: Dict[str, Any] = {
             "charge_full_uah": None,
@@ -299,17 +304,35 @@ class ADBClient:
         }
         for base in paths:
             if result["charge_full_uah"] is None:
-                out, _, code = self.run_shell(serial, f"cat {base}/charge_full")
-                if code == 0 and out.strip().isdigit():
-                    result["charge_full_uah"] = int(out.strip())
+                for cf_attr in ["charge_full", "charge_full_uah", "batt_full_capacity", "charge_counter_full"]:
+                    out, _, code = self.run_shell(serial, f"cat {base}/{cf_attr}")
+                    if code == 0 and out.strip().isdigit() and int(out.strip()) > 0:
+                        result["charge_full_uah"] = int(out.strip())
+                        break
 
             if result["charge_full_design_uah"] is None:
-                out, _, code = self.run_shell(serial, f"cat {base}/charge_full_design")
-                if code == 0 and out.strip().isdigit():
-                    result["charge_full_design_uah"] = int(out.strip())
+                for cfd_attr in ["charge_full_design", "charge_full_design_uah", "batt_capacity_max", "design_capacity", "charge_design"]:
+                    out, _, code = self.run_shell(serial, f"cat {base}/{cfd_attr}")
+                    if code == 0 and out.strip().isdigit() and int(out.strip()) > 0:
+                        result["charge_full_design_uah"] = int(out.strip())
+                        break
 
             if result["cycle_count"] is None:
-                for c_attr in ["cycle_count", "batt_cycle_count", "battery_cycle_count", "fg_cycle", "battery_cycle", "total_cycle"]:
+                for c_attr in [
+                    "cycle_count",
+                    "batt_cycle_count",
+                    "battery_cycle_count",
+                    "fg_cycle",
+                    "battery_cycle",
+                    "total_cycle",
+                    "cycle",
+                    "fg_cycle_count",
+                    "cycle_count_id",
+                    "batt_cycle",
+                    "battery_cycles",
+                    "soh_cycle_count",
+                    "batt_discharge_level",
+                ]:
                     out, _, code = self.run_shell(serial, f"cat {base}/{c_attr}")
                     if code == 0 and out.strip().isdigit():
                         c_val = int(out.strip())
@@ -327,7 +350,7 @@ class ADBClient:
         out, _, code = self.run_shell(serial, "ls /sys/class/power_supply")
         if code != 0 or not out:
             # Fallback to standard nodes if ls fails
-            subdirs = ["battery", "bms", "main", "fg", "usb"]
+            subdirs = ["battery", "bms", "main", "fg", "usb", "oplus_chg", "mtk-battery"]
         else:
             subdirs = [s.strip() for s in out.split() if s.strip()]
 
@@ -347,6 +370,7 @@ class ADBClient:
             "model_name",
             # Vendor / OEM registers
             "battery_soh",
+            "batt_soh",
             "soh",
             "fg_cycle",
             "battery_cycle",
@@ -363,6 +387,13 @@ class ADBClient:
             "battery_cycles",
             "soh_cycle_count",
             "batt_discharge_level",
+            # OEM design capacity aliases
+            "charge_full_design_uah",
+            "batt_capacity_max",
+            "design_capacity",
+            "charge_design",
+            "charge_full_uah",
+            "batt_full_capacity",
         ]
 
         for node in subdirs:
@@ -612,22 +643,47 @@ class ADBClient:
         # 1. Locate charge_full
         charge_full_raw: Optional[int] = None
         charge_full_path: Optional[str] = None
+        cf_aliases = ["charge_full", "charge_full_uah", "batt_full_capacity", "charge_counter_full"]
         for node in search_nodes:
-            entry = power_tree.get(node, {}).get("charge_full")
-            if entry and entry.get("readable") and entry.get("int_val") and entry["int_val"] > 0:
-                charge_full_raw = entry["int_val"]
-                charge_full_path = entry["path"]
+            node_data = power_tree.get(node, {})
+            for cf_key in cf_aliases:
+                entry = node_data.get(cf_key)
+                if entry and entry.get("readable") and entry.get("int_val") and entry["int_val"] > 0:
+                    charge_full_raw = entry["int_val"]
+                    charge_full_path = entry["path"]
+                    break
+            if charge_full_raw is not None:
                 break
 
         # 2. Locate charge_full_design
         charge_full_design_raw: Optional[int] = None
         charge_full_design_path: Optional[str] = None
+        cfd_aliases = ["charge_full_design", "charge_full_design_uah", "batt_capacity_max", "design_capacity", "charge_design"]
         for node in search_nodes:
-            entry = power_tree.get(node, {}).get("charge_full_design")
-            if entry and entry.get("readable") and entry.get("int_val") and entry["int_val"] > 0:
-                charge_full_design_raw = entry["int_val"]
-                charge_full_design_path = entry["path"]
+            node_data = power_tree.get(node, {})
+            for cfd_key in cfd_aliases:
+                entry = node_data.get(cfd_key)
+                if entry and entry.get("readable") and entry.get("int_val") and entry["int_val"] > 0:
+                    charge_full_design_raw = entry["int_val"]
+                    charge_full_design_path = entry["path"]
+                    break
+            if charge_full_design_raw is not None:
                 break
+
+        # Tier 2.5: Fallback to dumpsys batterystats for capacity if sysfs omitted design capacity
+        if charge_full_design_raw is None:
+            bs_out, _, bs_code = self.run_shell(serial, "dumpsys batterystats --charged", timeout=6.0)
+            if bs_code == 0 and bs_out:
+                import re
+                m = re.search(r"(?:Estimated battery capacity|Capacity|Battery capacity)\s*[:=]\s*(\d+)\s*(?:mAh|uAh)?", bs_out, re.IGNORECASE)
+                if m:
+                    cap_val = int(m.group(1))
+                    if 1000 <= cap_val <= 20000:
+                        charge_full_design_raw = cap_val * 1000
+                        charge_full_design_path = "dumpsys batterystats (Estimated capacity)"
+                    elif 1000000 <= cap_val <= 20000000:
+                        charge_full_design_raw = cap_val
+                        charge_full_design_path = "dumpsys batterystats (Capacity)"
 
         # 3. Locate charge_counter
         charge_counter_raw: Optional[int] = dumpsys.get("charge_counter")

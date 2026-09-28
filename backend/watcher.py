@@ -6,7 +6,8 @@ Periodically polls for ADB device connections and auto-logs battery readings in 
 from __future__ import annotations
 from datetime import datetime, timedelta
 import logging
-from typing import Any, Dict, Optional
+import threading
+from typing import Any, Dict, Optional, Set
 from apscheduler.schedulers.background import BackgroundScheduler
 from backend.adb_client import ADBClient
 from backend.db import db
@@ -26,6 +27,10 @@ class DeviceWatcher:
         self.scheduler: Optional[BackgroundScheduler] = None
         self.last_connected_serial: Optional[str] = None
         self.last_logged_time: Optional[datetime] = None
+        self.is_profiling: bool = False
+        self.profiling_message: Optional[str] = None
+        self._profiling_serials: Set[str] = set()
+        self._app_drain_serials: Set[str] = set()
         # Per-serial timestamp of last *full* ADB probe (sysfs scan + DB write).
         # Between full probes, fast ticks only update last_status from dumpsys battery.
         self.last_full_probe_time: Dict[str, Optional[datetime]] = {}
@@ -39,6 +44,8 @@ class DeviceWatcher:
             "last_check": None,
             "last_log": None,
             "log_count_session": 0,
+            "is_profiling": False,
+            "profiling_message": None,
         }
 
 
@@ -103,26 +110,8 @@ class DeviceWatcher:
 
         if is_fresh_connect:
             emit_status(serial, "connection", f"Connected to {target_device.get('model', 'Android Device')} ({serial})", {"serial": serial, "model": target_device.get("model")}, level="success")
-            # Rule 7: Run parameter discovery once per new device serial, cached thereafter
-            cached_prof = db.get_device_profile(serial)
-            if not cached_prof:
-                logger.info(f"Discovered new device {serial}. Running local-first parameter discovery...")
-                self.is_profiling = True
-                self.profiling_message = "Profiling new device..."
-                self.last_status["is_profiling"] = True
-                self.last_status["profiling_message"] = self.profiling_message
-                try:
-                    import asyncio
-                    from backend.device_profiler import profiler
-                    asyncio.run(profiler.profile_device(serial))
-                except Exception as ex:
-                    logger.warning(f"Device profiling note: {ex}")
-                finally:
-                    self.is_profiling = False
-                    self.profiling_message = None
-                    self.last_status["is_profiling"] = False
-                    self.last_status["profiling_message"] = None
 
+        # 1. Immediately log reading first so UI populates within <1s without waiting for deep scan/AI
         if is_fresh_connect or full_probe_needed:
             logger.info(f"Auto-logging full reading for device {serial} (Fresh connect: {is_fresh_connect})...")
             try:
@@ -131,21 +120,58 @@ class DeviceWatcher:
             except Exception as e:
                 logger.error(f"Error during auto-log for device {serial}: {e}")
         else:
-            # Fast tick: only refresh live telemetry (level/temp/voltage) without expensive sysfs scan
+            # Fast tick: refresh live telemetry (level/temp/voltage) without full sysfs overhead
             self._log_fast_reading(serial)
 
-        # Deep Scan (15-min TTL): app battery stats attribution pull
+        # 2. Rule 7: Parameter discovery in background thread (never freezes watcher loop)
+        if is_fresh_connect:
+            cached_prof = db.get_device_profile(serial)
+            if not cached_prof and serial not in self._profiling_serials:
+                self._profiling_serials.add(serial)
+
+                def _bg_profile(dev_serial: str):
+                    logger.info(f"Discovered new device {dev_serial}. Running local-first parameter discovery in background...")
+                    self.is_profiling = True
+                    self.profiling_message = "Profiling new device parameters..."
+                    self.last_status["is_profiling"] = True
+                    self.last_status["profiling_message"] = self.profiling_message
+                    try:
+                        import asyncio
+                        from backend.device_profiler import profiler
+                        asyncio.run(profiler.profile_device(dev_serial))
+                        # Refresh reading to merge newly discovered profile/SoH if device is still connected
+                        if self.last_connected_serial == dev_serial:
+                            self.log_reading_for_device(dev_serial)
+                    except Exception as ex:
+                        logger.warning(f"Device profiling note: {ex}")
+                    finally:
+                        self.is_profiling = False
+                        self.profiling_message = None
+                        self.last_status["is_profiling"] = False
+                        self.last_status["profiling_message"] = None
+                        self._profiling_serials.discard(dev_serial)
+
+                threading.Thread(target=_bg_profile, args=(serial,), daemon=True, name=f"bg-profiler-{serial}").start()
+
+        # 3. Deep Scan (15-min TTL): app battery stats attribution pull in background
         last_deep = self.last_deep_scan_time.get(serial)
         deep_scan_needed = (
             last_deep is None
             or (now - last_deep) >= timedelta(minutes=15)
         )
-        if is_fresh_connect or deep_scan_needed:
-            try:
-                self.run_app_drain_scan(serial)
-                self.last_deep_scan_time[serial] = now
-            except Exception as e:
-                logger.warning(f"Note during app drain scan for {serial}: {e}")
+        if (is_fresh_connect or deep_scan_needed) and serial not in self._app_drain_serials:
+            self._app_drain_serials.add(serial)
+
+            def _bg_drain(dev_serial: str):
+                try:
+                    self.run_app_drain_scan(dev_serial)
+                    self.last_deep_scan_time[dev_serial] = datetime.utcnow()
+                except Exception as e:
+                    logger.warning(f"Note during app drain scan for {dev_serial}: {e}")
+                finally:
+                    self._app_drain_serials.discard(dev_serial)
+
+            threading.Thread(target=_bg_drain, args=(serial,), daemon=True, name=f"bg-drain-{serial}").start()
 
 
     def run_app_drain_scan(self, serial: str) -> List[Dict[str, Any]]:
