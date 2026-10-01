@@ -840,12 +840,36 @@ window.addEventListener('resize', () => {
 
 function setRangeDialPosition(pct) {
   if (!el.rangeDialMarker) return;
+  const dialMeter = document.getElementById('hero-health-dial');
+
+  if (pct === null || pct === undefined || isNaN(pct)) {
+    el.rangeDialMarker.classList.add('hidden');
+    el.rangeDialMarker.style.display = 'none';
+    if (dialMeter) {
+      dialMeter.removeAttribute('aria-valuenow');
+      dialMeter.setAttribute('aria-valuetext', 'Health unavailable');
+    }
+    return;
+  }
+
+  // Real numeric health: clamp [0, 100], and clamp dial position [2, 98] for clean pin margin
+  const clampedVal = Math.min(100, Math.max(0, Number(pct)));
+  const clampedPos = Math.min(98, Math.max(2, clampedVal));
+
+  el.rangeDialMarker.classList.remove('hidden');
+  el.rangeDialMarker.style.display = '';
+
   if (!cachedTrackWidth) {
     const track = el.rangeDialTrack || document.querySelector('.range-dial-track');
     cachedTrackWidth = track ? track.clientWidth : 200;
   }
-  const x = (pct / 100) * (cachedTrackWidth || 200);
+  const x = (clampedPos / 100) * (cachedTrackWidth || 200);
   el.rangeDialMarker.style.setProperty('--dial-x', `${x}px`);
+
+  if (dialMeter) {
+    dialMeter.setAttribute('aria-valuenow', `${Math.round(clampedVal)}`);
+    dialMeter.setAttribute('aria-valuetext', `${Math.round(clampedVal)}%`);
+  }
 }
 
 function renderIdleState() {
@@ -890,19 +914,21 @@ function renderIdleState() {
       const sName = (unauthDev?.serial || state.snapshot?.device_serial || '').slice(0, 10);
       el.heroStatusSubtext.textContent = `Phone detected${sName ? ' (' + sName + ')' : ''}. Please unlock your screen and approve the USB debugging prompt.`;
     }
-    if (el.heroMethodBadge) el.heroMethodBadge.textContent = 'Awaiting Approval';
   } else if (isOffline) {
     if (el.heroStatusPill) el.heroStatusPill.textContent = 'Device Offline';
     if (el.heroStatusHeading) el.heroStatusHeading.textContent = 'Reconnect USB Cable';
     if (el.heroStatusSubtext) el.heroStatusSubtext.textContent = 'Device is in offline state. Reconnect cable or toggle USB debugging in Developer Options.';
-    if (el.heroMethodBadge) el.heroMethodBadge.textContent = 'Offline';
   } else {
     if (el.heroStatusPill) el.heroStatusPill.textContent = 'Awaiting Device';
     if (el.heroStatusHeading) el.heroStatusHeading.textContent = 'No Device Connected';
     if (el.heroStatusSubtext) el.heroStatusSubtext.textContent = 'Connect phone over USB-C to compute real chemical health.';
-    if (el.heroMethodBadge) el.heroMethodBadge.textContent = 'Standby';
   }
-  if (el.rangeDialMarker) setRangeDialPosition(0);
+  // Exactly ONE standby pill in the hero card: hide secondary method badge in standby/idle
+  if (el.heroMethodBadge) {
+    el.heroMethodBadge.classList.add('hidden');
+  }
+  // When health is unknown/standby, hide the dial knob completely
+  setRangeDialPosition(null);
 
   const oemBadge = document.getElementById('hero-oem-soh-badge');
   if (oemBadge) oemBadge.classList.add('hidden');
@@ -1121,24 +1147,31 @@ function renderSnapshot() {
     updateTextIfChanged(el.heroStatusPill, 'Gathering Data');
     updateTextIfChanged(el.heroStatusHeading, 'Insufficient Data to Compute Health');
     updateTextIfChanged(el.heroStatusSubtext, "Cycle count isn't exposed by this device's firmware — building an estimate from usage history, check back in a few days.");
-    if (lastRenderedSnapshotState.dialPos !== 0) {
-      lastRenderedSnapshotState.dialPos = 0;
-      setRangeDialPosition(0);
+    if (lastRenderedSnapshotState.dialPos !== null) {
+      lastRenderedSnapshotState.dialPos = null;
+      setRangeDialPosition(null);
     }
     const days = s.history_days !== undefined ? `${s.history_days}d history` : 'Gathering';
-    updateTextIfChanged(el.heroMethodBadge, `Gathering Data · ${days}`);
+    if (el.heroMethodBadge) {
+      el.heroMethodBadge.classList.remove('hidden');
+      updateTextIfChanged(el.heroMethodBadge, `Gathering Data · ${days}`);
+    }
   } else if (health === null || health === undefined) {
     renderIdleState();
-    updateTextIfChanged(el.heroMethodBadge, 'Offline');
   } else {
-    const displayVal = Math.min(100, Math.round(health));
+    const displayVal = Math.min(100, Math.max(0, Math.round(health)));
     updateTextIfChanged(el.heroHealthNumber, displayVal);
+    if (el.heroHealthNumber) {
+      el.heroHealthNumber.classList.remove('skeleton-shimmer');
+    }
 
-    // Range Dial position (clamped 2% to 98% for clean pin alignment)
-    const clampedPos = Math.min(98, Math.max(2, displayVal));
-    if (lastRenderedSnapshotState.dialPos !== clampedPos) {
-      lastRenderedSnapshotState.dialPos = clampedPos;
-      setRangeDialPosition(clampedPos);
+    // Range Dial position
+    if (lastRenderedSnapshotState.dialPos !== displayVal) {
+      lastRenderedSnapshotState.dialPos = displayVal;
+      setRangeDialPosition(displayVal);
+    }
+    if (el.heroMethodBadge) {
+      el.heroMethodBadge.classList.remove('hidden');
     }
 
     // Dynamic Gradient & Evaluation
@@ -1439,15 +1472,22 @@ function renderForecast(forecast) {
     }
   }
 
-  updateTextIfChanged(el.forecastCurrentHealth, `${forecast.current_health_pct}%`);
+  const formattedHealth = (forecast.current_health_pct !== null && forecast.current_health_pct !== undefined)
+    ? `${forecast.current_health_pct}%`
+    : '--%';
+  updateTextIfChanged(el.forecastCurrentHealth, formattedHealth);
   updateTextIfChanged(el.forecastCyclesLeft, `~${forecast.cycles_remaining} cycles remaining`);
   updateTextIfChanged(el.forecastDailyCadence, `~${forecast.daily_cycle_rate} cycles/day`);
 
   // Scale progress bar: 70% to 100% maps to 0% to 100% width via compositor scaleX
   if (el.forecastProgressBar) {
-    const health = forecast.current_health_pct || 83;
-    const progressPct = Math.min(100, Math.max(5, ((health - 70) / 30) * 100));
-    el.forecastProgressBar.style.transform = `scaleX(${progressPct / 100})`;
+    if (forecast.current_health_pct !== null && forecast.current_health_pct !== undefined) {
+      const health = Math.min(100, Math.max(0, Number(forecast.current_health_pct)));
+      const progressPct = Math.min(100, Math.max(5, ((health - 70) / 30) * 100));
+      el.forecastProgressBar.style.transform = `scaleX(${progressPct / 100})`;
+    } else {
+      el.forecastProgressBar.style.transform = 'scaleX(0)';
+    }
   }
 
   // If 80% simulation toggle is active, update the side-by-side comparison too
@@ -2736,6 +2776,7 @@ function init() {
       const isHidden = guideSteps.classList.contains('hidden');
       guideSteps.classList.toggle('hidden', !isHidden);
       guideChevron?.classList.toggle('rotate-180', isHidden);
+      guideToggle.setAttribute('aria-expanded', String(isHidden));
     });
   }
 
@@ -3191,11 +3232,11 @@ function initSharedTooltips() {
     if (activeTooltipTarget) {
       positionSharedTooltip(activeTooltipTarget, getOrCreateSharedTooltip());
     }
-    const health = AppState.snapshot?.health_pct || state.snapshot?.health_pct;
+    const health = AppState.snapshot?.health_pct ?? state.snapshot?.health_pct;
     if (health !== null && health !== undefined) {
-      setRangeDialPosition(Math.min(98, Math.max(2, Math.round(health))));
+      setRangeDialPosition(health);
     } else {
-      setRangeDialPosition(0);
+      setRangeDialPosition(null);
     }
   }, { passive: true });
 

@@ -256,3 +256,44 @@ def test_capacity_retention_and_fade_mathematical_consistency():
     assert retention == pct
 
 
+def test_health_bounds_and_null_integrity():
+    """
+    Verify zero-hallucination health calculations:
+    1. Out-of-bounds calculations (>100%) are capped strictly to 100.0% max.
+    2. Insufficient data states (unresolved cycles and <7 days history) return None, never hallucinating 100%.
+    """
+    # Exceeding 100%: 6000 mAh on 5000 mAh design -> capped at 100.0%
+    pct, raw_ratio, recalibrated, method, details = calculate_health(
+        charge_full_uah=6000000,
+        charge_full_design_uah=5000000,
+        level_pct=100,
+        cycle_count=5,
+    )
+    assert pct == 100.0
+    assert raw_ratio == 120.0
+    assert recalibrated is True
+
+    # Low health: 3500 mAh on 5000 mAh design -> 70.0%
+    pct_low, raw_low, _, _, _ = calculate_health(
+        charge_full_uah=3500000,
+        charge_full_design_uah=5000000,
+        level_pct=100,
+        cycle_count=800,
+    )
+    assert pct_low == 70.0
+    assert raw_low == 70.0
+
+    # Unresolved cycle count + fresh device with static register (<7 days history):
+    # Must return None for displayed health (insufficient_data), NEVER hallucinating 100%
+    pct_insufficient, _, _, method_insufficient, details_insufficient = calculate_health(
+        charge_full_uah=5000000,
+        charge_full_design_uah=5000000,
+        cycle_count=None,
+        history_days=2.0,
+    )
+    assert pct_insufficient is None
+    assert method_insufficient == "insufficient_data"
+    assert details_insufficient["displayed_health"] is None
+
+
+
