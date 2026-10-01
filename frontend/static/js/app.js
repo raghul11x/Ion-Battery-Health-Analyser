@@ -2249,19 +2249,21 @@ function renderProbe() {
   `;
 }
 
-// Sliding Capsule Nav Indicator (Compositor-Only Scale/Translate)
+// Sliding Capsule Nav Indicator — correct width + translateX implementation.
+// Uses offsetLeft/offsetWidth (layout coordinates, no DPR scaling issues).
+// JS sets the blob's width and translateX inline; CSS transitions both.
 function updateCapsuleBlob(activeBtn) {
   const blob = document.getElementById('capsule-blob');
   if (!blob) return;
   const target = activeBtn || document.querySelector('.capsule-segment.active');
   if (!target) return;
-  const nav = target.closest('.capsule-nav');
-  if (!nav) return;
-  const navRect = nav.getBoundingClientRect();
-  const btnRect = target.getBoundingClientRect();
-  if (btnRect.width === 0) return;
-  const left = btnRect.left - navRect.left;
-  blob.style.transform = `translate3d(${left}px, 0, 0) scaleX(${btnRect.width})`;
+  if (target.offsetWidth === 0) return; // element not yet painted
+  const left = target.offsetLeft;
+  const w    = target.offsetWidth;
+  // Set width directly (CSS transition handles the animation) and
+  // use translateX for the horizontal position (compositor-friendly).
+  blob.style.width     = w + 'px';
+  blob.style.transform = `translateX(${left}px)`;
 }
 
 // Navigation Tab Switching
@@ -2756,10 +2758,29 @@ function init() {
   if (initialActive) {
     requestAnimationFrame(() => updateCapsuleBlob(initialActive));
   }
+
+  // Re-measure on window resize (also covers zoom/DPI changes)
   window.addEventListener('resize', () => {
     const curr = document.querySelector('.capsule-segment.active');
     if (curr) updateCapsuleBlob(curr);
   });
+
+  // Re-measure after fonts load (web fonts can change text width)
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(() => {
+      const curr = document.querySelector('.capsule-segment.active');
+      if (curr) updateCapsuleBlob(curr);
+    });
+  }
+
+  // ResizeObserver on the nav pill: catches DPI/zoom changes missed by window resize
+  const navPill = document.querySelector('.capsule-nav');
+  if (navPill && typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(() => {
+      const curr = document.querySelector('.capsule-segment.active');
+      if (curr) updateCapsuleBlob(curr);
+    }).observe(navPill);
+  }
 
   // Action Buttons
   el.probeBtn?.addEventListener('click', handleProbe);
