@@ -189,7 +189,7 @@ def main():
             width=1220,
             height=820,
             min_size=(980, 660),
-            background_color="#0B0B10",
+            background_color="#030a1c",
             text_select=False,
             maximized=True,
             focus=True,

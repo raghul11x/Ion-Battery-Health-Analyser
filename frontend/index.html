@@ -25,14 +25,23 @@
               accent: '#4F46E5',
             }
           }
-        }
       }
     }
   </script>
+  <!-- Critical First-Paint Background (Prevents cold-start/pre-CSS flash) -->
+  <style>
+    html, body {
+      background-color: #030a1c !important;
+      background: #030a1c !important;
+    }
+  </style>
 </head>
 <body class="bg-[#030a1c] text-white flex flex-col min-h-screen relative">
 
-  <!-- Aurora / AnimatedRays Application Background (Bug 3 — Clean Rib Texture) -->
+  <!-- Permanent Single Source of Truth Static Blue Liquid-Glass Backdrop -->
+  <div id="app-backdrop" class="app-backdrop" aria-hidden="true"></div>
+
+  <!-- Aurora / AnimatedRays Application Background (Disabled in Pass 1 for stability; reserved for Pass 2) -->
   <div class="aurora-hero-wrapper ion-aurora-wrap" aria-hidden="true">
     <div class="aurora-hero-bg ion-aurora-base">
       <div class="ion-aurora-overlay"></div>

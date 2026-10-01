@@ -1,9 +1,27 @@
 /* EURA iOS Health/Wellness App Style (Design Doc v2) */
 
 :root {
-  --bg-gradient: linear-gradient(145deg, #091a2e 0%, #0a2f44 45%, #07131e 100%);
-  --surface-base: #0B0B10;
-  
+  /* ==========================================================================
+     Single Source of Truth: Permanent Blue Liquid-Glass Backdrop (Pass 1)
+     ========================================================================== */
+  --backdrop-base:    #030a1c;                  /* solid night-sky navy base */
+  --backdrop-stop-1:  #0b4a5a;                  /* teal ambient (var(--ambient-b)) */
+  --backdrop-stop-2:  #0a2a43;                  /* deep blue (var(--ambient-a)) */
+  --backdrop-stop-3:  #071524;                  /* midnight ocean transition */
+  --backdrop-stop-4:  var(--backdrop-base);     /* seamless base color blend */
+
+  --backdrop-gradient: radial-gradient(
+    ellipse 90% 70% at 50% -15%,
+    var(--backdrop-stop-1) 0%,
+    var(--backdrop-stop-2) 40%,
+    var(--backdrop-stop-3) 70%,
+    var(--backdrop-stop-4) 100%
+  );
+
+  /* Aurora Layer Switch (Pass 1: disabled for rock-solid stability; Pass 2 refines)
+     Toggle: add class .enable-aurora or attribute data-aurora="1" to :root */
+  --enable-aurora: 0;
+
   /* EURA Dynamic Hero Card Gradients by Health Band */
   --hero-gradient-healthy: linear-gradient(135deg, #14532D 0%, #15803D 50%, #22C55E 100%);
   --hero-gradient-fair: linear-gradient(135deg, #7C2D12 0%, #C2410C 50%, #F59E0B 100%);
@@ -24,7 +42,7 @@
   --text-muted: #71717A;
 
   /* Aurora Header Accent */
-  --aurora-stripe: rgba(56, 189, 248, 0.14); /* retinted to cyan/teal */
+  --aurora-stripe: rgba(56, 189, 248, 0.14);
 
   /* Liquid Glass Design Tokens (iOS 26 Restyle) */
   --glass-fill: rgba(255, 255, 255, 0.06);
@@ -42,23 +60,16 @@
   --radius-pill: 999px;
   --ambient-a: #0a2a43;   /* deep blue */
   --ambient-b: #0b4a5a;   /* teal */
-  --ambient-c: #0B0B10;   /* obsidian base */
+  --ambient-c: #030a1c;   /* night-sky navy base */
 
-  /* Aurora-Hero Port — stripe and rainbow tokens (aurora-hero.tsx palette) */
-  --aurora-bg:        #030a1c;                   /* night-sky navy base (stripe-color) */
-  --aurora-stripe-1:  #1d4ed8;                   /* deep blue */
-  --aurora-stripe-2:  #22d3ee;                   /* cyan */
-  --aurora-stripe-3:  #2dd4bf;                   /* teal */
-  --aurora-stripe-4:  #6ee7b7;                   /* mint */
-  --aurora-stripe-5:  transparent;               /* no pink; skip warm hue */
-  --aurora-stripe-6:  #38bdf8;                   /* sky blue */
-  /* Legacy prism tokens kept for any remaining references */
-  --prism-base:   var(--ambient-c);
-  --prism-deep:   var(--ambient-a);
-  --prism-mid:    var(--ambient-b);
-  --prism-light:  rgba(120, 190, 255, 0.55);
-  --prism-glint:  rgba(207, 234, 255, 0.28);
-  --prism-accent: rgba(94, 234, 212, 0.35);
+  /* Aurora tokens (preserved for Pass 2 refinement) */
+  --aurora-bg:        var(--backdrop-base);
+  --aurora-stripe-1:  #1d4ed8;
+  --aurora-stripe-2:  #22d3ee;
+  --aurora-stripe-3:  #2dd4bf;
+  --aurora-stripe-4:  #6ee7b7;
+  --aurora-stripe-5:  transparent;
+  --aurora-stripe-6:  #38bdf8;
 }
 
 /* ==========================================================================
@@ -221,6 +232,35 @@ body.no-glass .ion-aurora-wrap {
  *   gives the illusion that light is flowing across the glass slats.
  */
 
+/* ==========================================================================
+   Permanent Static Blue Liquid-Glass Backdrop (Single Source of Truth)
+   ========================================================================== */
+
+.app-backdrop {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+  background-color: var(--backdrop-base);
+  background-image: var(--backdrop-gradient);
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center top;
+}
+
+/* Aurora Layer Switch (Pass 1: disabled behind switch for rock-solid stability; Pass 2 refines)
+   Preserved completely in CSS and DOM. Toggle by adding class 'enable-aurora' or
+   attribute data-aurora="1" to :root or documentElement. */
+.ion-aurora-wrap {
+  display: none !important;
+}
+:root.enable-aurora .ion-aurora-wrap,
+:root[data-aurora="1"] .ion-aurora-wrap {
+  display: block !important;
+}
+
 .aurora-hero-wrapper.ion-aurora-wrap,
 .ion-aurora-wrap {
   position: fixed;
@@ -365,21 +405,31 @@ body.is-scrolling .ion-aurora-overlay,
 
 
 
+html,
 body {
   margin: 0;
   padding: 0;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Inter", sans-serif;
   font-variant-numeric: tabular-nums lining-nums;
-  /* Solid base that matches the aurora wrapper base — aurora layer paints on top.
-     No radial-gradient and no background-attachment:fixed, which competed with
-     the fixed aurora and caused background flashing during scroll. */
-  background-color: var(--aurora-bg) !important;
-  background: var(--aurora-bg) !important;
+  /* Solid base matching the permanent blue liquid-glass backdrop */
+  background-color: var(--backdrop-base) !important;
+  background: var(--backdrop-base) !important;
   color: var(--text-primary);
   min-height: 100vh;
   overflow-x: hidden;
   letter-spacing: -0.015em;
   user-select: none;
+}
+
+/* Ensure view containers and main are completely transparent */
+main,
+section,
+#view-dashboard,
+#view-trends,
+#view-habits,
+#view-diagnostics {
+  background: transparent !important;
+  background-color: transparent !important;
 }
 
 .font-mono {
