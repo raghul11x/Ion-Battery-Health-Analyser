@@ -44,13 +44,21 @@
   --ambient-b: #0b4a5a;   /* teal */
   --ambient-c: #0B0B10;   /* obsidian base */
 
-  /* Theme-Matched Prism Aurora Tokens (Phase A) */
-  --prism-base:   var(--ambient-c);            /* obsidian base */
-  --prism-deep:   var(--ambient-a);            /* deep blue #0a2a43 */
-  --prism-mid:    var(--ambient-b);            /* teal #0b4a5a */
-  --prism-light:  rgba(120, 190, 255, 0.55);   /* same hue as --glass-tint-active */
-  --prism-glint:  rgba(207, 234, 255, 0.28);   /* cool white, thin rib catches only */
-  --prism-accent: rgba(94, 234, 212, 0.35);    /* teal glint, <= 8% of stripe length */
+  /* Aurora-Hero Port — stripe and rainbow tokens (aurora-hero.tsx palette) */
+  --aurora-bg:        #030a1c;                   /* night-sky navy base (stripe-color) */
+  --aurora-stripe-1:  #1d4ed8;                   /* deep blue */
+  --aurora-stripe-2:  #22d3ee;                   /* cyan */
+  --aurora-stripe-3:  #2dd4bf;                   /* teal */
+  --aurora-stripe-4:  #6ee7b7;                   /* mint */
+  --aurora-stripe-5:  transparent;               /* no pink; skip warm hue */
+  --aurora-stripe-6:  #38bdf8;                   /* sky blue */
+  /* Legacy prism tokens kept for any remaining references */
+  --prism-base:   var(--ambient-c);
+  --prism-deep:   var(--ambient-a);
+  --prism-mid:    var(--ambient-b);
+  --prism-light:  rgba(120, 190, 255, 0.55);
+  --prism-glint:  rgba(207, 234, 255, 0.28);
+  --prism-accent: rgba(94, 234, 212, 0.35);
 }
 
 /* ==========================================================================
@@ -159,8 +167,9 @@ body.no-glass .eura-indigo-card {
 body.tier-medium, :root.tier-medium {
   --glass-blur: 8px;
 }
-body.tier-medium .aurora-hero-bg {
+body.tier-medium .ion-aurora-overlay {
   animation: none !important;
+  filter: blur(6px) opacity(45%) saturate(130%) !important;
 }
 
 body.tier-low, :root.tier-low {
@@ -196,7 +205,7 @@ body.tier-medium .aurora-content {
 }
 
 /* ==========================================================================
-   Application Aurora Background (Theme-Matched Prism Fluted-Glass)
+   Application Aurora Background (Aurora-Hero.tsx Port — Blue/Cyan/Teal)
    ========================================================================== */
 
 .aurora-hero-wrapper.ion-aurora-wrap,
@@ -206,16 +215,13 @@ body.tier-medium .aurora-content {
   overflow: hidden;
   pointer-events: none;
   z-index: 0;
-  background: var(--ambient-c);
+  /* Night-sky navy base — same as aurora-hero.tsx --stripe-color */
+  background: var(--aurora-bg);
 }
 
 @keyframes smoothBg {
-  0% {
-    transform: translate3d(0, 0, 0);
-  }
-  100% {
-    transform: translate3d(-50%, 0, 0);
-  }
+  from { background-position: 50% 50%, 50% 50%; }
+  to   { background-position: 350% 50%, 350% 50%; }
 }
 
 .aurora-hero-bg,
@@ -224,38 +230,42 @@ body.tier-medium .aurora-content {
   height: 100%;
   position: absolute;
   inset: 0;
-  --stripes: repeating-linear-gradient(
-    105deg, 
-    var(--prism-base) 0%, 
-    var(--prism-deep) 15%, 
-    var(--prism-mid) 28%, 
-    var(--prism-light) 40%, 
-    var(--prism-glint) 43%, 
-    var(--prism-accent) 47%, 
-    var(--prism-mid) 58%, 
-    var(--prism-deep) 70%, 
-    var(--prism-base) 85%, 
-    var(--prism-base) 100%
-  );
-  mask-image: radial-gradient(ellipse at 100% 0%, black 40%, transparent 70%);
-  -webkit-mask-image: radial-gradient(ellipse at 100% 0%, black 40%, transparent 70%);
 }
 
+/* The animated overlay carries both the stripe mask and the colour rainbow —
+   exactly as in aurora-hero.tsx (two background-image layers, one animation) */
 .aurora-hero-bg .ion-aurora-overlay,
 .ion-aurora-base .ion-aurora-overlay {
   content: "";
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 200%;
+  inset: 0;
+  width: 100%;
   height: 100%;
-  background-image: var(--stripes);
-  background-size: 50% 100%;
+  --stripes: repeating-linear-gradient(
+    100deg,
+    var(--aurora-bg)     0%,
+    var(--aurora-bg)     7%,
+    transparent          10%,
+    transparent          12%,
+    var(--aurora-bg)     16%
+  );
+  /* Blue/cyan/teal/mint aurora — aurora-hero.tsx palette; no pink/warm hues */
+  --rainbow: repeating-linear-gradient(
+    100deg,
+    var(--aurora-stripe-1)  10%,   /* #1d4ed8 deep blue      */
+    var(--aurora-stripe-2)  14%,   /* #22d3ee cyan           */
+    var(--aurora-stripe-3)  18%,   /* #2dd4bf teal           */
+    var(--aurora-stripe-4)  21%,   /* #6ee7b7 mint           */
+    var(--aurora-stripe-6)  26%,   /* #38bdf8 sky blue       */
+    var(--aurora-stripe-1)  30%    /* loop back to deep blue */
+  );
+  background-image: var(--stripes), var(--rainbow);
+  background-size: 300%, 200%;
+  background-position: 50% 50%, 50% 50%;
+  filter: blur(10px) opacity(60%) saturate(180%);
   animation: smoothBg 60s linear infinite;
-  mix-blend-mode: screen;
-  opacity: 0.65;
-  will-change: transform;
-  transform: translate3d(0, 0, 0);
+  will-change: background-position;
+  mix-blend-mode: normal;
 }
 
 .aurora-content {
@@ -273,7 +283,8 @@ body.tier-medium .aurora-content {
 .aurora-scrim {
   position: absolute;
   inset: 0;
-  background: rgba(5, 10, 18, 0.45);
+  /* Lighter scrim than prism version — aurora is already blur-dimmed */
+  background: rgba(3, 10, 28, 0.35);
   pointer-events: none;
   z-index: 2;
 }
@@ -291,6 +302,7 @@ body.is-scrolling .ion-aurora-overlay,
     animation: none !important;
   }
 }
+
 
 body {
   margin: 0;
