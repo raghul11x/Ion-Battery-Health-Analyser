@@ -1750,7 +1750,7 @@ function renderHistoryAndChart() {
 
           scales: {
             x: {
-              grid: { color: 'rgba(255, 255, 255, 0.03)' },
+              grid: { color: 'rgba(255, 255, 255, 0.06)' },
               ticks: {
                 color: '#71717A',
                 font: { size: 10 },
@@ -1764,7 +1764,7 @@ function renderHistoryAndChart() {
               position: 'left',
               min: Math.max(60, Math.floor(Math.min(...healthVals) - 4)),
               max: 102,
-              grid: { color: 'rgba(255, 255, 255, 0.05)' },
+              grid: { color: 'rgba(255, 255, 255, 0.06)' },
               ticks: {
                 color: '#FFFFFF',
                 font: { size: 11, weight: 'bold' },
@@ -1818,25 +1818,25 @@ function renderHistoryAndChart() {
 
   const reversed = [...readings].reverse();
   el.historyTableBody.innerHTML = reversed.map(r => {
-    let badge = `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-zinc-800 text-zinc-300">${r.health_pct}%</span>`;
+    let badge = `<span class="glass-chip font-bold">${r.health_pct}%</span>`;
     if (r.health_pct >= 85) {
-      badge = `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">${r.health_pct}%</span>`;
+      badge = `<span class="glass-chip glass-chip-success font-bold">${r.health_pct}%</span>`;
     } else if (r.health_pct >= 70) {
-      badge = `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">${r.health_pct}%</span>`;
+      badge = `<span class="glass-chip glass-chip-warning font-bold">${r.health_pct}%</span>`;
     } else {
-      badge = `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30">${r.health_pct}%</span>`;
+      badge = `<span class="glass-chip glass-chip-danger font-bold">${r.health_pct}%</span>`;
     }
 
     return `
-      <tr class="border-b border-white/[0.04] hover:bg-white/[0.02] text-xs text-zinc-300 transition-colors">
+      <tr class="border-b border-white/[0.04] hover:bg-white/[0.04] text-xs text-zinc-300 transition-colors">
         <td class="py-3 px-4 font-mono text-zinc-400">${formatDate(r.timestamp)}</td>
         <td class="py-3 px-4">${badge}</td>
-        <td class="py-3 px-4 font-bold text-white">${r.level_pct}%</td>
+        <td class="py-3 px-4 font-bold text-white font-mono">${r.level_pct}%</td>
         <td class="py-3 px-4 font-mono text-zinc-400">${(r.voltage_mv / 1000).toFixed(2)} V</td>
-        <td class="py-3 px-4 text-zinc-300">${r.temperature_c} °C</td>
+        <td class="py-3 px-4 text-zinc-300 font-mono">${r.temperature_c} °C</td>
         <td class="py-3 px-4 font-mono text-zinc-400">${(r.cycle_count !== null && r.cycle_count !== undefined && r.cycle_count_type !== 'unavailable') ? r.cycle_count : '<span class="text-zinc-500 italic">Unavailable</span>'}</td>
         <td class="py-3 px-4">
-          <span class="text-[11px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 border border-white/5">
+          <span class="glass-chip text-[10px]">
             ${r.health_method === 'capacity_ratio' ? 'Capacity Ratio' : 'Trend'}
           </span>
         </td>
@@ -1934,11 +1934,11 @@ function renderProbe() {
   const rows = Object.entries(sysfs).map(([k, info]) => {
     const isOk = info.readable;
     const badge = isOk
-      ? `<span class="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">READABLE</span>`
-      : `<span class="px-2 py-0.5 rounded-full text-xs font-bold bg-zinc-800 text-zinc-500 border border-zinc-700">HIDDEN</span>`;
+      ? `<span class="glass-chip glass-chip-success">READABLE</span>`
+      : `<span class="glass-chip text-zinc-500">HIDDEN</span>`;
 
     return `
-      <tr class="border-b border-white/[0.04] text-xs">
+      <tr class="border-b border-white/[0.04] hover:bg-white/[0.04] text-xs transition-colors">
         <td class="py-3 px-4 font-mono text-zinc-300">${info.path}</td>
         <td class="py-3 px-4 font-medium text-zinc-400">${k}</td>
         <td class="py-3 px-4">${badge}</td>
@@ -1950,9 +1950,9 @@ function renderProbe() {
   el.probeContentContainer.innerHTML = `
     <div class="eura-dark-card p-6 space-y-3">
       <h3 class="text-sm font-bold text-white uppercase tracking-wider">OEM Sysfs Registers</h3>
-      <div class="overflow-x-auto">
+      <div class="overflow-x-auto rounded-xl border border-white/[0.06]">
         <table class="w-full text-left">
-          <thead>
+          <thead class="glass-table-head">
             <tr class="text-[11px] uppercase tracking-wider text-zinc-400 border-b border-white/[0.08]">
               <th class="py-2.5 px-4">Register Path</th>
               <th class="py-2.5 px-4">Field</th>
@@ -1969,7 +1969,7 @@ function renderProbe() {
 
     <div class="eura-dark-card p-6 space-y-3">
       <h3 class="text-sm font-bold text-white uppercase tracking-wider">Raw dumpsys battery</h3>
-      <pre class="bg-black/50 p-4 rounded-2xl text-xs font-mono text-indigo-300 overflow-x-auto border border-white/5">${p.dumpsys_battery?.raw_output || 'No dumpsys output'}</pre>
+      <pre class="glass-inset p-4 text-xs font-mono text-cyan-200 overflow-x-auto">${p.dumpsys_battery?.raw_output || 'No dumpsys output'}</pre>
     </div>
   `;
 }
