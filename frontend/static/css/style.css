@@ -300,30 +300,40 @@ body {
   border-color: rgba(148, 163, 184, 0.22) !important;
 }
 
-/* Secondary Near-Black Card (EURA Heart Report Card) */
+/* Secondary Liquid Glass Cards */
 .eura-dark-card {
-  background-color: var(--card-secondary);
-  border: 1px solid var(--card-border);
-  border-radius: 28px;
-  box-shadow: 0 16px 36px -8px rgba(0, 0, 0, 0.5);
-  transition: all 0.25s ease;
+  background: var(--glass-fill);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-edge-dim);
+  border-radius: var(--radius-card);
+  box-shadow: var(--glass-shadow), var(--glass-highlight);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  overflow: hidden;
 }
 
 .eura-dark-card:hover {
-  border-color: var(--card-border-hover);
+  background: var(--glass-fill-strong);
+  border-color: var(--glass-edge);
 }
 
-/* Indigo Biometric Metric Card */
+/* Indigo Biometric Metric Card (Liquid Glass Tinted Refraction) */
 .eura-indigo-card {
-  background: var(--card-indigo-gradient);
-  border-radius: 28px;
-  box-shadow: 0 16px 36px -8px rgba(30, 27, 75, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.12) inset;
-  transition: all 0.25s ease;
+  background: linear-gradient(135deg, rgba(30, 41, 80, 0.38) 0%, rgba(15, 23, 42, 0.48) 100%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-edge-dim);
+  border-radius: var(--radius-card);
+  box-shadow: var(--glass-shadow), var(--glass-highlight);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  overflow: hidden;
 }
 
 .eura-indigo-card:hover {
+  border-color: var(--glass-edge);
   transform: translateY(-2px);
-  box-shadow: 0 20px 42px -6px rgba(49, 46, 129, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.18) inset;
 }
 
 /* Capsule Pill Navigation & Elements (Liquid Glass Restyle) */
@@ -443,14 +453,82 @@ body {
   transition: all 0.2s ease;
 }
 
+/* ==========================================================================
+   LIQUID GLASS SEGMENTED CONTROLS & TOGGLES
+   ========================================================================== */
+
+.segmented-glass-bar {
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--glass-fill);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-edge-dim);
+  border-radius: var(--radius-pill);
+  padding: 3px;
+  box-sizing: border-box;
+}
+
 .chart-metric-pill,
-.time-filter-pill {
-  height: 100%;
+.time-filter-pill,
+.app-drain-window-pill,
+.app-drain-sort-pill {
+  height: 28px;
+  border-radius: var(--radius-pill);
+  padding: 0 11px;
+  font-size: 11px;
+  font-weight: 600;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
   white-space: nowrap;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.chart-metric-pill:hover,
+.time-filter-pill:hover,
+.app-drain-window-pill:hover,
+.app-drain-sort-pill:hover {
+  color: #FFFFFF;
+}
+
+/* 80% Simulator Liquid Glass Switch */
+#sim-cap-toggle {
+  background: rgba(255, 255, 255, 0.12) !important;
+  border: 1px solid var(--glass-edge-dim) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 0 rgba(255, 255, 255, 0.08);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#sim-cap-toggle[aria-checked="true"],
+#sim-cap-toggle.bg-indigo-600 {
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.65) 0%, rgba(14, 165, 233, 0.55) 100%) !important;
+  border-color: rgba(148, 163, 184, 0.5) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 0 16px rgba(14, 165, 233, 0.4) !important;
+}
+
+#sim-cap-knob {
+  background: radial-gradient(circle at 35% 35%, #ffffff 0%, #e2e8f0 70%, #cbd5e1 100%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.9) !important;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+/* Coulomb Calibration Buttons */
+#cal-start-btn:disabled,
+#cal-sim-btn:disabled {
+  opacity: 0.4 !important;
+  cursor: not-allowed !important;
+  pointer-events: none !important;
 }
 
 
@@ -664,13 +742,13 @@ body {
   z-index: 0;
 }
 
-/* 3. Secondary Cards: Health Report, Current Charge, Chemical Capacity: cool indigo-white glow */
+/* 3. Secondary Cards: Health Report, Current Charge, Chemical Capacity: liquid glass glow */
 .eura-dark-card::before,
 .eura-indigo-card::before {
   background: radial-gradient(
     circle 360px at var(--mouse-x, 50%) var(--mouse-y, 50%),
-    rgba(165, 180, 252, 0.15) 0%,
-    rgba(129, 140, 248, 0.03) 50%,
+    rgba(255, 255, 255, 0.12) 0%,
+    rgba(120, 190, 255, 0.04) 40%,
     transparent 70%
   );
   z-index: 0;
@@ -1229,36 +1307,45 @@ body {
   display: none !important;
 }
 
-/* Active State Enhancements for Secondary Tier */
+/* Active State Enhancements for Liquid Glass Secondary Tier */
 .capsule-segment.ion-glow-btn-secondary.active {
-  background: #FFFFFF !important;
-  color: #0A0E27 !important;
-  box-shadow: 0 4px 14px rgba(255, 255, 255, 0.25), 0 0 12px rgba(99, 102, 241, 0.3) !important;
+  color: #FFFFFF !important;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 .capsule-segment.ion-glow-btn-secondary.active::after {
-  background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.85), rgba(99, 102, 241, 0.45)) !important;
+  display: none !important;
 }
 
+.time-filter-pill.active,
 .time-filter-pill.ion-glow-btn-secondary.active {
-  background: #FFFFFF !important;
-  color: #000000 !important;
-  box-shadow: 0 2px 10px rgba(255, 255, 255, 0.25), 0 0 8px rgba(99, 102, 241, 0.2) !important;
+  background: rgba(255, 255, 255, 0.22) !important;
+  color: #FFFFFF !important;
+  border: 1px solid rgba(255, 255, 255, 0.45) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65),
+              inset 0 -1px 0 rgba(255, 255, 255, 0.1),
+              0 2px 10px rgba(0, 0, 0, 0.35) !important;
+  font-weight: 700 !important;
 }
 
 .time-filter-pill.ion-glow-btn-secondary.active::after {
-  background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.8), rgba(99, 102, 241, 0.4)) !important;
+  display: none !important;
 }
 
+.app-drain-window-pill.active,
 .app-drain-window-pill.ion-glow-btn-secondary.active {
-  background: #FFFFFF !important;
-  color: #000000 !important;
+  background: rgba(255, 255, 255, 0.22) !important;
+  color: #FFFFFF !important;
+  border: 1px solid rgba(255, 255, 255, 0.45) !important;
   font-weight: 700 !important;
-  box-shadow: 0 2px 10px rgba(255, 255, 255, 0.25), 0 0 8px rgba(99, 102, 241, 0.2) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65),
+              inset 0 -1px 0 rgba(255, 255, 255, 0.1),
+              0 2px 10px rgba(0, 0, 0, 0.35) !important;
 }
 
 .app-drain-window-pill.ion-glow-btn-secondary.active::after {
-  background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.8), rgba(99, 102, 241, 0.4)) !important;
+  display: none !important;
 }
 
 .app-drain-window-pill.ion-glow-btn-secondary:not(.active) {
@@ -1270,19 +1357,32 @@ body {
   color: #FFFFFF !important;
 }
 
-.chart-metric-pill.ion-glow-btn-secondary.active {
-  background: rgba(79, 70, 229, 0.32) !important;
+.app-drain-sort-pill.active {
+  background: var(--glass-tint-active) !important;
+  border: 1px solid var(--glass-edge) !important;
   color: #FFFFFF !important;
-  box-shadow: 0 0 12px rgba(99, 102, 241, 0.4) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5),
+              0 2px 12px rgba(14, 165, 233, 0.35) !important;
+  font-weight: 700 !important;
+}
+
+.chart-metric-pill.active,
+.chart-metric-pill.ion-glow-btn-secondary.active {
+  background: var(--glass-tint-active) !important;
+  border: 1px solid var(--glass-edge) !important;
+  color: #FFFFFF !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45),
+              0 2px 10px rgba(14, 165, 233, 0.3) !important;
 }
 
 .chart-metric-pill.ion-glow-btn-secondary.active::after {
-  background-image: linear-gradient(135deg, rgba(165, 180, 252, 0.65), rgba(99, 102, 241, 0.45)) !important;
+  display: none !important;
 }
 
 .chart-metric-pill.ion-glow-btn-secondary:not(.active) {
-  opacity: 0.55;
+  opacity: 0.45;
   color: #71717A !important;
+  border: 1px solid transparent !important;
 }
 
 /* Reduced Motion: Disable animations */
