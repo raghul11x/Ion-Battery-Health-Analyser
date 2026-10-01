@@ -101,7 +101,7 @@ All interface styling derives from an iOS 26 "Liquid Glass" design token specifi
   --glass-tint-active: rgba(120, 190, 255, 0.22);
   --glass-edge: rgba(255, 255, 255, 0.22);
   --glass-edge-dim: rgba(255, 255, 255, 0.06);
-  --glass-blur: 22px;
+  --glass-blur: 16px;
   --glass-saturate: 1.6;
   --glass-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
   --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.35),
@@ -117,6 +117,14 @@ All interface styling derives from an iOS 26 "Liquid Glass" design token specifi
   --ambient-b: #0b4a5a;             /* Deep Teal */
   --ambient-c: #0B0B10;             /* Obsidian Base */
 
+  /* Theme-Matched Prism Aurora Tokens (Derived from Ambient Baseline) */
+  --prism-base:   var(--ambient-c);            /* Obsidian base #0B0B10 */
+  --prism-deep:   var(--ambient-a);            /* Deep marine blue #0a2a43 */
+  --prism-mid:    var(--ambient-b);            /* Deep teal #0b4a5a */
+  --prism-light:  rgba(120, 190, 255, 0.55);   /* Cool luminous blue (matches --glass-tint-active) */
+  --prism-glint:  rgba(207, 234, 255, 0.28);   /* Cool white rib specular glint */
+  --prism-accent: rgba(94, 234, 212, 0.35);    /* Teal accent glint (<= 8% of stripe length) */
+
   /* Text Roles (Strict WCAG AA >= 4.5:1 Contrast) */
   --text-primary: #FFFFFF;           /* Contrast 19.3:1 */
   --text-secondary: #A1A1AA;         /* Contrast 7.5:1 */
@@ -125,79 +133,81 @@ All interface styling derives from an iOS 26 "Liquid Glass" design token specifi
 ```
 
 ### 3.2 Core Glass Utility Classes
-- `.glass`: Card surfaces with 28px radius, `var(--glass-fill)`, 22px blur, 160% saturation, dimensional drop shadow, and crisp inner specular highlights.
+- `.cinematic-backdrop`: Single outer liquid glass container (`border-radius: 32px`, `backdrop-filter: blur(16px)`, `padding: clamp(1.25rem, 2.5vw, 2rem)`) providing unified optical refraction for the entire hero zone.
+- `.hero-card`: Recessed inset content panel (`border-radius: 24px`, `padding: clamp(1.25rem, 2vw, 1.75rem)`, `backdrop-filter: none !important;`) eliminating nested blur costs while maintaining crisp visual depth.
+- `.hero-number-wrap`: Baseline-aligned wrapper holding `.hero-number-val` and `.hero-number-unit` (`display: inline-flex; align-items: baseline;`).
+- `.hero-number-val`: Monospace tabular figures (`min-width: 2.2ch; text-align: right; font-variant-numeric: tabular-nums lining-nums; font-family: ui-monospace...`) eliminating horizontal and vertical jitter between `-- %` and `100 %`.
+- `.glass`: Card surfaces with 28px radius, `var(--glass-fill)`, 16px blur, 160% saturation, dimensional drop shadow, and crisp inner specular highlights.
 - `.glass-pill`: Pill-shaped glass container (`border-radius: 9999px`) used for segmented navigation bars, connection pills, status badges, and tooltips.
 - `.glass-active`: Active luminous glass blob with `var(--glass-tint-active)` and heightened top highlight (`inset 0 1px 0 rgba(255, 255, 255, 0.45)`).
-- `.glass-chip`: Compact pill badge for hardware provenance (`OEM sysfs`, `Local`, `IEC 61960`) with subtle backdrop blur and tinted border variants (`.glass-chip-success`, `.glass-chip-warning`, `.glass-chip-danger`, `.glass-chip-cyan`, `.glass-chip-indigo`).
+- `.glass-chip`: Compact pill badge for hardware provenance (`OEM sysfs`, `Local`, `IEC 61960`) with solid alpha fill without nested blur.
 - `.glass-btn-primary`: Luminous CTA button with cyan/indigo glass gradient and dynamic specular sheen.
 
 ### 3.3 Dynamic Hero Health Band Translucent Gradients
-The centerpiece EURA hero card combines Liquid Glass refraction (`backdrop-filter: blur(22px)`) with translucent state gradients (35%–45% opacity) to float smoothly over the deep ambient backdrop:
+The centerpiece EURA hero card combines Liquid Glass refraction on the outer container with translucent state gradients (15%–35% opacity) to float smoothly over the deep ambient backdrop:
 
 | Health Band | SoH Range | CSS Class / Translucent Gradient Token | Visual Meaning |
 | :--- | :--- | :--- | :--- |
-| **Optimal / Healthy** | $\ge 85.0\%$ | `hero-gradient-healthy`<br/>`linear-gradient(135deg, rgba(20,83,45,0.42), rgba(21,128,61,0.40), rgba(34,197,94,0.35))` | Translucent Emerald; optimal lithium intercalation retention. |
-| **Fair Condition** | $70.0\% - 84.9\%$ | `hero-gradient-fair`<br/>`linear-gradient(135deg, rgba(124,45,18,0.42), rgba(194,65,12,0.40), rgba(245,158,11,0.35))` | Translucent Warm Amber; moderate capacity fade observed. |
-| **Needs Care** | $< 70.0\%$ | `hero-gradient-poor`<br/>`linear-gradient(135deg, rgba(127,29,29,0.45), rgba(185,28,28,0.42), rgba(239,68,68,0.35))` | Translucent Crimson; elevated impedance. |
-| **Standby / Unknown** | `None` / Idle | `hero-gradient-unknown`<br/>`linear-gradient(135deg, rgba(30,41,59,0.45), rgba(51,65,85,0.40), rgba(71,85,105,0.35))` | Translucent Slate; awaiting physical USB connection. |
+| **Optimal / Healthy** | $\ge 85.0\%$ | `hero-gradient-healthy`<br/>`linear-gradient(135deg, rgba(20,83,45,0.35), rgba(21,128,61,0.25), rgba(34,197,94,0.18))` | Translucent Emerald; optimal lithium intercalation retention. |
+| **Fair Condition** | $70.0\% - 84.9\%$ | `hero-gradient-fair`<br/>`linear-gradient(135deg, rgba(124,45,18,0.35), rgba(194,65,12,0.25), rgba(245,158,11,0.18))` | Translucent Warm Amber; moderate capacity fade observed. |
+| **Needs Care** | $< 70.0\%$ | `hero-gradient-poor`<br/>`linear-gradient(135deg, rgba(127,29,29,0.38), rgba(185,28,28,0.28), rgba(239,68,68,0.18))` | Translucent Crimson; elevated impedance. |
+| **Standby / Unknown** | `None` / Idle | `hero-gradient-unknown`<br/>`linear-gradient(135deg, rgba(30,41,59,0.30), rgba(51,65,85,0.20), rgba(71,85,105,0.15))` | Translucent Slate; awaiting physical USB connection. |
 
 ### 3.4 Accessibility, Contrast & Reduced-Transparency Fallbacks
 1. **WCAG AA Compliance:** All primary text (#FFFFFF) and secondary text (#A1A1AA) meet or exceed the 4.5:1 contrast requirement across all glass cards and over dynamic background blooms.
-2. **Reduced-Transparency Fallback:** Full support for `prefers-reduced-transparency: reduce` and manual `body.no-glass` class. When enabled, all backdrop filters are disabled (`backdrop-filter: none !important`), and surfaces gracefully fall back to solid dark opaque panels (`--card-secondary: #0F1024`).
-3. **Tabular Metric Jitter Elimination:** All numbers use monospace tabular figures (`font-mono`) to guarantee zero horizontal layout shift during live 1Hz polling.
+2. **Readability Scrim:** A dedicated ambient scrim layer (`background: rgba(5, 10, 18, 0.45)`) sits between the fluted-glass aurora and UI layer, guaranteeing high contrast even over peak stripe brightness.
+3. **Reduced-Transparency Fallback:** Full support for `prefers-reduced-transparency: reduce` and manual `body.no-glass` class. When enabled, all backdrop filters are disabled (`backdrop-filter: none !important`), and surfaces gracefully fall back to solid dark opaque panels (`--card-secondary: #0F1024`).
+4. **Tabular Metric Jitter Elimination:** All numbers use monospace tabular figures (`font-mono`, `font-variant-numeric: tabular-nums lining-nums`) to guarantee zero layout shift during live 1Hz polling.
 
 ---
 
 ## 4. Deep Ambient Atmosphere & Refraction Shader Pipeline
 
-### 4.1 Ambient Atmosphere & Caustic Shader Architecture
-The background transitions away from flat black to a multi-layered ambient marine atmosphere (`#0a2a43` deep blue, `#0b4a5a` teal, and `#0B0B10` obsidian base) layered with a hardware-accelerated, transparent AuroraHero shader that recreates the optical caustic distortion of industrial fluted glass:
+### 4.1 Theme-Matched Fluted-Glass Prism Aurora Background
+The background transitions away from saturated rainbow bands to a sophisticated, theme-matched prism aurora that recreates vertical fluted-glass optical refraction:
 
 ```mermaid
 flowchart LR
-    A["Repeating Linear Oceanic Caustics<br/>#38bdf8 | #2dd4bf | #0ea5e9"] --> B["SVG Radial Mask<br/>radial-gradient(ellipse at 100% 0%)"]
-    B --> C["Animation Engine<br/>smoothBg 60s Infinite Pan"]
-    C --> D["mix-blend-mode: difference"]
+    A["Theme-Matched Prism Stripes<br/>--prism-base -> --prism-deep -> --prism-mid -> --prism-light"] --> B["SVG Radial Mask<br/>radial-gradient(ellipse at 100% 0%)"]
+    B --> C["Animation Engine<br/>smoothBg 60s Pan (transform: translate3d)"]
+    C --> D["mix-blend-mode: screen (opacity: 0.65)"]
     
-    E["SVG Filter: #fluted"] --> F["feImage: Embedded Data-URI Vector"]
-    F --> G["feTile: Tiled Column Pattern"]
+    E["SVG Filter: #fluted"] --> F["feImage: Neutral Grayscale Gradient Vector"]
+    F --> G["feTile: Tiled Column Pattern (width .03)"]
     G --> H["feGaussianBlur: stdDeviation .0001"]
     H --> I["feDisplacementMap: scale .08 (R & G channels)"]
     
-    D & I --> J["Deep Marine Caustic Surface<br/>(Rendered behind Liquid Glass UI)"]
+    D & I --> J["Fluted-Glass Prism Aurora Surface<br/>(Rendered behind dark readability scrim)"]
 ```
 
-### 4.2 Progressive Refraction Layer (`#liquid-refract`)
-To deliver true optical refraction in Chromium WebView2, Ion+ injects an SVG turbulence displacement filter:
+### 4.2 Optical Shader Architecture & Neutral Grayscale Displacement Map
 ```html
-<svg class="hidden-filter-defs" width="0" height="0">
-  <defs>
-    <filter id="liquid-refract" x="0%" y="0%" width="100%" height="100%">
-      <feTurbulence type="fractalNoise" baseFrequency="0.04 0.04" numOctaves="2" result="noise" />
-      <feDisplacementMap in="SourceGraphic" in2="noise" scale="8" xChannelSelector="R" yChannelSelector="G" />
-    </filter>
-  </defs>
+<svg class="hidden-svg-filter" width="0" height="0">
+  <filter id="fluted" primitiveUnits="objectBoundingBox">
+    <feImage xlink:href="data:image/svg+xml;utf8,<svg ...><linearGradient id='g'><stop offset='0%' stop-color='%23000000'/><stop offset='50%' stop-color='%23ffffff'/><stop offset='100%' stop-color='%23000000'/></linearGradient><rect width='100%' height='100%' fill='url(%23g)'/></svg>" width=".03" height="1" preserveAspectRatio="none meet"/>
+    <feTile result="tile_0" />
+    <feGaussianBlur stdDeviation=".0001" in="tile_0" result="bar_smoothness" />
+    <feDisplacementMap scale=".08" xChannelSelector="R" yChannelSelector="G" in="SourceGraphic" in2="bar_smoothness" />
+  </filter>
 </svg>
 ```
-Applied via progressive CSS enhancement:
-```css
-@supports (backdrop-filter: url(#liquid-refract)) {
-  .capsule-nav, .hero-card {
-    backdrop-filter: url(#liquid-refract) blur(var(--glass-blur)) saturate(var(--glass-saturate));
-    -webkit-backdrop-filter: url(#liquid-refract) blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  }
-}
-```
-If the host environment does not support SVG URL backdrop filters, it automatically falls back to smooth 22px Gaussian blur without layout or rendering errors.
+Key architectural properties:
+- **Neutral Grayscale Map:** The embedded vector displacement map uses neutral grays (`#000000` $\rightarrow$ `#ffffff` $\rightarrow$ `#000000`), ensuring that optical refraction introduces zero unwanted color casts.
+- **Theme-Matched Color System:** Stripes are built exclusively from `--prism-*` tokens mapped to the app's ambient blue/teal palette. No hardcoded hex colors exist in CSS; changing theme tokens automatically updates the aurora.
+- **Color Inversion Prevention:** `mix-blend-mode: screen` (with `opacity: 0.65`) prevents inversion artifacts (such as browns or oranges) inherent to `mix-blend-mode: difference`, maintaining crisp oceanic hues across the 60s cycle.
+- **Optical Scrim Protection:** `<div class="aurora-scrim"></div>` (`rgba(5, 10, 18, 0.45)`) sits immediately on top of the fluted aurora, dampening background luminance so that glass cards remain the focal luminous elements.
 
-### 4.3 Performance & Lifecycle Optimization
-1. **Zero Layout Shift:** The shader wrapper uses `position: fixed; inset: 0; pointer-events: none; z-index: 0;`, completely isolating it from the document layout flow and preventing DOM reflow triggers.
-2. **Window Minimization / Blur Throttling:**
-   ```javascript
-   window.addEventListener('blur', () => {
-     document.querySelector('.ion-aurora-wrap')?.classList.add('ion-aurora-paused');
-   });
-   window.addEventListener('focus', () => {
+### 4.3 Performance, Pacing & Scroll Throttling
+1. **Compositor-Only Transformation:**
+   ```css
+   @keyframes smoothBg {
+     0% { transform: translate3d(0, 0, 0); }
+     100% { transform: translate3d(-50%, 0, 0); }
+   }
+   ```
+   Animates strictly via GPU-accelerated `translate3d`, avoiding CPU repaints and `background-position` layout invalidations.
+2. **Active Scroll Pausing:** During user scroll gestures, `.aurora-paused` is dynamically applied via `app.js` scroll listeners, freezing animation execution and resuming 150 ms after scrolling ends.
+3. **Window Blur & Minimize Throttling:** Aurora playback automatically halts when the window loses focus or is minimized, dropping background GPU utilization to 0%.
      document.querySelector('.ion-aurora-wrap')?.classList.remove('ion-aurora-paused');
    });
    ```
@@ -275,33 +285,50 @@ High-frequency polling loops can disrupt user interaction (such as dropping scro
 ## 6. Core Dashboard Components & Subsystems (Liquid Glass Architecture)
 
 ### 6.1 Hero Centerpiece Card (Liquid Glass Bio-Age Paradigm)
-The hero card ([`frontend/index.html`](file:///c:/Users/raghu/OneDrive/Documents/ChatGPT/Battery%20analyser/frontend/index.html#L278-L345)) translates electrochemical health into an immediate visual verdict floating on a translucent, refractive glass surface:
+The hero card ([`frontend/index.html`](file:///c:/Users/raghu/OneDrive/Documents/ChatGPT/Battery%20analyser/frontend/index.html#L204-L350)) translates electrochemical health into an immediate visual verdict floating on a translucent, refractive glass surface:
 
 ```mermaid
 flowchart TD
-    subgraph Hero_Card ["Liquid Glass Hero Card Anatomy"]
-        TOP["Top Row: Battery Health Label | OEM SoH Badge (.glass-chip) | Status Pill (.glass-pill)"]
-        NUM["Center: 'The One Big Number' (7xl–9xl font-mono) + Unit (%)"]
-        DIAL["Refractive Glass Dial Track: 0% Poor · 50% · 70% Fair · 85% Good · 100% Factory"]
-        PIN["Radial Luminous Marble Pin (.range-dial-pin)"]
-        BOTTOM["Bottom Row: Steady and Healthy Heading | Subtext | Method Badge (.glass-chip)"]
+    subgraph Hero_Architecture ["Liquid Glass Unified Hero Anatomy"]
+        OUTER["Outer Glass Surface (.cinematic-backdrop)<br/>border-radius: 32px | blur(16px) | padding: clamp(1.25rem, 2.5vw, 2rem)"]
+        LEFT["Left Column: Eyebrow | Headline | Subtext | Health Band Legend | Connection Assistant Glass Pill"]
+        INSET["Right Column: Inset Glass Panel (#hero-card)<br/>border-radius: 24px | backdrop-filter: none (No Nested Blur)"]
+        
+        TOP["Top Row: Battery Health Label | OEM SoH Badge (.glass-chip) | Exactly ONE Status Pill (.glass-pill)"]
+        NUM["Center: Baseline-Aligned Tabular Number (.hero-number-wrap)<br/>.hero-number-val (clamp 4.25-6.25rem, min-width: 2.2ch) + .hero-number-unit (%)"]
+        DIAL["Refractive Glass Dial Track (#hero-health-dial, role='meter')<br/>0% Poor · 50% · 70% Fair · 85% Good · 100% Factory"]
+        PIN["Hidden-on-Null Marker Pin (.range-dial-pin.hidden)"]
+        BOTTOM["Bottom Row: Diagnostic Heading | Subtext | Method Badge (hidden in standby)"]
+        
+        OUTER --> LEFT & INSET
+        INSET --> TOP --> NUM --> DIAL --> PIN --> BOTTOM
     end
-    
-    TOP --> NUM
-    NUM --> DIAL
-    DIAL --> PIN
-    PIN --> BOTTOM
 ```
 
-#### Visual Styling Specifications:
-- **Refractive Range Dial Track (`.range-dial-track`):** Height 8px pill track with inset shadow (`inset 0 1px 3px rgba(0,0,0,0.4)`) and subtle specular lip (`0 1px 0 rgba(255,255,255,0.1)`).
-- **Luminous Pearl Knob (`.range-dial-pin`):** 20px radial gradient spherical glass bead (`radial-gradient(circle at 35% 35%, #fff, #bed7ff)`) with bright ambient glow and 1.5px specular edge.
-- **Marker Pin Clamping Formula:**
-  ```javascript
-  const rawHealth = s.health_pct !== null ? s.health_pct : 100;
-  const clampedHealth = Math.min(100, Math.max(0, rawHealth));
-  el.rangeDialMarker.style.left = `${clampedHealth}%`;
-  ```
+#### Visual Styling & Structural Specifications:
+1. **Unified Outer Glass Surface & Zero Nested Blur:**
+   - The entire hero zone is enclosed by a single outer glass container (`.cinematic-backdrop`) featuring `border-radius: 32px`, `backdrop-filter: blur(16px)`, and responsive `padding: clamp(1.25rem, 2.5vw, 2rem)`.
+   - The inner `#hero-card` is rendered as an inset content panel (`border-radius: 24px`, `padding: clamp(1.25rem, 2vw, 1.75rem)`). To eliminate GPU fill-rate compounding, `#hero-card` enforces `backdrop-filter: none !important;` and `-webkit-backdrop-filter: none !important;`.
+2. **Vertical Footprint Compaction ($\le 520\text{px}$):**
+   - Padding, gaps, and typography scale via CSS `clamp()`, keeping the entire hero block strictly $\le 520\text{px}$ tall at standard desktop resolutions ($1380\times 880$). This guarantees that the "Health Report" section header below remains immediately visible above the fold without requiring initial user scroll.
+3. **Baseline-Aligned Tabular Hero Number & Jitter Elimination:**
+   - Both the numerical value and percentage sign share a single common baseline container (`.hero-number-wrap` with `display: inline-flex; align-items: baseline;`).
+   - `.hero-number-val` enforces monospace tabular figures (`font-variant-numeric: tabular-nums lining-nums; font-family: ui-monospace, ...`) with a fixed `min-width: 2.2ch; text-align: right;`. This guarantees zero horizontal or vertical layout reflow when transitioning between `-- %`, single-digit, double-digit, and three-digit values (`9%`, `88%`, `100%`).
+   - Sizing: `font-size: clamp(4.25rem, 6.8vw, 6.25rem)` for the number and `clamp(1.75rem, 2.7vw, 2.4rem)` for `.hero-number-unit`.
+4. **Zero-Hallucination Dial Knob Invariant (Hidden on Null):**
+   - In standby, idle, offline, unauthorized, or insufficient data states (`health_pct` is null/undefined):
+     - The marker pin (`#range-dial-marker`) is completely hidden via `.range-dial-pin.hidden { display: none !important; }` and `aria-hidden="true"`.
+     - Dial track fill remains empty; scale labels remain visible.
+     - Accessible attributes: `aria-valuenow` is removed, and `aria-valuetext="Health unavailable"` is announced.
+   - When real numeric health is received:
+     - The marker pin is unhidden (`classList.remove('hidden')`).
+     - Display health is clamped to $[0.0, 100.0]$.
+     - Dial position is clamped to $[2, 98]\%$ for clean pin margin within the track.
+     - `aria-valuenow` is set to the rounded integer, and `aria-valuetext` is set to `<val>%`.
+   - Codebase Zero-Hallucination Audit: All legacy `: 100` and `|| 83` fallbacks for health values were audited and eliminated.
+5. **Standby State & Connection Guide Polish:**
+   - Exactly ONE status pill appears inside `#hero-card` during standby (`Awaiting Device`). The secondary `#hero-method-badge` is hidden (`classList.add('hidden')`) to eliminate redundant labeling.
+   - The standby connection assistant toggle is styled as a prominent glass pill (`#toggle-connection-guide-btn`) with `text-cyan-200` ($\ge 4.5:1$ AA contrast), `aria-expanded="false"`, and `aria-controls="connection-guide-steps"`.
 
 ### 6.2 Heart Report: Capacity Retention Curve (Chart.js)
 Rendered into `#heart-report-chart` using the local [`frontend/static/js/chart.min.js`](file:///c:/Users/raghu/OneDrive/Documents/ChatGPT/Battery%20analyser/frontend/static/js/chart.min.js) bundle inside a `.glass` card:

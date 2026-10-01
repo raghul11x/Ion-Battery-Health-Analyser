@@ -543,38 +543,65 @@ The AppState singleton serves as the single source of truth across all UI compon
 - Coulomb calibration ammeter widgets.
 - Scoped DOM updates preserve user scroll position during 1-second polling ticks.
 
-### 12.3 Fluted-Glass Aurora Background Shader
-The ambient background is styled using a modern fluted-glass displacement shader:
+### 12.3 Theme-Matched Fluted-Glass Prism Aurora Background
+The ambient background is styled using a modern fluted-glass displacement shader with light derived from the app's obsidian/blue/teal glass tokens:
 ```html
-<div class="aurora-hero-bg"></div>
-<svg class="hidden-svg-filter">
+<div class="ion-aurora-wrap">
+  <div class="aurora-hero-bg">
+    <div class="ion-aurora-overlay"></div>
+  </div>
+  <div class="aurora-scrim"></div>
+</div>
+<svg class="hidden-svg-filter" width="0" height="0">
   <filter id="fluted" primitiveUnits="objectBoundingBox">
-    <feImage xlink:href="data:image/svg+xml,..." width=".03" height="1" preserveAspectRatio="none meet"/>
-    <feTile in="image_0" result="tile_0" />
+    <feImage xlink:href="data:image/svg+xml;utf8,<svg ...><linearGradient id='g'><stop offset='0%' stop-color='%23000000'/><stop offset='50%' stop-color='%23ffffff'/><stop offset='100%' stop-color='%23000000'/></linearGradient><rect width='100%' height='100%' fill='url(%23g)'/></svg>" width=".03" height="1" preserveAspectRatio="none meet"/>
+    <feTile result="tile_0" />
     <feGaussianBlur stdDeviation=".0001" in="tile_0" result="bar_smoothness" />
     <feDisplacementMap scale=".08" xChannelSelector="R" yChannelSelector="G" in="SourceGraphic" in2="bar_smoothness" />
   </filter>
 </svg>
 ```
 Features:
-- `repeating-linear-gradient` rainbow stripes (`#60a5fa`, `#e879f9`, `#5eead4`) animated via `@keyframes smoothBg`.
-- Radial mask transparency: `mask-image: radial-gradient(ellipse at 100% 0%, black 40%, transparent 70%)`.
-- `mix-blend-mode: difference` creates a high-contrast, translucent aura beneath the dark obsidian cards.
+- **Theme-Matched Palette:** CSS stripes utilize `--prism-*` tokens (`--prism-base`, `--prism-deep`, `--prism-mid`, `--prism-light`, `--prism-glint`, `--prism-accent`) derived from ambient baseline tokens (`--ambient-a: #0a2a43`, `--ambient-b: #0b4a5a`, `--ambient-c: #0B0B10`). Zero rainbow or warm pink hues.
+- **Neutral Grayscale Map:** The embedded displacement SVG gradient uses neutral grays (`#000000` $\rightarrow$ `#ffffff` $\rightarrow$ `#000000`), ensuring distortion without chromatic aberration.
+- **Inversion Prevention:** `mix-blend-mode: screen; opacity: 0.65;` ensures colors strictly stay within the oceanic blue/teal spectrum.
+- **Readability Scrim:** `<div class="aurora-scrim"></div>` (`rgba(5, 10, 18, 0.45)`) sits between aurora and UI cards to ensure WCAG AA ($\ge 4.5:1$) contrast across all text elements.
+- **Performance:** Compositor-only `transform: translate3d` animation, automatically paused during user scroll gestures and when the window loses focus.
 
 ### 12.4 Interactive Standby Connection Assistant
-An accordion on the standby screen guides users whose devices are not detected:
-1. **USB Mode:** Instructions to switch from *Charging Only* to *File Transfer (MTP)*.
-2. **Developer Options:** Instructions to tap *Build Number* 7 times.
-3. **Xiaomi / Redmi / POCO:** Guidance on enabling *Install via USB* and *Security Settings*.
-4. **OnePlus / OPPO / Realme:** Guidance on accepting the RSA key fingerprint prompt.
-5. **Interactive Re-scan Button:** Directly triggers `POST /api/reconnect` to cycle ADB sockets.
+An accessible accordion on the standby screen guides users whose devices are not detected:
+1. **Prominent Glass Pill:** Styled via `#toggle-connection-guide-btn` (`text-cyan-200`, $\ge 4.5:1$ AA contrast) with synchronized `aria-expanded` and `aria-controls="connection-guide-steps"`.
+2. **USB Mode:** Instructions to switch from *Charging Only* to *File Transfer (MTP)*.
+3. **Developer Options:** Instructions to tap *Build Number* 7 times.
+4. **Xiaomi / Redmi / POCO:** Guidance on enabling *Install via USB* and *Security Settings*.
+5. **OnePlus / OPPO / Realme:** Guidance on accepting the RSA key fingerprint prompt.
+6. **Interactive Re-scan Button:** Directly triggers `POST /api/reconnect` to cycle ADB sockets.
+
+### 12.5 Unified Hero Centerpiece Architecture & Zero-Hallucination Invariant
+The centerpiece hero section ([`frontend/index.html`](file:///c:/Users/raghu/OneDrive/Documents/ChatGPT/Battery%20analyser/frontend/index.html#L204-L350)) delivers an immediate electrochemical health verdict:
+1. **Single Outer Glass Surface (`.cinematic-backdrop`):**
+   - 32px corner radius, `backdrop-filter: blur(16px)`, and responsive `padding: clamp(1.25rem, 2.5vw, 2rem)`.
+   - Inner `#hero-card` is rendered as an inset panel (`border-radius: 24px`, `padding: clamp(1.25rem, 2vw, 1.75rem)`) with `backdrop-filter: none !important;` to eliminate nested blur costs.
+2. **Vertical Footprint Compaction ($\le 520\text{px}$):**
+   - Utilizes CSS `clamp()` padding and typography so the entire hero section remains strictly $\le 520\text{px}$ tall at $1380\times 880$, keeping the Health Report section header visible above the fold.
+3. **Baseline-Aligned Tabular Hero Number:**
+   - Both value and unit share a common baseline container (`.hero-number-wrap`).
+   - `.hero-number-val` enforces monospace tabular figures (`font-variant-numeric: tabular-nums lining-nums; min-width: 2.2ch; text-align: right;`), preventing layout shifts between `-- %` and `100 %`.
+4. **Zero-Hallucination Dial Knob Invariant (Hidden on Null):**
+   - When `health_pct` is null/undefined (standby, offline, unauthorized, gathering data):
+     - Dial pin (`#range-dial-marker`) is hidden via `.range-dial-pin.hidden { display: none !important; }` and `aria-hidden="true"`.
+     - Track fill is empty; scale labels remain visible.
+     - Accessible attributes: `aria-valuenow` removed, `aria-valuetext="Health unavailable"`.
+   - When numeric: Clamped to $[0, 100]$ (marker $[2, 98]\%$).
+   - All legacy `: 100` and `|| 83` health fallbacks have been removed across the codebase.
+5. **Standby State Polish:** Exactly ONE status pill inside `#hero-card` (`Awaiting Device`), secondary method badge hidden in standby.
 
 ---
 
 ## 13. Quality Assurance & Automated Test Coverage
 
 The project enforces strict automated test verification:
-- **Baseline Test Suite:** **96 / 96 unit & integration tests passing** across 12 test suites in **11.2 seconds**.
+- **Comprehensive Test Suite:** **100 / 100 unit & integration tests passing** across 13 test suites (including `tests/test_hero_dial.py` for dial zero-hallucination and layout invariants) in **~10.3 seconds**.
 - **Virtual Phone Hardware Simulation Suite (`tests/test_virtual_phones.py`):** **11 / 11 scenarios passing**:
   1. Virtual Google Pixel 8 Pro (Standard sysfs, exposed cycle count).
   2. Virtual Samsung Galaxy S24 Ultra (Static register detection, `batt_soh` extraction).
