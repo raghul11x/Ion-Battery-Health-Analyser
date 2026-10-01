@@ -3,6 +3,74 @@
  * Manages live ADB polling, EURA dynamic hero gradient, range dial, and Heart Report chart.
  */
 
+// Phase 3: Pacing & Render Scheduling Foundation
+if (typeof Chart !== 'undefined') {
+  Chart.defaults.devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+}
+
+const runIdle = typeof window.requestIdleCallback === 'function'
+  ? window.requestIdleCallback
+  : (cb) => setTimeout(() => cb({ timeRemaining: () => 15, didTimeout: false }), 1);
+
+function updateTextIfChanged(node, val) {
+  if (!node) return;
+  const str = String(val ?? '');
+  if (node.textContent !== str) {
+    node.textContent = str;
+  }
+}
+
+let lastScrollTimestamp = 0;
+let pendingScrollFlush = false;
+let renderPassScheduled = false;
+const pendingRenderTasks = new Set();
+
+function isUserScrolling() {
+  return (performance.now() - lastScrollTimestamp) < 120;
+}
+
+function scheduleRenderPass(taskType) {
+  if (taskType) pendingRenderTasks.add(taskType);
+  if (renderPassScheduled) return;
+  renderPassScheduled = true;
+
+  requestAnimationFrame(() => {
+    renderPassScheduled = false;
+
+    // If user is currently scrolling, buffer non-critical updates and defer until scroll finishes
+    if (isUserScrolling()) {
+      pendingScrollFlush = true;
+      return;
+    }
+
+    flushPendingRenders();
+  });
+}
+
+function flushPendingRenders() {
+  if (pendingRenderTasks.size === 0) return;
+  const tasks = new Set(pendingRenderTasks);
+  pendingRenderTasks.clear();
+
+  if (tasks.has('appState') || tasks.has('status') || tasks.has('snapshot')) {
+    if (typeof AppState.broadcast === 'function') {
+      AppState.broadcast();
+    }
+  }
+  if (tasks.has('history')) {
+    renderHistoryAndChart();
+  }
+  if (tasks.has('insights')) {
+    renderInsights();
+  }
+  if (tasks.has('appDrain')) {
+    renderAppDrain(state.appDrain.data, false);
+  }
+  if (tasks.has('deviceStatus')) {
+    renderDeviceStatus();
+  }
+}
+
 // Application State
 const state = {
   currentTab: 'dashboard',
@@ -61,6 +129,10 @@ const AppState = {
   },
 
   notify() {
+    scheduleRenderPass('appState');
+  },
+
+  broadcast() {
     const payload = {
       connected: this.connected,
       mode: this.mode,
@@ -351,7 +423,7 @@ async function fetchHistory(days = 30, serial = null) {
     if (res.ok) {
       const data = await res.json();
       state.history = data.readings || [];
-      renderHistoryAndChart();
+      scheduleRenderPass('history');
     }
   } catch (err) {
     console.warn('Failed to fetch history:', err);
@@ -365,7 +437,7 @@ async function fetchInsights(serial = null) {
     const res = await fetch(`/api/insights${serialParam}`);
     if (res.ok) {
       state.insights = await res.json();
-      renderInsights();
+      scheduleRenderPass('insights');
     }
   } catch (err) {
     console.warn('Failed to fetch insights:', err);
@@ -398,7 +470,7 @@ async function fetchDeviceStatus() {
       } else {
         state.deviceStatusEvents = [];
       }
-      renderDeviceStatus();
+      scheduleRenderPass('deviceStatus');
     }
   } catch (err) {
     console.warn('Failed to fetch device status feed:', err);
@@ -565,58 +637,60 @@ function subscribeTopBar({ connected, mode, systemStatus }) {
   const profilingMsg = systemStatus?.watcher_status?.profiling_message || 'Profiling new device...';
 
   if (isProfiling) {
-    if (el.connDot) el.connDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse';
-    if (el.connStatusLabel) el.connStatusLabel.textContent = profilingMsg;
+    if (el.connDot && el.connDot.className !== 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse') {
+      el.connDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse';
+    }
+    updateTextIfChanged(el.connStatusLabel, profilingMsg);
     const name = activeDev?.model ? activeDev.model.replace(/_/g, ' ') : (state.snapshot?.device_model || 'Android Device');
     if (el.connDeviceLabel) {
-      el.connDeviceLabel.textContent = `· ${name}`;
+      updateTextIfChanged(el.connDeviceLabel, `· ${name}`);
       el.connDeviceLabel.classList.remove('hidden');
     }
     return;
   }
 
   if (connected && activeDev) {
-    if (el.connDot) el.connDot.className = 'dot-live-green';
+    if (el.connDot && el.connDot.className !== 'dot-live-green') el.connDot.className = 'dot-live-green';
     const name = activeDev.model ? activeDev.model.replace(/_/g, ' ') : (state.snapshot?.device_model || 'Android Device');
-    if (el.connStatusLabel) el.connStatusLabel.textContent = 'Connected';
+    updateTextIfChanged(el.connStatusLabel, 'Connected');
     if (el.connDeviceLabel) {
-      el.connDeviceLabel.textContent = `· ${name}`;
+      updateTextIfChanged(el.connDeviceLabel, `· ${name}`);
       el.connDeviceLabel.classList.remove('hidden');
     }
     if (el.connLastSeenLabel) {
       el.connLastSeenLabel.classList.add('hidden');
-      el.connLastSeenLabel.textContent = '';
+      updateTextIfChanged(el.connLastSeenLabel, '');
     }
   } else if (mode === 'seeded') {
-    if (el.connDot) el.connDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400';
-    if (el.connStatusLabel) el.connStatusLabel.textContent = 'Seeded Demo';
+    if (el.connDot && el.connDot.className !== 'w-2.5 h-2.5 rounded-full bg-emerald-400') el.connDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400';
+    updateTextIfChanged(el.connStatusLabel, 'Seeded Demo');
     if (el.connDeviceLabel) {
-      el.connDeviceLabel.textContent = `· Nothing Phone 2a`;
+      updateTextIfChanged(el.connDeviceLabel, '· Nothing Phone 2a');
       el.connDeviceLabel.classList.remove('hidden');
     }
     if (el.connLastSeenLabel) {
       el.connLastSeenLabel.classList.add('hidden');
-      el.connLastSeenLabel.textContent = '';
+      updateTextIfChanged(el.connLastSeenLabel, '');
     }
   } else if (unauthDev || state.snapshot?.health_status === 'unauthorized' || state.snapshot?.connection_state === 'unauthorized') {
-    if (el.connDot) el.connDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse';
-    if (el.connStatusLabel) el.connStatusLabel.textContent = 'Unauthorized';
+    if (el.connDot && el.connDot.className !== 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse') el.connDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse';
+    updateTextIfChanged(el.connStatusLabel, 'Unauthorized');
     const sName = unauthDev?.serial ? `(${unauthDev.serial.slice(0, 8)}...)` : '';
     if (el.connDeviceLabel) {
-      el.connDeviceLabel.textContent = `· Phone detected ${sName}`;
+      updateTextIfChanged(el.connDeviceLabel, `· Phone detected ${sName}`);
       el.connDeviceLabel.classList.remove('hidden');
     }
   } else if (offlineDev || state.snapshot?.health_status === 'offline' || state.snapshot?.connection_state === 'offline') {
-    if (el.connDot) el.connDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400';
-    if (el.connStatusLabel) el.connStatusLabel.textContent = 'Offline';
+    if (el.connDot && el.connDot.className !== 'w-2.5 h-2.5 rounded-full bg-amber-400') el.connDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400';
+    updateTextIfChanged(el.connStatusLabel, 'Offline');
     const sName = offlineDev?.serial ? `(${offlineDev.serial.slice(0, 8)}...)` : '';
     if (el.connDeviceLabel) {
-      el.connDeviceLabel.textContent = `· Phone offline ${sName}`;
+      updateTextIfChanged(el.connDeviceLabel, `· Phone offline ${sName}`);
       el.connDeviceLabel.classList.remove('hidden');
     }
   } else {
-    if (el.connDot) el.connDot.className = 'dot-idle-gray';
-    if (el.connStatusLabel) el.connStatusLabel.textContent = 'Disconnected';
+    if (el.connDot && el.connDot.className !== 'dot-idle-gray') el.connDot.className = 'dot-idle-gray';
+    updateTextIfChanged(el.connStatusLabel, 'Disconnected');
     if (el.connDeviceLabel) el.connDeviceLabel.classList.add('hidden');
     updateLastSeenDeviceLabel();
   }
@@ -759,11 +833,18 @@ function renderDeviceStatus() {
 }
 
 // Hardware-accelerated range dial positioner (compositor-only transform)
+let cachedTrackWidth = 0;
+window.addEventListener('resize', () => {
+  cachedTrackWidth = 0;
+}, { passive: true });
+
 function setRangeDialPosition(pct) {
   if (!el.rangeDialMarker) return;
-  const track = el.rangeDialTrack || document.querySelector('.range-dial-track');
-  const trackWidth = track ? track.clientWidth : 200;
-  const x = (pct / 100) * trackWidth;
+  if (!cachedTrackWidth) {
+    const track = el.rangeDialTrack || document.querySelector('.range-dial-track');
+    cachedTrackWidth = track ? track.clientWidth : 200;
+  }
+  const x = (pct / 100) * (cachedTrackWidth || 200);
   el.rangeDialMarker.style.setProperty('--dial-x', `${x}px`);
 }
 
@@ -916,6 +997,13 @@ function renderIdleState() {
   renderDeviceStatus();
 }
 
+let lastRenderedSnapshotState = {
+  healthGrade: '',
+  dialPos: -1,
+  connectionMode: '',
+  sourcesKey: '',
+};
+
 function renderSnapshot() {
   if (!AppState.connected && AppState.mode !== 'seeded') {
     renderIdleState();
@@ -929,7 +1017,9 @@ function renderSnapshot() {
   }
 
   // Active connected phone vs seeded/cached evaluation
-  if (el.heroEyebrow) {
+  const modeKey = AppState.connected ? 'connected' : 'idle_seeded';
+  if (el.heroEyebrow && lastRenderedSnapshotState.connectionMode !== modeKey) {
+    lastRenderedSnapshotState.connectionMode = modeKey;
     if (AppState.connected) {
       el.heroEyebrow.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"></span>Live Biometric Evaluation';
       el.heroEyebrow.className = 'eyebrow-label text-indigo-400 flex items-center gap-2';
@@ -948,11 +1038,11 @@ function renderSnapshot() {
     }
     if (el.chartLastSyncedLabel) {
       el.chartLastSyncedLabel.classList.add('hidden');
-      el.chartLastSyncedLabel.textContent = '';
+      updateTextIfChanged(el.chartLastSyncedLabel, '');
     }
     if (el.connLastSeenLabel) {
       el.connLastSeenLabel.classList.add('hidden');
-      el.connLastSeenLabel.textContent = '';
+      updateTextIfChanged(el.connLastSeenLabel, '');
     }
   } else {
     // Seeded / historical evaluation (not connected)
@@ -962,7 +1052,7 @@ function renderSnapshot() {
     }
     if (el.chartLastSyncedLabel) {
       el.chartLastSyncedLabel.classList.remove('hidden');
-      el.chartLastSyncedLabel.textContent = 'Seeded Demo Preview';
+      updateTextIfChanged(el.chartLastSyncedLabel, 'Seeded Demo Preview');
     }
     updateLastSeenDeviceLabel();
     el.heroHealthNumber.classList.remove('skeleton-shimmer');
@@ -991,20 +1081,17 @@ function renderSnapshot() {
     const toastNameEl = el.toastDeviceName || document.getElementById('toast-device-name');
     if (toastEl && toastEl.classList.contains('toast-visible') && toastNameEl) {
       const activeDev = state.systemStatus?.connected_devices?.find(d => d.state === 'device');
-      toastNameEl.textContent = formatConnectedDeviceSubtitle(activeDev);
+      updateTextIfChanged(toastNameEl, formatConnectedDeviceSubtitle(activeDev));
     }
   }
 
   const health = s.health_pct;
 
-  // 1. HERO CARD (EURA Bio-Age Style)
-  el.heroCard.classList.remove('hero-gradient-healthy', 'hero-gradient-fair', 'hero-gradient-poor', 'hero-gradient-unknown');
-
   // OEM SoH Badge and Divergence Banner
   const oemBadge = document.getElementById('hero-oem-soh-badge');
   if (oemBadge) {
     if (s.oem_reported_soh !== null && s.oem_reported_soh !== undefined) {
-      oemBadge.textContent = `OEM SoH: ${Math.round(s.oem_reported_soh)}%`;
+      updateTextIfChanged(oemBadge, `OEM SoH: ${Math.round(s.oem_reported_soh)}%`);
       oemBadge.classList.remove('hidden');
     } else {
       oemBadge.classList.add('hidden');
@@ -1016,7 +1103,7 @@ function renderSnapshot() {
   if (divBanner) {
     if (s.soh_divergence_flag) {
       if (divText) {
-        divText.textContent = `Notice: OEM reported SoH (${s.oem_reported_soh}%) diverges from calculated health (${s.health_pct}%) by >10%. Both metrics are presented independently.`;
+        updateTextIfChanged(divText, `Notice: OEM reported SoH (${s.oem_reported_soh}%) diverges from calculated health (${s.health_pct}%) by >10%. Both metrics are presented independently.`);
       }
       divBanner.classList.remove('hidden');
     } else {
@@ -1025,48 +1112,73 @@ function renderSnapshot() {
   }
 
   if (s.connected && (s.health_status === 'insufficient_data' || health === null || health === undefined)) {
-    el.heroCard.classList.add('hero-gradient-unknown');
-    el.heroHealthNumber.textContent = '--';
-    el.heroStatusPill.textContent = 'Gathering Data';
-    el.heroStatusHeading.textContent = 'Insufficient Data to Compute Health';
-    el.heroStatusSubtext.textContent = "Cycle count isn't exposed by this device's firmware — building an estimate from usage history, check back in a few days.";
-    setRangeDialPosition(0);
+    if (lastRenderedSnapshotState.healthGrade !== 'unknown') {
+      lastRenderedSnapshotState.healthGrade = 'unknown';
+      el.heroCard.classList.remove('hero-gradient-healthy', 'hero-gradient-fair', 'hero-gradient-poor');
+      el.heroCard.classList.add('hero-gradient-unknown');
+    }
+    updateTextIfChanged(el.heroHealthNumber, '--');
+    updateTextIfChanged(el.heroStatusPill, 'Gathering Data');
+    updateTextIfChanged(el.heroStatusHeading, 'Insufficient Data to Compute Health');
+    updateTextIfChanged(el.heroStatusSubtext, "Cycle count isn't exposed by this device's firmware — building an estimate from usage history, check back in a few days.");
+    if (lastRenderedSnapshotState.dialPos !== 0) {
+      lastRenderedSnapshotState.dialPos = 0;
+      setRangeDialPosition(0);
+    }
     const days = s.history_days !== undefined ? `${s.history_days}d history` : 'Gathering';
-    el.heroMethodBadge.textContent = `Gathering Data · ${days}`;
+    updateTextIfChanged(el.heroMethodBadge, `Gathering Data · ${days}`);
   } else if (health === null || health === undefined) {
     renderIdleState();
-    el.heroMethodBadge.textContent = 'Offline';
+    updateTextIfChanged(el.heroMethodBadge, 'Offline');
   } else {
     const displayVal = Math.min(100, Math.round(health));
-    el.heroHealthNumber.textContent = displayVal;
+    updateTextIfChanged(el.heroHealthNumber, displayVal);
 
     // Range Dial position (clamped 2% to 98% for clean pin alignment)
     const clampedPos = Math.min(98, Math.max(2, displayVal));
-    setRangeDialPosition(clampedPos);
+    if (lastRenderedSnapshotState.dialPos !== clampedPos) {
+      lastRenderedSnapshotState.dialPos = clampedPos;
+      setRangeDialPosition(clampedPos);
+    }
 
     // Dynamic Gradient & Evaluation
+    let grade = 'unknown';
+    let statusPillText = 'Gathering Data';
+    let statusHeadingText = 'Insufficient Data to Compute Health';
+    let statusSubtextText = "Cycle count isn't exposed by this device's firmware — building an estimate from usage history, check back in a few days.";
+
     if (health >= 85) {
-      el.heroCard.classList.add('hero-gradient-healthy');
-      el.heroStatusPill.textContent = 'Steady & Healthy';
-      el.heroStatusHeading.textContent = 'Optimal Retention';
-      el.heroStatusSubtext.textContent = s.is_static_register
+      grade = 'healthy';
+      statusPillText = 'Steady & Healthy';
+      statusHeadingText = 'Optimal Retention';
+      statusSubtextText = s.is_static_register
         ? `Retaining ~${formatCapacity(s.effective_capacity_uah)} · ${s.cycle_count || 0} cycles with optimal retention.`
         : `Retaining ${displayVal}% of factory capacity · Outstanding chemical stability.`;
     } else if (health >= 70) {
-      el.heroCard.classList.add('hero-gradient-fair');
-      el.heroStatusPill.textContent = 'Fair Condition';
-      el.heroStatusHeading.textContent = 'Moderate Capacity Fade';
-      el.heroStatusSubtext.textContent = s.is_static_register
+      grade = 'fair';
+      statusPillText = 'Fair Condition';
+      statusHeadingText = 'Moderate Capacity Fade';
+      statusSubtextText = s.is_static_register
         ? `Retaining ~${formatCapacity(s.effective_capacity_uah)} · ${s.cycle_count || 0} cycles with calendar wear.`
         : `Retaining ${displayVal}% of factory capacity · Normal wear for current cycle progression.`;
     } else {
-      el.heroCard.classList.add('hero-gradient-poor');
-      el.heroStatusPill.textContent = 'Needs Care';
-      el.heroStatusHeading.textContent = 'Significant Degradation';
-      el.heroStatusSubtext.textContent = s.is_static_register
+      grade = 'poor';
+      statusPillText = 'Needs Care';
+      statusHeadingText = 'Significant Degradation';
+      statusSubtextText = s.is_static_register
         ? `Retaining ~${formatCapacity(s.effective_capacity_uah)} · High cumulative cycle & calendar wear.`
         : `Retaining ${displayVal}% of factory capacity · High cell impedance detected.`;
     }
+
+    if (lastRenderedSnapshotState.healthGrade !== grade) {
+      lastRenderedSnapshotState.healthGrade = grade;
+      el.heroCard.classList.remove('hero-gradient-healthy', 'hero-gradient-fair', 'hero-gradient-poor', 'hero-gradient-unknown');
+      el.heroCard.classList.add(`hero-gradient-${grade}`);
+    }
+
+    updateTextIfChanged(el.heroStatusPill, statusPillText);
+    updateTextIfChanged(el.heroStatusHeading, statusHeadingText);
+    updateTextIfChanged(el.heroStatusSubtext, statusSubtextText);
 
     let methodText = 'Capacity Ratio';
     if (s.health_method === 'apple_standard_calibrated' || s.is_static_register) {
@@ -1080,74 +1192,76 @@ function renderSnapshot() {
     } else if (s.recalibrated) {
       methodText += ` · Recalibrated (${s.raw_capacity_ratio || 100}% raw)`;
     }
-    el.heroMethodBadge.textContent = methodText;
+    updateTextIfChanged(el.heroMethodBadge, methodText);
   }
 
   // 2. THREE-STAT ROW (Heart Report)
   // Temp
   if (s.temperature_c !== null && s.temperature_c !== undefined) {
-    el.statTemp.textContent = `${s.temperature_c}°C`;
+    updateTextIfChanged(el.statTemp, `${s.temperature_c}°C`);
     const tb = s.temperature_band || {};
-    el.statTempLabel.textContent = tb.label || 'Optimal condition';
+    updateTextIfChanged(el.statTempLabel, tb.label || 'Optimal condition');
   } else {
-    el.statTemp.textContent = '—';
-    el.statTempLabel.textContent = 'No thermal reading';
+    updateTextIfChanged(el.statTemp, '—');
+    updateTextIfChanged(el.statTempLabel, 'No thermal reading');
   }
 
   // Voltage
-  el.statVoltage.textContent = s.voltage_mv ? `${(s.voltage_mv / 1000).toFixed(2)} V` : '—';
+  updateTextIfChanged(el.statVoltage, s.voltage_mv ? `${(s.voltage_mv / 1000).toFixed(2)} V` : '—');
 
   // Cycles
   const sublabel = document.getElementById('stat-cycles-sublabel');
   const hasCycles = s.cycle_count !== null && s.cycle_count !== undefined && s.cycle_count !== 'unavailable' && s.cycle_count_type !== 'unavailable';
   if (hasCycles) {
     const cycleType = s.cycle_count_type === 'estimated' ? ' (Estimated)' : ' (Hardware)';
-    el.statCycles.textContent = `${s.cycle_count}`;
-    if (sublabel) sublabel.textContent = `OEM cycle count${cycleType}`;
+    updateTextIfChanged(el.statCycles, `${s.cycle_count}`);
+    if (sublabel) updateTextIfChanged(sublabel, `OEM cycle count${cycleType}`);
   } else {
-    el.statCycles.textContent = 'Unavailable';
-    if (sublabel) sublabel.textContent = s.connected ? 'No cycle data exposed' : 'OEM cycle count';
+    updateTextIfChanged(el.statCycles, 'Unavailable');
+    if (sublabel) updateTextIfChanged(sublabel, s.connected ? 'No cycle data exposed' : 'OEM cycle count');
   }
 
   // 3. SECONDARY INDIGO & DARK CARDS
   // Level & Status
-  el.snapLevelText.textContent = s.level_pct !== null && s.level_pct !== undefined ? `${s.level_pct}%` : '—';
-  el.snapStatusBadge.textContent = s.status || 'Disconnected';
+  updateTextIfChanged(el.snapLevelText, s.level_pct !== null && s.level_pct !== undefined ? `${s.level_pct}%` : '—');
+  updateTextIfChanged(el.snapStatusBadge, s.status || 'Disconnected');
+  let chargeSpeedStr = 'Running on battery';
   if (s.status === 'Charging') {
-    el.snapChargeSpeedText.textContent = s.voltage_mv >= 4200 ? 'Fast charging active (>4.2V)' : 'Standard USB charge';
-  } else {
-    el.snapChargeSpeedText.textContent = s.status === 'Full' ? 'Fully charged' : 'Running on battery';
+    chargeSpeedStr = s.voltage_mv >= 4200 ? 'Fast charging active (>4.2V)' : 'Standard USB charge';
+  } else if (s.status === 'Full') {
+    chargeSpeedStr = 'Fully charged';
   }
-  el.snapLastSync.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  updateTextIfChanged(el.snapChargeSpeedText, chargeSpeedStr);
+  updateTextIfChanged(el.snapLastSync, new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
 
   // Capacities
   const effectiveCap = s.effective_capacity_uah || s.charge_full_uah || s.charge_counter_uah;
-  el.capFullText.textContent = formatCapacity(effectiveCap);
-  el.capDesignText.textContent = formatCapacity(s.charge_full_design_uah);
+  updateTextIfChanged(el.capFullText, formatCapacity(effectiveCap));
+  updateTextIfChanged(el.capDesignText, formatCapacity(s.charge_full_design_uah));
 
   if (s.is_static_register || s.health_method === 'apple_standard_calibrated') {
     if (el.capFullSubtext) {
-      el.capFullSubtext.textContent = `OEM Static Register: ${formatCapacity(s.charge_full_uah)}`;
+      updateTextIfChanged(el.capFullSubtext, `OEM Static Register: ${formatCapacity(s.charge_full_uah)}`);
       el.capFullSubtext.classList.remove('hidden');
     }
-    if (el.capBadge) el.capBadge.textContent = 'Apple Standard SoH';
+    updateTextIfChanged(el.capBadge, 'Apple Standard SoH');
     if (el.capFooterNote) {
-      el.capFooterNote.textContent = 'Calibrated against IEC 61960 Li-ion wear standards (OEM register was static).';
+      updateTextIfChanged(el.capFooterNote, 'Calibrated against IEC 61960 Li-ion wear standards (OEM register was static).');
     }
   } else {
     if (el.capFullSubtext) el.capFullSubtext.classList.add('hidden');
-    if (el.capBadge) el.capBadge.textContent = 'Hardware Counter';
+    updateTextIfChanged(el.capBadge, 'Hardware Counter');
     if (el.capFooterNote) {
-      el.capFooterNote.textContent = 'Read directly from sysfs power_supply registers.';
+      updateTextIfChanged(el.capFooterNote, 'Read directly from sysfs power_supply registers.');
     }
   }
 
   // Core Capacity Retention & Fade Ratios
   if (el.capRetentionText) {
-    el.capRetentionText.textContent = s.capacity_retention_pct !== null && s.capacity_retention_pct !== undefined ? `${s.capacity_retention_pct}%` : '—';
+    updateTextIfChanged(el.capRetentionText, s.capacity_retention_pct !== null && s.capacity_retention_pct !== undefined ? `${s.capacity_retention_pct}%` : '—');
   }
   if (el.capFadeText) {
-    el.capFadeText.textContent = s.capacity_fade_pct !== null && s.capacity_fade_pct !== undefined ? `${s.capacity_fade_pct}%` : '—';
+    updateTextIfChanged(el.capFadeText, s.capacity_fade_pct !== null && s.capacity_fade_pct !== undefined ? `${s.capacity_fade_pct}%` : '—');
   }
 
   // Provenance Badges on Chemical Capacity
@@ -1155,35 +1269,39 @@ function renderSnapshot() {
   const sources = bd.data_sources || {};
   if (el.capFullProvenance) {
     const src = sources.charge_full || 'local';
-    el.capFullProvenance.textContent = src === 'ai_consensus' ? 'AI Consensus' : (src === 'insufficient_data' ? 'No Data' : 'Local USB');
-    el.capFullProvenance.className = src === 'ai_consensus'
+    updateTextIfChanged(el.capFullProvenance, src === 'ai_consensus' ? 'AI Consensus' : (src === 'insufficient_data' ? 'No Data' : 'Local USB'));
+    const expectedClass = src === 'ai_consensus'
       ? 'text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-mono'
       : (src === 'insufficient_data'
         ? 'text-[10px] px-2 py-0.5 rounded-full bg-zinc-700 text-zinc-400 font-mono'
         : 'text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono');
+    if (el.capFullProvenance.className !== expectedClass) el.capFullProvenance.className = expectedClass;
   }
   if (el.capDesignProvenance) {
     const src = sources.charge_full_design || 'local';
-    el.capDesignProvenance.textContent = src === 'ai_consensus' ? 'AI Consensus' : (src === 'insufficient_data' ? 'No Data' : 'Local USB');
-    el.capDesignProvenance.className = src === 'ai_consensus'
+    updateTextIfChanged(el.capDesignProvenance, src === 'ai_consensus' ? 'AI Consensus' : (src === 'insufficient_data' ? 'No Data' : 'Local USB'));
+    const expectedClass = src === 'ai_consensus'
       ? 'text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-mono'
       : (src === 'insufficient_data'
         ? 'text-[10px] px-2 py-0.5 rounded-full bg-zinc-700 text-zinc-400 font-mono'
         : 'text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono');
+    if (el.capDesignProvenance.className !== expectedClass) el.capDesignProvenance.className = expectedClass;
   }
 
   // Mathematical Model Breakdown Card
-  if (el.bdFadeText) el.bdFadeText.textContent = bd.capacity_fade_pct !== null && bd.capacity_fade_pct !== undefined ? `${bd.capacity_fade_pct}%` : '—';
-  if (el.bdCycleText) el.bdCycleText.textContent = bd.cycle_fatigue_pct !== null && bd.cycle_fatigue_pct !== undefined ? `${bd.cycle_fatigue_pct}%` : '—';
-  if (el.bdCalendarText) el.bdCalendarText.textContent = bd.calendar_aging_pct !== null && bd.calendar_aging_pct !== undefined ? `${bd.calendar_aging_pct}%` : '—';
-  if (el.bdStressText) el.bdStressText.textContent = bd.stress_multiplier !== null && bd.stress_multiplier !== undefined ? `${bd.stress_multiplier}×` : '1.0×';
-  if (el.bdFinalText) el.bdFinalText.textContent = bd.final_health_pct !== null && bd.final_health_pct !== undefined ? `${bd.final_health_pct}%` : '--';
+  if (el.bdFadeText) updateTextIfChanged(el.bdFadeText, bd.capacity_fade_pct !== null && bd.capacity_fade_pct !== undefined ? `${bd.capacity_fade_pct}%` : '—');
+  if (el.bdCycleText) updateTextIfChanged(el.bdCycleText, bd.cycle_fatigue_pct !== null && bd.cycle_fatigue_pct !== undefined ? `${bd.cycle_fatigue_pct}%` : '—');
+  if (el.bdCalendarText) updateTextIfChanged(el.bdCalendarText, bd.calendar_aging_pct !== null && bd.calendar_aging_pct !== undefined ? `${bd.calendar_aging_pct}%` : '—');
+  if (el.bdStressText) updateTextIfChanged(el.bdStressText, bd.stress_multiplier !== null && bd.stress_multiplier !== undefined ? `${bd.stress_multiplier}×` : '1.0×');
+  if (el.bdFinalText) updateTextIfChanged(el.bdFinalText, bd.final_health_pct !== null && bd.final_health_pct !== undefined ? `${bd.final_health_pct}%` : '--');
 
   if (el.breakdownProvenanceNote && bd.provenance_note) {
-    el.breakdownProvenanceNote.textContent = bd.provenance_note;
+    updateTextIfChanged(el.breakdownProvenanceNote, bd.provenance_note);
   }
 
-  if (el.bdSourcesPill) {
+  const currentSourcesKey = `${sources.charge_full}-${sources.charge_full_design}-${sources.cycle_count}-${s.connected}`;
+  if (el.bdSourcesPill && lastRenderedSnapshotState.sourcesKey !== currentSourcesKey) {
+    lastRenderedSnapshotState.sourcesKey = currentSourcesKey;
     el.bdSourcesPill.innerHTML = '';
     const pillFields = [
       { key: 'charge_full', label: 'Fuel Gauge' },
@@ -1294,23 +1412,23 @@ function renderForecast(forecast) {
   const targetDateFormatted = formatTargetMonthYear(targetDateRaw);
 
   if (forecast.urgency === 'Service Recommended' || (forecast.current_health_pct && forecast.current_health_pct <= 80.0)) {
-    if (el.forecastMonthsText) el.forecastMonthsText.textContent = '0 mo';
-    if (el.forecastSubtextLabel) el.forecastSubtextLabel.textContent = 'Service Limit: 80%';
-    if (el.forecastDateText) el.forecastDateText.textContent = 'Service Recommended';
+    updateTextIfChanged(el.forecastMonthsText, '0 mo');
+    updateTextIfChanged(el.forecastSubtextLabel, 'Service Limit: 80%');
+    updateTextIfChanged(el.forecastDateText, 'Service Recommended');
     if (el.forecastUrgencyPill) {
-      el.forecastUrgencyPill.textContent = 'Service Limit';
+      updateTextIfChanged(el.forecastUrgencyPill, 'Service Limit');
       el.forecastUrgencyPill.className = 'px-3.5 py-1 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30';
     }
   } else {
-    if (el.forecastMonthsText) el.forecastMonthsText.textContent = `~${forecast.months_remaining} mo`;
+    updateTextIfChanged(el.forecastMonthsText, `~${forecast.months_remaining} mo`);
     if (el.forecastSubtextLabel) {
-      el.forecastSubtextLabel.textContent = targetDateFormatted !== '—' ? `Estimated to 80%: ${targetDateFormatted}` : 'Estimated to 80%';
+      updateTextIfChanged(el.forecastSubtextLabel, targetDateFormatted !== '—' ? `Estimated to 80%: ${targetDateFormatted}` : 'Estimated to 80%');
     }
     if (el.forecastDateText) {
-      el.forecastDateText.textContent = targetDateFormatted !== '—' ? `Target: ${targetDateFormatted}` : 'Target: —';
+      updateTextIfChanged(el.forecastDateText, targetDateFormatted !== '—' ? `Target: ${targetDateFormatted}` : 'Target: —');
     }
     if (el.forecastUrgencyPill) {
-      el.forecastUrgencyPill.textContent = forecast.urgency || 'Upcoming';
+      updateTextIfChanged(el.forecastUrgencyPill, forecast.urgency || 'Upcoming');
       if (forecast.urgency === 'Healthy') {
         el.forecastUrgencyPill.className = 'px-3.5 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
       } else if (forecast.urgency === 'Upcoming') {
@@ -1321,15 +1439,15 @@ function renderForecast(forecast) {
     }
   }
 
-  if (el.forecastCurrentHealth) el.forecastCurrentHealth.textContent = `${forecast.current_health_pct}%`;
-  if (el.forecastCyclesLeft) el.forecastCyclesLeft.textContent = `~${forecast.cycles_remaining} cycles remaining`;
-  if (el.forecastDailyCadence) el.forecastDailyCadence.textContent = `~${forecast.daily_cycle_rate} cycles/day`;
+  updateTextIfChanged(el.forecastCurrentHealth, `${forecast.current_health_pct}%`);
+  updateTextIfChanged(el.forecastCyclesLeft, `~${forecast.cycles_remaining} cycles remaining`);
+  updateTextIfChanged(el.forecastDailyCadence, `~${forecast.daily_cycle_rate} cycles/day`);
 
-  // Scale progress bar: 70% to 100% maps to 0% to 100% width
+  // Scale progress bar: 70% to 100% maps to 0% to 100% width via compositor scaleX
   if (el.forecastProgressBar) {
     const health = forecast.current_health_pct || 83;
     const progressPct = Math.min(100, Math.max(5, ((health - 70) / 30) * 100));
-    el.forecastProgressBar.style.width = `${progressPct}%`;
+    el.forecastProgressBar.style.transform = `scaleX(${progressPct / 100})`;
   }
 
   // If 80% simulation toggle is active, update the side-by-side comparison too
@@ -1629,6 +1747,27 @@ async function stopCalibration() {
   }
 }
 
+let chartObserver = null;
+let chartIsVisible = true;
+let chartNeedsUpdate = false;
+
+function initChartObserver() {
+  const container = document.getElementById('chart-canvas-container') || document.getElementById('chart-container');
+  if (!container || typeof IntersectionObserver === 'undefined') return;
+
+  chartObserver = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      chartIsVisible = entry.isIntersecting;
+      if (chartIsVisible && chartNeedsUpdate) {
+        chartNeedsUpdate = false;
+        renderHistoryAndChart();
+      }
+    }
+  }, { threshold: 0.05 });
+
+  chartObserver.observe(container);
+}
+
 function renderHistoryAndChart() {
   const readings = state.history || [];
   if (el.historyCountBadge) {
@@ -1637,25 +1776,20 @@ function renderHistoryAndChart() {
       const lastTs = new Date(readings[readings.length - 1].timestamp).getTime();
       const spanDays = Math.max(1, Math.round((lastTs - firstTs) / (1000 * 60 * 60 * 24)));
       const filterDays = state.selectedDays || 30;
-      if (spanDays < filterDays) {
-        el.historyCountBadge.textContent = `${readings.length} readings · ${spanDays}D recorded`;
-      } else {
-        el.historyCountBadge.textContent = `${readings.length} readings · ${filterDays}D range`;
-      }
+      const countText = spanDays < filterDays
+        ? `${readings.length} readings · ${spanDays}D recorded`
+        : `${readings.length} readings · ${filterDays}D range`;
+      updateTextIfChanged(el.historyCountBadge, countText);
     } else {
-      el.historyCountBadge.textContent = `0 readings`;
+      updateTextIfChanged(el.historyCountBadge, '0 readings');
     }
   }
 
   // 1. Chart.js (EURA Heart Report Aesthetic: Clean White Curve)
   if (el.chartCanvas) {
-    const ctx = el.chartCanvas.getContext('2d');
-
-    if (state.chartInstance) {
-      state.chartInstance.destroy();
-    }
-
-    if (readings.length > 0) {
+    if (!chartIsVisible) {
+      chartNeedsUpdate = true;
+    } else if (readings.length > 0) {
       const labels = readings.map(r => {
         const d = new Date(r.timestamp);
         return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${d.getMinutes().toString().padStart(2, '0')}`;
@@ -1664,137 +1798,148 @@ function renderHistoryAndChart() {
       const healthVals = readings.map(r => r.health_pct);
       const tempVals = readings.map(r => r.temperature_c);
 
-      // Subtle gradient beneath white curve
-      const gradient = ctx.createLinearGradient(0, 0, 0, 240);
-      gradient.addColorStop(0, 'rgba(255, 255, 255, 0.15)');
-      gradient.addColorStop(1, 'rgba(255, 255, 255, 0.0)');
+      if (state.chartInstance) {
+        state.chartInstance.data.labels = labels;
+        state.chartInstance.data.datasets[0].data = healthVals;
+        state.chartInstance.data.datasets[1].data = tempVals;
+        state.chartInstance.data.datasets[0].pointRadius = readings.length > 40 ? 0 : 3;
+        if (state.chartInstance.options?.scales?.yHealth) {
+          state.chartInstance.options.scales.yHealth.min = Math.max(60, Math.floor(Math.min(...healthVals) - 4));
+        }
+        state.chartInstance.update('none');
+      } else {
+        const ctx = el.chartCanvas.getContext('2d');
+        // Subtle gradient beneath white curve
+        const gradient = ctx.createLinearGradient(0, 0, 0, 240);
+        gradient.addColorStop(0, 'rgba(255, 255, 255, 0.15)');
+        gradient.addColorStop(1, 'rgba(255, 255, 255, 0.0)');
 
-      state.chartInstance = new Chart(ctx, {
-        type: 'line',
-        data: {
-          labels: labels,
-          datasets: [
-            {
-              label: 'Battery Health %',
-              data: healthVals,
-              borderColor: '#FFFFFF',
-              backgroundColor: gradient,
-              borderWidth: 2.5,
-              tension: 0.0,
-              fill: true,
-              pointRadius: readings.length > 40 ? 0 : 3,
-              pointHoverRadius: 6,
-              pointBackgroundColor: '#FFFFFF',
-              pointBorderColor: '#0F1024',
-              pointBorderWidth: 2,
-              yAxisID: 'yHealth',
-            },
-            {
-              label: 'Temp (°C)',
-              data: tempVals,
-              borderColor: 'rgba(129, 140, 248, 0.65)',
-              borderWidth: 1.5,
-              borderDash: [3, 3],
-              tension: 0.0,
-              fill: false,
-              pointRadius: 0,
-              pointHoverRadius: 4,
-              pointBackgroundColor: '#818CF8',
-              yAxisID: 'yTemp',
-            }
-          ],
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          interaction: {
-            mode: 'index',
-            intersect: false,
-          },
-          plugins: {
-            legend: {
-              display: true,
-              position: 'top',
-              align: 'end',
-              labels: {
-                color: '#A1A1AA',
-                font: { family: '-apple-system, sans-serif', size: 11 },
-                boxWidth: 10,
-                boxHeight: 10,
-                usePointStyle: true,
+        state.chartInstance = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: labels,
+            datasets: [
+              {
+                label: 'Battery Health %',
+                data: healthVals,
+                borderColor: '#FFFFFF',
+                backgroundColor: gradient,
+                borderWidth: 2.5,
+                tension: 0.0,
+                fill: true,
+                pointRadius: readings.length > 40 ? 0 : 3,
+                pointHoverRadius: 6,
+                pointBackgroundColor: '#FFFFFF',
+                pointBorderColor: '#0F1024',
+                pointBorderWidth: 2,
+                yAxisID: 'yHealth',
               },
-            },
-            tooltip: {
-              backgroundColor: 'rgba(15, 16, 36, 0.95)',
-              titleColor: '#FFFFFF',
-              bodyColor: '#A1A1AA',
-              borderColor: 'rgba(255, 255, 255, 0.15)',
-              borderWidth: 1,
-              padding: 12,
-              cornerRadius: 14,
-              callbacks: {
-                label: function(context) {
-                  const r = readings[context.dataIndex];
-                  if (!r) return `${context.dataset.label}: ${context.parsed.y}`;
-                  if (context.datasetIndex === 0) {
-                    const hp = (r.health_pct !== null && r.health_pct !== undefined) ? r.health_pct : context.parsed.y;
-                    return ` Battery Health %: ${hp}%`;
-                  } else if (context.datasetIndex === 1) {
-                    const temp = (r.temperature_c !== null && r.temperature_c !== undefined) ? r.temperature_c : context.parsed.y;
-                    return ` Temp (°C): ${temp}`;
-                  }
-                  return `${context.dataset.label}: ${context.parsed.y}`;
-                },
-                afterBody: function(contexts) {
-                  if (!contexts || contexts.length === 0) return '';
-                  const r = readings[contexts[0].dataIndex];
-                  if (!r) return '';
-                  const parts = [];
-                  if (r.voltage_mv) parts.push(`Voltage: ${r.voltage_mv} mV`);
-                  if (r.cycle_count !== null && r.cycle_count !== undefined) parts.push(`Cycles: ${r.cycle_count}`);
-                  if (r.health_method) parts.push(`Method: ${r.health_method}`);
-                  return parts.length ? '\n' + parts.join(' | ') : '';
-                }
+              {
+                label: 'Temp (°C)',
+                data: tempVals,
+                borderColor: 'rgba(129, 140, 248, 0.65)',
+                borderWidth: 1.5,
+                borderDash: [3, 3],
+                tension: 0.0,
+                fill: false,
+                pointRadius: 0,
+                pointHoverRadius: 4,
+                pointBackgroundColor: '#818CF8',
+                yAxisID: 'yTemp',
               }
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+              mode: 'index',
+              intersect: false,
+            },
+            plugins: {
+              legend: {
+                display: true,
+                position: 'top',
+                align: 'end',
+                labels: {
+                  color: '#A1A1AA',
+                  font: { family: '-apple-system, sans-serif', size: 11 },
+                  boxWidth: 10,
+                  boxHeight: 10,
+                  usePointStyle: true,
+                },
+              },
+              tooltip: {
+                backgroundColor: 'rgba(15, 16, 36, 0.95)',
+                titleColor: '#FFFFFF',
+                bodyColor: '#A1A1AA',
+                borderColor: 'rgba(255, 255, 255, 0.15)',
+                borderWidth: 1,
+                padding: 12,
+                cornerRadius: 14,
+                callbacks: {
+                  label: function(context) {
+                    const r = readings[context.dataIndex];
+                    if (!r) return `${context.dataset.label}: ${context.parsed.y}`;
+                    if (context.datasetIndex === 0) {
+                      const hp = (r.health_pct !== null && r.health_pct !== undefined) ? r.health_pct : context.parsed.y;
+                      return ` Battery Health %: ${hp}%`;
+                    } else if (context.datasetIndex === 1) {
+                      const temp = (r.temperature_c !== null && r.temperature_c !== undefined) ? r.temperature_c : context.parsed.y;
+                      return ` Temp (°C): ${temp}`;
+                    }
+                    return `${context.dataset.label}: ${context.parsed.y}`;
+                  },
+                  afterBody: function(contexts) {
+                    if (!contexts || contexts.length === 0) return '';
+                    const r = readings[contexts[0].dataIndex];
+                    if (!r) return '';
+                    const parts = [];
+                    if (r.voltage_mv) parts.push(`Voltage: ${r.voltage_mv} mV`);
+                    if (r.cycle_count !== null && r.cycle_count !== undefined) parts.push(`Cycles: ${r.cycle_count}`);
+                    if (r.health_method) parts.push(`Method: ${r.health_method}`);
+                    return parts.length ? '\n' + parts.join(' | ') : '';
+                  }
+                }
+              },
+            },
+            scales: {
+              x: {
+                grid: { color: 'rgba(255, 255, 255, 0.06)' },
+                ticks: {
+                  color: '#71717A',
+                  font: { size: 10 },
+                  maxRotation: 0,
+                  autoSkip: true,
+                  maxTicksLimit: 7,
+                },
+              },
+              yHealth: {
+                type: 'linear',
+                position: 'left',
+                min: Math.max(60, Math.floor(Math.min(...healthVals) - 4)),
+                max: 102,
+                grid: { color: 'rgba(255, 255, 255, 0.06)' },
+                ticks: {
+                  color: '#FFFFFF',
+                  font: { size: 11, weight: 'bold' },
+                  callback: v => `${v}%`,
+                },
+              },
+              yTemp: {
+                type: 'linear',
+                position: 'right',
+                grid: { display: false },
+                ticks: {
+                  color: '#818CF8',
+                  font: { size: 10 },
+                  callback: v => `${v}°C`,
+                },
+              },
             },
           },
-
-          scales: {
-            x: {
-              grid: { color: 'rgba(255, 255, 255, 0.06)' },
-              ticks: {
-                color: '#71717A',
-                font: { size: 10 },
-                maxRotation: 0,
-                autoSkip: true,
-                maxTicksLimit: 7,
-              },
-            },
-            yHealth: {
-              type: 'linear',
-              position: 'left',
-              min: Math.max(60, Math.floor(Math.min(...healthVals) - 4)),
-              max: 102,
-              grid: { color: 'rgba(255, 255, 255, 0.06)' },
-              ticks: {
-                color: '#FFFFFF',
-                font: { size: 11, weight: 'bold' },
-                callback: v => `${v}%`,
-              },
-            },
-            yTemp: {
-              type: 'linear',
-              position: 'right',
-              grid: { display: false },
-              ticks: {
-                color: '#818CF8',
-                font: { size: 10 },
-                callback: v => `${v}°C`,
-              },
-            },
-          },
-        },
-      });
+        });
+      }
     }
 
     // Fix 3: Stale chart sync check
@@ -1850,6 +1995,7 @@ function renderVirtualHistory(items) {
     virtualHistoryState.scrollListenerAttached = true;
     let scrollRaf = null;
     container.addEventListener('scroll', () => {
+      lastScrollTimestamp = performance.now();
       if (!scrollRaf) {
         scrollRaf = requestAnimationFrame(() => {
           updateVirtualHistoryView();
@@ -2331,7 +2477,7 @@ async function fetchAppDrain(force = false) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     state.appDrain.data = data;
-    renderAppDrain(data, false);
+    scheduleRenderPass('appDrain');
   } catch (err) {
     console.error('[APP DRAIN] Fetch failed:', err);
     if (listEl && (!state.appDrain.data || !state.appDrain.data.items)) {
@@ -2361,7 +2507,7 @@ function renderAppDrain(data, isStandby = false) {
   // Handle thermal correlation banner
   if (data.thermal_correlation && thermalBanner) {
     if (thermalText) {
-      thermalText.textContent = `Thermal Correlation: ${data.thermal_summary || 'Elevated device temperature during background activity.'}`;
+      updateTextIfChanged(thermalText, `Thermal Correlation: ${data.thermal_summary || 'Elevated device temperature during background activity.'}`);
     }
     thermalBanner.classList.remove('hidden');
   } else if (thermalBanner) {
@@ -2379,106 +2525,113 @@ function renderAppDrain(data, isStandby = false) {
     return;
   }
 
-  // Strictly sort descending by selected metric
-  items.sort((a, b) => {
-    const valA = a[sortKey] ?? 0;
-    const valB = b[sortKey] ?? 0;
-    return valB - valA;
-  });
+  // Defer heavy sorting and DOM construction to idle budget
+  runIdle(() => {
+    // Strictly sort descending by selected metric
+    items.sort((a, b) => {
+      const valA = a[sortKey] ?? 0;
+      const valB = b[sortKey] ?? 0;
+      return valB - valA;
+    });
 
-  // Calculate highest metric value to normalize relative progress bar
-  let maxVal = 1;
-  items.forEach(it => {
-    const val = it[sortKey] || 0;
-    if (val > maxVal) maxVal = val;
-  });
+    // Calculate highest metric value to normalize relative progress bar
+    let maxVal = 1;
+    items.forEach(it => {
+      const val = it[sortKey] || 0;
+      if (val > maxVal) maxVal = val;
+    });
 
-  listEl.innerHTML = items.map((app, idx) => {
-    const rank = idx + 1;
-    const displayName = escapeHtml(app.display_name || app.package_name || 'App');
-    const pkgName = escapeHtml(app.package_name || '');
-    const wakelockDisplay = escapeHtml(app.wakelock_duration_display || '0s');
-    const wakelockCount = app.wakelock_count || 0;
-    const cpuBgSec = Math.round((app.cpu_bg_ms || 0) / 1000);
-    const estMah = app.estimated_mah !== null && app.estimated_mah !== undefined ? `${app.estimated_mah} mAh` : null;
+    const html = items.map((app, idx) => {
+      const rank = idx + 1;
+      const displayName = escapeHtml(app.display_name || app.package_name || 'App');
+      const pkgName = escapeHtml(app.package_name || '');
+      const wakelockDisplay = escapeHtml(app.wakelock_duration_display || '0s');
+      const wakelockCount = app.wakelock_count || 0;
+      const cpuBgSec = Math.round((app.cpu_bg_ms || 0) / 1000);
+      const estMah = app.estimated_mah !== null && app.estimated_mah !== undefined ? `${app.estimated_mah} mAh` : null;
 
-    const currVal = app[sortKey] || 0;
-    const pctBar = Math.min(100, Math.max(6, Math.round((currVal / maxVal) * 100)));
+      const currVal = app[sortKey] || 0;
+      const pctBar = Math.min(100, Math.max(6, Math.round((currVal / maxVal) * 100)));
 
-    const thermalTagHtml = app.has_thermal_correlation ? `
-      <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/30 flex items-center gap-1 shrink-0" data-tooltip="${escapeHtml(app.thermal_flag || 'Elevated temperature during wakelock')}">
-        <span class="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse"></span>
-        Thermal Stress
-      </span>
-    ` : '';
+      const thermalTagHtml = app.has_thermal_correlation ? `
+        <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/30 flex items-center gap-1 shrink-0" data-tooltip="${escapeHtml(app.thermal_flag || 'Elevated temperature during wakelock')}">
+          <span class="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse"></span>
+          Thermal Stress
+        </span>
+      ` : '';
 
-    let primaryMetricHtml = '';
-    if (sortKey === 'cpu_bg_ms') {
-      primaryMetricHtml = `
+      let primaryMetricHtml = '';
+      if (sortKey === 'cpu_bg_ms') {
+        primaryMetricHtml = `
+          <div class="text-right">
+            <div class="text-xs font-black font-mono text-indigo-300">${cpuBgSec}s CPU</div>
+            <div class="text-[10px] font-mono text-zinc-500">Wakelock: ${wakelockDisplay}</div>
+          </div>
+        `;
+      } else if (sortKey === 'estimated_mah') {
+        primaryMetricHtml = `
+          <div class="text-right">
+            <div class="text-xs font-black font-mono text-indigo-300">${estMah || '—'}</div>
+            <div class="text-[10px] font-mono text-zinc-500">Wakelock: ${wakelockDisplay}</div>
+          </div>
+        `;
+      } else {
+        primaryMetricHtml = `
+          <div class="text-right">
+            <div class="text-xs font-bold font-mono text-white">${wakelockDisplay}</div>
+            <div class="text-[10px] font-mono text-zinc-500">${wakelockCount} locks</div>
+          </div>
+        `;
+      }
+
+      const estMahSub = (sortKey !== 'estimated_mah' && estMah) ? `
         <div class="text-right">
-          <div class="text-xs font-black font-mono text-indigo-300">${cpuBgSec}s CPU</div>
-          <div class="text-[10px] font-mono text-zinc-500">Wakelock: ${wakelockDisplay}</div>
+          <div class="text-xs font-black font-mono text-indigo-300">${estMah}</div>
+          <div class="text-[9px] uppercase font-mono text-zinc-500">Est. Power</div>
         </div>
-      `;
-    } else if (sortKey === 'estimated_mah') {
-      primaryMetricHtml = `
-        <div class="text-right">
-          <div class="text-xs font-black font-mono text-indigo-300">${estMah || '—'}</div>
-          <div class="text-[10px] font-mono text-zinc-500">Wakelock: ${wakelockDisplay}</div>
-        </div>
-      `;
-    } else {
-      primaryMetricHtml = `
-        <div class="text-right">
-          <div class="text-xs font-bold font-mono text-white">${wakelockDisplay}</div>
-          <div class="text-[10px] font-mono text-zinc-500">${wakelockCount} locks</div>
-        </div>
-      `;
-    }
+      ` : '';
 
-    const estMahSub = (sortKey !== 'estimated_mah' && estMah) ? `
-      <div class="text-right">
-        <div class="text-xs font-black font-mono text-indigo-300">${estMah}</div>
-        <div class="text-[9px] uppercase font-mono text-zinc-500">Est. Power</div>
-      </div>
-    ` : '';
-
-    return `
-      <div class="p-3.5 rounded-2xl bg-black/40 hover:bg-black/60 border border-white/5 transition flex flex-col gap-2">
-        <div class="flex items-center justify-between gap-3">
-          <div class="flex items-center gap-3 min-w-0">
-            <span class="w-6 h-6 rounded-full bg-indigo-950/60 border border-indigo-500/30 text-indigo-300 font-mono text-[11px] font-black flex items-center justify-center shrink-0">
-              ${rank}
-            </span>
-            <div class="min-w-0 truncate">
-              <div class="flex items-center gap-2">
-                <span class="text-sm font-bold text-white truncate">${displayName}</span>
-                ${thermalTagHtml}
+      return `
+        <div class="p-3.5 rounded-2xl bg-black/40 hover:bg-black/60 border border-white/5 transition flex flex-col gap-2">
+          <div class="flex items-center justify-between gap-3">
+            <div class="flex items-center gap-3 min-w-0">
+              <span class="w-6 h-6 rounded-full bg-indigo-950/60 border border-indigo-500/30 text-indigo-300 font-mono text-[11px] font-black flex items-center justify-center shrink-0">
+                ${rank}
+              </span>
+              <div class="min-w-0 truncate">
+                <div class="flex items-center gap-2">
+                  <span class="text-sm font-bold text-white truncate">${displayName}</span>
+                  ${thermalTagHtml}
+                </div>
+                <div class="text-[10px] font-mono text-zinc-500 truncate">${pkgName}</div>
               </div>
-              <div class="text-[10px] font-mono text-zinc-500 truncate">${pkgName}</div>
+            </div>
+
+            <div class="flex items-center gap-4 shrink-0">
+              ${primaryMetricHtml}
+              ${estMahSub}
             </div>
           </div>
 
-          <div class="flex items-center gap-4 shrink-0">
-            ${primaryMetricHtml}
-            ${estMahSub}
+          <!-- Relative Drain Progress Bar & Counters (Compositor-Only ScaleX) -->
+          <div class="flex items-center gap-3 pt-1">
+            <div class="flex-1 bg-black/50 h-1.5 rounded-full overflow-hidden border border-white/5">
+              <div class="h-full w-full bg-gradient-to-r from-indigo-500 to-teal-400 rounded-full origin-left transition-transform duration-500" style="transform: scaleX(${pctBar / 100});"></div>
+            </div>
+            <div class="flex items-center gap-2 text-[10px] font-mono text-zinc-400 shrink-0">
+              <span>Bg CPU: <strong class="text-zinc-300">${cpuBgSec}s</strong></span>
+              ${app.radio_active_ms > 0 ? `<span>Radio: <strong class="text-zinc-300">${Math.round(app.radio_active_ms / 1000)}s</strong></span>` : ''}
+              ${app.gps_active_ms > 0 ? `<span>GPS: <strong class="text-zinc-300">${Math.round(app.gps_active_ms / 1000)}s</strong></span>` : ''}
+            </div>
           </div>
         </div>
+      `;
+    }).join('');
 
-        <!-- Relative Drain Progress Bar & Counters -->
-        <div class="flex items-center gap-3 pt-1">
-          <div class="flex-1 bg-black/50 h-1.5 rounded-full overflow-hidden border border-white/5">
-            <div class="h-full bg-gradient-to-r from-indigo-500 to-teal-400 rounded-full transition-all duration-500" style="width: ${pctBar}%;"></div>
-          </div>
-          <div class="flex items-center gap-2 text-[10px] font-mono text-zinc-400 shrink-0">
-            <span>Bg CPU: <strong class="text-zinc-300">${cpuBgSec}s</strong></span>
-            ${app.radio_active_ms > 0 ? `<span>Radio: <strong class="text-zinc-300">${Math.round(app.radio_active_ms / 1000)}s</strong></span>` : ''}
-            ${app.gps_active_ms > 0 ? `<span>GPS: <strong class="text-zinc-300">${Math.round(app.gps_active_ms / 1000)}s</strong></span>` : ''}
-          </div>
-        </div>
-      </div>
-    `;
-  }).join('');
+    requestAnimationFrame(() => {
+      if (listEl) listEl.innerHTML = html;
+    });
+  });
 }
 
 function updateAppDrainWindowPills(targetWindow) {
@@ -2496,7 +2649,13 @@ function updateAppDrainWindowPills(targetWindow) {
   });
 }
 
-function subscribeTopBatteryDrainers({ connected, mode }) {
+let lastAppDrainSessionKey = null;
+function subscribeTopBatteryDrainers({ connected, mode, device }) {
+  const currentKey = `${connected}-${mode}-${device?.serial || ''}`;
+  if (currentKey === lastAppDrainSessionKey) {
+    return;
+  }
+  lastAppDrainSessionKey = currentKey;
   updateAppDrainWindowPills(state.appDrain?.window || '24h');
   if (connected || mode === 'seeded') {
     fetchAppDrain();
@@ -2654,6 +2813,9 @@ function init() {
   AppState.subscribe(subscribeHeroHeadline);
   AppState.subscribe(masterDashboardSubscriber);
   AppState.subscribe(subscribeTopBatteryDrainers);
+
+  // Initialize Chart.js IntersectionObserver for offscreen pause
+  initChartObserver();
 
   // Initial queries
   fetchStatus();
@@ -3040,6 +3202,7 @@ function initSharedTooltips() {
   let scrollPauseTimer = null;
   let isScrollingActive = false;
   window.addEventListener('scroll', () => {
+    lastScrollTimestamp = performance.now();
     if (activeTooltipTarget) {
       hideSharedTooltip();
     }
@@ -3057,7 +3220,11 @@ function initSharedTooltips() {
       if (typeof window.IonPerf?.onScrollEnd === 'function') {
         window.IonPerf.onScrollEnd();
       }
-    }, 150);
+      if (pendingScrollFlush) {
+        pendingScrollFlush = false;
+        runIdle(() => flushPendingRenders());
+      }
+    }, 120);
   }, { passive: true });
 }
 
