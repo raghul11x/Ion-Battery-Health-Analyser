@@ -84,3 +84,15 @@ def test_seed_mock_data():
     history = db.get_history("test-mock", limit=100)
     assert len(history) == 90
     assert history[0]["health_pct"] >= history[-1]["health_pct"]
+
+
+def test_clear_mock_data():
+    db = Database(":memory:")
+    db.seed_mock_data(device_serial="mock-phone-2a", days=30)
+    assert db.has_mock_data() is True
+
+    cleared = db.clear_mock_data("mock-phone-2a")
+    assert cleared == 90
+    assert db.has_mock_data() is False
+    assert len(db.get_history("mock-phone-2a", limit=100)) == 0
+

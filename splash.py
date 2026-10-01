@@ -32,7 +32,7 @@ class AdobeSplashScreen:
         self.width = width
         self.height = height
         self.root = tk.Tk()
-        self.root.title("Ion+")
+        self.root.title("Ion+ Splash Screen")
 
         # Frameless window, always on top
         self.root.overrideredirect(True)

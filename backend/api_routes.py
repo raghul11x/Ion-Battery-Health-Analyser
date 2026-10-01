@@ -49,6 +49,7 @@ def get_system_status() -> Dict[str, Any]:
         "unauthorized_count": len(unauth),
         "offline_count": len(offline),
         "device_state": "device" if active else ("unauthorized" if unauth else ("offline" if offline else "none")),
+        "has_seeded_data": db.has_mock_data(),
         "watcher_status": watcher.get_status(),
     }
 
@@ -480,6 +481,18 @@ def seed_mock_data(payload: SeedRequest) -> Dict[str, Any]:
         "device_serial": payload.serial,
         "device_model": payload.model,
         "days": payload.days,
+    }
+
+
+@router.post("/unseed-mock")
+def unseed_mock_data(payload: Optional[SeedRequest] = None) -> Dict[str, Any]:
+    """Clears all mock/seeded historical readings and telemetry from the database."""
+    serial = payload.serial if payload and payload.serial else "mock-phone-2a"
+    count = db.clear_mock_data(device_serial=serial)
+    return {
+        "status": "success",
+        "cleared_count": count,
+        "device_serial": serial,
     }
 
 

@@ -49,6 +49,28 @@ def test_api_seed_and_history():
     assert "insights_list" in ins
 
 
+def test_api_unseed_mock():
+    # 1. Seed mock data
+    res_seed = client.post("/api/seed-mock", json={"days": 30, "serial": "mock-phone-2a", "model": "Nothing Phone 2a"})
+    assert res_seed.status_code == 200
+
+    # 2. Check /status includes has_seeded_data == True
+    res_status = client.get("/api/status")
+    assert res_status.status_code == 200
+    assert res_status.json().get("has_seeded_data") is True
+
+    # 3. Unseed mock data
+    res_unseed = client.post("/api/unseed-mock", json={"serial": "mock-phone-2a"})
+    assert res_unseed.status_code == 200
+    assert res_unseed.json()["status"] == "success"
+
+    # 4. Check /status now has has_seeded_data == False
+    res_status_after = client.get("/api/status")
+    assert res_status_after.status_code == 200
+    assert res_status_after.json().get("has_seeded_data") is False
+
+
+
 def test_api_device_profile_endpoint():
     # Query device-profile
     res = client.get("/api/device-profile?serial=api-test-device")

@@ -756,6 +756,50 @@ class Database:
         finally:
             session.close()
 
+    def clear_mock_data(self, device_serial: str = "mock-phone-2a") -> int:
+        """Deletes all mock/seeded readings, app drain records, profiles, and calibration for the mock device."""
+        session = self.get_session()
+        try:
+            count = 0
+            # 1. Delete BatteryReading records
+            count += session.query(BatteryReading).filter(
+                (BatteryReading.device_serial == device_serial) | (BatteryReading.device_serial.like("mock-%"))
+            ).delete(synchronize_session=False)
+
+            # 2. Delete AppPowerReading records
+            session.query(AppPowerReading).filter(
+                (AppPowerReading.device_serial == device_serial) | (AppPowerReading.device_serial.like("mock-%"))
+            ).delete(synchronize_session=False)
+
+            # 3. Delete DeviceProfile records
+            session.query(DeviceProfile).filter(
+                (DeviceProfile.device_serial == device_serial) | (DeviceProfile.device_serial.like("mock-%"))
+            ).delete(synchronize_session=False)
+
+            # 4. Delete CalibrationRecord records
+            session.query(CalibrationRecord).filter(
+                (CalibrationRecord.device_serial == device_serial) | (CalibrationRecord.device_serial.like("mock-%"))
+            ).delete(synchronize_session=False)
+
+            session.commit()
+            return count
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    def has_mock_data(self) -> bool:
+        """Checks if any mock/seeded data exists in the database."""
+        session = self.get_session()
+        try:
+            reading = session.query(BatteryReading).filter(
+                (BatteryReading.device_serial == "mock-phone-2a") | (BatteryReading.device_serial.like("mock-%"))
+            ).first()
+            return reading is not None
+        finally:
+            session.close()
+
     def get_device_profile(self, device_serial: str) -> Optional[Dict[str, Any]]:
         """Retrieves cached device hardware profile if it exists."""
         session = self.get_session()

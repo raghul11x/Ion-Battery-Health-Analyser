@@ -176,6 +176,15 @@ const AppState = {
       if (this.mode === 'seeded') {
         return;
       }
+      // If DB has seeded data and user has not explicitly unseeded, restore seeded mode
+      if (status?.has_seeded_data && !this._userExplicitlyUnseeded) {
+        fetchSnapshot('mock-phone-2a').then(() => {
+          this.setSeededMode('mock-phone-2a', state.snapshot);
+          fetchHistory(state.selectedDays, 'mock-phone-2a');
+          fetchInsights('mock-phone-2a');
+        });
+        return;
+      }
       // Disconnected / idle
       const hadSession = this.connected || this.mode !== 'idle' || state.selectedSerial !== null;
       this.connected = false;
@@ -213,12 +222,30 @@ const AppState = {
   },
 
   setSeededMode(mockSerial, mockSnapshot) {
+    this._userExplicitlyUnseeded = false;
     this.connected = false;
     this.mode = 'seeded';
     this.device = { serial: mockSerial, model: mockSnapshot?.device_model || 'Nothing Phone 2a' };
     this.snapshot = mockSnapshot;
     state.selectedSerial = mockSerial;
     state.snapshot = mockSnapshot;
+    this.notify();
+  },
+
+  clearSeededMode() {
+    this.connected = false;
+    this.mode = 'idle';
+    this.device = null;
+    this.snapshot = null;
+    this._userExplicitlyUnseeded = true;
+    state.selectedSerial = null;
+    state.snapshot = null;
+    state.normalForecast = null;
+    state.is80CapSimulated = false;
+    state.deviceStatusEvents = [];
+    state.history = [];
+    state.insights = null;
+    if (state.appDrain) state.appDrain.data = null;
     this.notify();
   }
 };
@@ -693,6 +720,31 @@ function subscribeTopBar({ connected, mode, systemStatus }) {
     updateTextIfChanged(el.connStatusLabel, 'Disconnected');
     if (el.connDeviceLabel) el.connDeviceLabel.classList.add('hidden');
     updateLastSeenDeviceLabel();
+  }
+
+  // Synchronize Seed / Unseed button state
+  updateSeedBtnState(mode === 'seeded');
+}
+
+function updateSeedBtnState(isSeeded) {
+  if (!el.seedBtn) return;
+  const label = isSeeded ? 'Unseed' : 'Seed 30D';
+  const tooltip = isSeeded
+    ? 'Clears the 30-day simulated demo dataset and resets to clean state.'
+    : 'Populates a 30-day simulated dataset to preview degradation curves and insights.';
+  const span = el.seedBtn.querySelector('span');
+  if (span) {
+    updateTextIfChanged(span, label);
+  } else {
+    updateTextIfChanged(el.seedBtn, label);
+  }
+  el.seedBtn.setAttribute('data-tooltip', tooltip);
+  if (isSeeded) {
+    el.seedBtn.classList.add('text-amber-300');
+    el.seedBtn.classList.remove('text-zinc-300');
+  } else {
+    el.seedBtn.classList.remove('text-amber-300');
+    el.seedBtn.classList.add('text-zinc-300');
   }
 }
 
@@ -2322,10 +2374,53 @@ async function handleProbe() {
   }
 }
 
-async function handleSeed() {
+async function handleSeedToggle() {
+  if (AppState.mode === 'seeded') {
+    await handleUnseed();
+  } else {
+    await handleSeed();
+  }
+}
+
+async function handleUnseed() {
+  if (!el.seedBtn) return;
   try {
     el.seedBtn.disabled = true;
-    el.seedBtn.textContent = 'Seeding...';
+    const span = el.seedBtn.querySelector('span');
+    if (span) updateTextIfChanged(span, 'Unseeding...');
+    else updateTextIfChanged(el.seedBtn, 'Unseeding...');
+
+    const res = await fetch('/api/unseed-mock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ serial: 'mock-phone-2a' }),
+    });
+
+    if (res.ok) {
+      AppState.clearSeededMode();
+      await fetchStatus();
+      await fetchSnapshot();
+      await fetchHistory(state.selectedDays);
+      await fetchInsights();
+      await fetchAppDrain();
+    }
+  } catch (err) {
+    alert('Failed to clear demo data: ' + err.message);
+  } finally {
+    if (el.seedBtn) {
+      el.seedBtn.disabled = false;
+      updateSeedBtnState(AppState.mode === 'seeded');
+    }
+  }
+}
+
+async function handleSeed() {
+  if (!el.seedBtn) return;
+  try {
+    el.seedBtn.disabled = true;
+    const span = el.seedBtn.querySelector('span');
+    if (span) updateTextIfChanged(span, 'Seeding...');
+    else updateTextIfChanged(el.seedBtn, 'Seeding...');
 
     const res = await fetch('/api/seed-mock', {
       method: 'POST',
@@ -2355,8 +2450,10 @@ async function handleSeed() {
   } catch (err) {
     alert('Failed to seed demo data: ' + err.message);
   } finally {
-    el.seedBtn.disabled = false;
-    el.seedBtn.textContent = 'Seed 30D';
+    if (el.seedBtn) {
+      el.seedBtn.disabled = false;
+      updateSeedBtnState(AppState.mode === 'seeded');
+    }
   }
 }
 
@@ -2778,7 +2875,7 @@ function init() {
   el.probeBtn?.addEventListener('click', handleProbe);
   document.getElementById('reconnect-btn')?.addEventListener('click', handleProbe);
   document.getElementById('rescan-adb-btn')?.addEventListener('click', handleProbe);
-  el.seedBtn?.addEventListener('click', handleSeed);
+  el.seedBtn?.addEventListener('click', handleSeedToggle);
 
   // Standby connection guide accordion
   const guideToggle = document.getElementById('toggle-connection-guide-btn');
