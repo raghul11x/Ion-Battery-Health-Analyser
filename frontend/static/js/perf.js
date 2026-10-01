@@ -35,18 +35,23 @@
 
   // Cached GPU string
   function detectGpu() {
+    let renderer = 'Software / Fallback';
     try {
       const canvas = document.createElement('canvas');
       const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
       if (gl) {
         const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
         if (debugInfo) {
-          return gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) || 'WebGL Generic';
+          renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) || 'WebGL Generic';
+        } else {
+          renderer = gl.getParameter(gl.RENDERER) || 'WebGL Supported';
         }
-        return gl.getParameter(gl.RENDERER) || 'WebGL Supported';
+      }
+      if (typeof navigator !== 'undefined' && navigator.gpu) {
+        renderer += ' [WebGPU Active]';
       }
     } catch (_) {}
-    return 'Software / Fallback';
+    return renderer;
   }
 
   window.IonPerf.gpuRenderer = detectGpu();
@@ -365,6 +370,135 @@
     }
   }
 
+  // 4. Adaptive Quality Governor
+  const GOVERNOR_TIERS = ['low', 'medium', 'high'];
+  let currentTierIndex = 2; // 2: high, 1: medium, 0: low
+  let cleanFramesStartTime = 0;
+  const rollingGovernorWindow = []; // { time, delta }
+  let governorRafId = null;
+  let isGovernorRunning = false;
+  let governorActiveUntil = 0;
+
+  function applyQualityTier(tierName) {
+    if (!['high', 'medium', 'low'].includes(tierName)) return;
+    window.IonPerf.qualityTier = tierName;
+    currentTierIndex = GOVERNOR_TIERS.indexOf(tierName);
+
+    document.body.classList.remove('tier-high', 'tier-medium', 'tier-low', 'no-glass');
+    document.documentElement.classList.remove('tier-high', 'tier-medium', 'tier-low', 'no-glass');
+
+    if (tierName === 'medium') {
+      document.body.classList.add('tier-medium');
+      document.documentElement.classList.add('tier-medium');
+      document.documentElement.style.setProperty('--glass-blur', '8px');
+    } else if (tierName === 'low') {
+      document.body.classList.add('tier-low', 'no-glass');
+      document.documentElement.classList.add('tier-low', 'no-glass');
+      document.documentElement.style.setProperty('--glass-blur', '0px');
+    } else {
+      document.body.classList.add('tier-high');
+      document.documentElement.classList.add('tier-high');
+      document.documentElement.style.setProperty('--glass-blur', '16px');
+    }
+
+    // Update HUD tier badge if HUD is present
+    const badge = document.getElementById('hud-tier-badge');
+    if (badge) {
+      badge.textContent = tierName.toUpperCase();
+      if (tierName === 'low') {
+        badge.style.background = 'rgba(239,68,68,0.2)';
+        badge.style.color = '#FCA5A5';
+        badge.style.borderColor = 'rgba(239,68,68,0.3)';
+      } else if (tierName === 'medium') {
+        badge.style.background = 'rgba(245,158,11,0.2)';
+        badge.style.color = '#FDE047';
+        badge.style.borderColor = 'rgba(245,158,11,0.3)';
+      } else {
+        badge.style.background = 'rgba(34,197,94,0.2)';
+        badge.style.color = '#86EFAC';
+        badge.style.borderColor = 'rgba(34,197,94,0.3)';
+      }
+    }
+  }
+
+  // Expose setter for test matrix & verification
+  window.IonPerf.setQualityTier = applyQualityTier;
+
+  function processGovernorFrame(now, delta) {
+    rollingGovernorWindow.push({ time: now, delta });
+    const cutoff = now - 2000; // rolling 2-second window
+    while (rollingGovernorWindow.length > 0 && rollingGovernorWindow[0].time < cutoff) {
+      rollingGovernorWindow.shift();
+    }
+
+    if (rollingGovernorWindow.length < 15) return;
+
+    const hitchThreshold = window.IonPerf.frameMs * 1.5;
+    let hitches = 0;
+    for (let i = 0; i < rollingGovernorWindow.length; i++) {
+      if (rollingGovernorWindow[i].delta > hitchThreshold) {
+        hitches++;
+      }
+    }
+
+    const hitchRate = hitches / rollingGovernorWindow.length;
+
+    // Step quality down if >8% of frames exceed 1.5x interval
+    if (hitchRate > 0.08) {
+      cleanFramesStartTime = 0;
+      if (currentTierIndex > 0) {
+        currentTierIndex--;
+        applyQualityTier(GOVERNOR_TIERS[currentTierIndex]);
+        rollingGovernorWindow.length = 0;
+      }
+    } else {
+      // Step quality back up only after ~10s of clean frames with hysteresis
+      if (!cleanFramesStartTime) {
+        cleanFramesStartTime = now;
+      } else if (now - cleanFramesStartTime >= 10000) {
+        if (currentTierIndex < 2) {
+          currentTierIndex++;
+          applyQualityTier(GOVERNOR_TIERS[currentTierIndex]);
+          cleanFramesStartTime = now;
+          rollingGovernorWindow.length = 0;
+        }
+      }
+    }
+  }
+
+  function runGovernorLoop(now) {
+    if (now > governorActiveUntil && !window.IonPerf.hudVisible) {
+      isGovernorRunning = false;
+      governorRafId = null;
+      runGovernorLoop.lastTs = null;
+      return;
+    }
+
+    const delta = runGovernorLoop.lastTs ? (now - runGovernorLoop.lastTs) : window.IonPerf.frameMs;
+    runGovernorLoop.lastTs = now;
+
+    processGovernorFrame(now, delta);
+
+    governorRafId = requestAnimationFrame(runGovernorLoop);
+  }
+
+  function startGovernorTracking(durationMs = 3000) {
+    governorActiveUntil = Math.max(governorActiveUntil, performance.now() + durationMs);
+    if (!isGovernorRunning) {
+      isGovernorRunning = true;
+      runGovernorLoop.lastTs = performance.now();
+      governorRafId = requestAnimationFrame(runGovernorLoop);
+    }
+  }
+
+  window.IonPerf.onScrollStart = function () {
+    startGovernorTracking(3000);
+  };
+
+  window.IonPerf.onScrollEnd = function () {
+    startGovernorTracking(2500);
+  };
+
   // Keyboard shortcut: Ctrl + Shift + P
   window.addEventListener('keydown', (e) => {
     if (e.ctrlKey && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
@@ -409,6 +543,8 @@
     targetView.classList.remove('hidden');
 
     const durationMs = durationSeconds * 1000;
+    startGovernorTracking(durationMs + 2000);
+
     const startTs = performance.now();
     let frames = 0;
     const deltas = [];
@@ -428,8 +564,9 @@
       frames++;
       deltas.push(delta);
 
-      // Continuous programmatic scroll (compositor wheel-like delta)
-      scrollPos += 14 * scrollDirection;
+      // Continuous programmatic scroll (time-based delta, rate-independent)
+      const scrollSpeedPxPerSec = 750;
+      scrollPos += (scrollSpeedPxPerSec * (delta / 1000)) * scrollDirection;
       if (scrollPos >= maxScroll) {
         scrollPos = maxScroll;
         scrollDirection = -1;
