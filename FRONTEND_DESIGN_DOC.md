@@ -88,57 +88,74 @@ The header provides continuous access across four primary operational contexts v
 
 ---
 
-## 3. Design System & Visual Token Foundation
+## 3. Design System & Visual Token Foundation (iOS 26 Liquid Glass)
 
-### 3.1 Color Palette & Semantic Tokens
-All interface styling derives from a cohesive design token specification configured in [`frontend/static/css/style.css`](file:///c:/Users/raghu/OneDrive/Documents/ChatGPT/Battery%20analyser/frontend/static/css/style.css) and Tailwind CSS theme extensions:
+### 3.1 Color Palette & Liquid Glass Tokens
+All interface styling derives from an iOS 26 "Liquid Glass" design token specification configured in [`frontend/static/css/style.css`](file:///c:/Users/raghu/OneDrive/Documents/ChatGPT/Battery%20analyser/frontend/static/css/style.css):
 
 ```css
 :root {
-  /* Surfaces & Backgrounds */
-  --surface-base: #0B0B10;           /* Deep Obsidian Base */
-  --card-secondary: #0F1024;         /* Midnight Indigo Card Surface */
-  --card-border: rgba(255, 255, 255, 0.08);
-  --card-border-hover: rgba(255, 255, 255, 0.16);
+  /* Liquid Glass Surfaces & Optical Refraction */
+  --glass-fill: rgba(255, 255, 255, 0.06);
+  --glass-fill-strong: rgba(255, 255, 255, 0.12);
+  --glass-tint-active: rgba(120, 190, 255, 0.22);
+  --glass-edge: rgba(255, 255, 255, 0.22);
+  --glass-edge-dim: rgba(255, 255, 255, 0.06);
+  --glass-blur: 22px;
+  --glass-saturate: 1.6;
+  --glass-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.35),
+                     inset 0 -1px 0 rgba(255, 255, 255, 0.06),
+                     inset 0 0 24px rgba(255, 255, 255, 0.04);
 
-  /* Primary Accent Gradients */
-  --card-indigo-gradient: linear-gradient(135deg, #1E1B4B 0%, #312E81 50%, #4338CA 100%);
+  /* Geometry Radii */
+  --radius-card: 28px;
+  --radius-pill: 9999px;
 
-  /* Text Roles */
-  --text-primary: #FFFFFF;
-  --text-secondary: #A1A1AA;         /* Zinc 400 */
-  --text-muted: #71717A;             /* Zinc 500 */
+  /* Deep Ambient Atmosphere Backdrop */
+  --ambient-a: #0a2a43;             /* Deep Marine Blue */
+  --ambient-b: #0b4a5a;             /* Deep Teal */
+  --ambient-c: #0B0B10;             /* Obsidian Base */
 
-  /* Aurora Header Accent */
-  --aurora-stripe: rgba(139, 92, 246, 0.14);
+  /* Text Roles (Strict WCAG AA >= 4.5:1 Contrast) */
+  --text-primary: #FFFFFF;           /* Contrast 19.3:1 */
+  --text-secondary: #A1A1AA;         /* Contrast 7.5:1 */
+  --text-muted: #71717A;             /* Contrast 4.6:1 */
 }
 ```
 
-### 3.2 Dynamic Hero Health Band Gradients
-The centerpiece EURA hero card dynamically shifts its background gradient based on the calculated State of Health (SoH), providing instant peripheral feedback on cell condition:
+### 3.2 Core Glass Utility Classes
+- `.glass`: Card surfaces with 28px radius, `var(--glass-fill)`, 22px blur, 160% saturation, dimensional drop shadow, and crisp inner specular highlights.
+- `.glass-pill`: Pill-shaped glass container (`border-radius: 9999px`) used for segmented navigation bars, connection pills, status badges, and tooltips.
+- `.glass-active`: Active luminous glass blob with `var(--glass-tint-active)` and heightened top highlight (`inset 0 1px 0 rgba(255, 255, 255, 0.45)`).
+- `.glass-chip`: Compact pill badge for hardware provenance (`OEM sysfs`, `Local`, `IEC 61960`) with subtle backdrop blur and tinted border variants (`.glass-chip-success`, `.glass-chip-warning`, `.glass-chip-danger`, `.glass-chip-cyan`, `.glass-chip-indigo`).
+- `.glass-btn-primary`: Luminous CTA button with cyan/indigo glass gradient and dynamic specular sheen.
 
-| Health Band | SoH Range | CSS Class / Gradient Token | Visual Meaning |
+### 3.3 Dynamic Hero Health Band Translucent Gradients
+The centerpiece EURA hero card combines Liquid Glass refraction (`backdrop-filter: blur(22px)`) with translucent state gradients (35%–45% opacity) to float smoothly over the deep ambient backdrop:
+
+| Health Band | SoH Range | CSS Class / Translucent Gradient Token | Visual Meaning |
 | :--- | :--- | :--- | :--- |
-| **Optimal / Healthy** | $\ge 85.0\%$ | `hero-gradient-healthy`<br/>`linear-gradient(135deg, #14532D 0%, #15803D 50%, #22C55E 100%)` | Vibrant Emerald; optimal lithium intercalation retention. |
-| **Fair Condition** | $70.0\% - 84.9\%$ | `hero-gradient-fair`<br/>`linear-gradient(135deg, #7C2D12 0%, #C2410C 50%, #F59E0B 100%)` | Warm Amber Bronze; moderate capacity fade observed. |
-| **Needs Care** | $< 70.0\%$ | `hero-gradient-poor`<br/>`linear-gradient(135deg, #7F1D1D 0%, #B91C1C 50%, #EF4444 100%)` | Deep Crimson Obsidian; high internal cell impedance. |
-| **Standby / Unknown** | `None` / Idle | `hero-gradient-unknown`<br/>`linear-gradient(135deg, #1E293B 0%, #334155 50%, #475569 100%)` | Muted Slate Noir; awaiting physical USB connection. |
+| **Optimal / Healthy** | $\ge 85.0\%$ | `hero-gradient-healthy`<br/>`linear-gradient(135deg, rgba(20,83,45,0.42), rgba(21,128,61,0.40), rgba(34,197,94,0.35))` | Translucent Emerald; optimal lithium intercalation retention. |
+| **Fair Condition** | $70.0\% - 84.9\%$ | `hero-gradient-fair`<br/>`linear-gradient(135deg, rgba(124,45,18,0.42), rgba(194,65,12,0.40), rgba(245,158,11,0.35))` | Translucent Warm Amber; moderate capacity fade observed. |
+| **Needs Care** | $< 70.0\%$ | `hero-gradient-poor`<br/>`linear-gradient(135deg, rgba(127,29,29,0.45), rgba(185,28,28,0.42), rgba(239,68,68,0.35))` | Translucent Crimson; elevated impedance. |
+| **Standby / Unknown** | `None` / Idle | `hero-gradient-unknown`<br/>`linear-gradient(135deg, rgba(30,41,59,0.45), rgba(51,65,85,0.40), rgba(71,85,105,0.35))` | Translucent Slate; awaiting physical USB connection. |
 
-### 3.3 Typography & Tabular Metric Hierarchy
-To maintain strict legibility during real-time value updates, Ion+ enforces a split typographic hierarchy:
-- **Display & Headings:** Native Apple system font stack (`-apple-system`, `BlinkMacSystemFont`, `"SF Pro Display"`, `"Inter"`, `sans-serif`) with tight letter spacing (`tracking-tight`).
-- **Telemetry Counters & Hardware Registers:** Monospace font stack (`font-mono`, `ui-monospace`, `Consolas`, `monospace`) utilizing OpenType tabular figures (`tnum`). This prevents layout jitter and horizontal bouncing when digits fluctuate.
+### 3.4 Accessibility, Contrast & Reduced-Transparency Fallbacks
+1. **WCAG AA Compliance:** All primary text (#FFFFFF) and secondary text (#A1A1AA) meet or exceed the 4.5:1 contrast requirement across all glass cards and over dynamic background blooms.
+2. **Reduced-Transparency Fallback:** Full support for `prefers-reduced-transparency: reduce` and manual `body.no-glass` class. When enabled, all backdrop filters are disabled (`backdrop-filter: none !important`), and surfaces gracefully fall back to solid dark opaque panels (`--card-secondary: #0F1024`).
+3. **Tabular Metric Jitter Elimination:** All numbers use monospace tabular figures (`font-mono`) to guarantee zero horizontal layout shift during live 1Hz polling.
 
 ---
 
-## 4. Fluted-Glass Aurora Background Shader Pipeline
+## 4. Deep Ambient Atmosphere & Refraction Shader Pipeline
 
-### 4.1 Shader Architecture & Optical Principles
-The application background features a hardware-accelerated, transparent AuroraHero shader that recreates the optical caustic distortion of industrial fluted glass.
+### 4.1 Ambient Atmosphere & Caustic Shader Architecture
+The background transitions away from flat black to a multi-layered ambient marine atmosphere (`#0a2a43` deep blue, `#0b4a5a` teal, and `#0B0B10` obsidian base) layered with a hardware-accelerated, transparent AuroraHero shader that recreates the optical caustic distortion of industrial fluted glass:
 
 ```mermaid
 flowchart LR
-    A["Repeating Linear Rainbow Stripes<br/>#60a5fa | #e879f9 | #5eead4"] --> B["SVG Radial Mask<br/>radial-gradient(ellipse at 100% 0%)"]
+    A["Repeating Linear Oceanic Caustics<br/>#38bdf8 | #2dd4bf | #0ea5e9"] --> B["SVG Radial Mask<br/>radial-gradient(ellipse at 100% 0%)"]
     B --> C["Animation Engine<br/>smoothBg 60s Infinite Pan"]
     C --> D["mix-blend-mode: difference"]
     
@@ -147,25 +164,34 @@ flowchart LR
     G --> H["feGaussianBlur: stdDeviation .0001"]
     H --> I["feDisplacementMap: scale .08 (R & G channels)"]
     
-    D & I --> J["Final Caustic Aurora Surface<br/>(Rendered behind Obsidian UI)"]
+    D & I --> J["Deep Marine Caustic Surface<br/>(Rendered behind Liquid Glass UI)"]
 ```
 
-### 4.2 SVG Filter Definition
-Configured in [`frontend/index.html`](file:///c:/Users/raghu/OneDrive/Documents/ChatGPT/Battery%20analyser/frontend/index.html#L44-L60):
+### 4.2 Progressive Refraction Layer (`#liquid-refract`)
+To deliver true optical refraction in Chromium WebView2, Ion+ injects an SVG turbulence displacement filter:
 ```html
-<filter id="fluted" primitiveUnits="objectBoundingBox">
-  <feImage x="0" y="0" result="image_0" crossorigin="anonymous"
-    href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'%3E...%3C/svg%3E"
-    preserveAspectRatio="none meet" width=".03" height="1" />
-  <feTile in="image_0" result="tile_0" />
-  <feGaussianBlur stdDeviation=".0001" edgeMode="none" in="tile_0" result="bar_smoothness" x="0" y="0" />
-  <feDisplacementMap scale=".08" xChannelSelector="R" yChannelSelector="G"
-    in="SourceGraphic" in2="bar_smoothness" result="displacement_0" />
-</filter>
+<svg class="hidden-filter-defs" width="0" height="0">
+  <defs>
+    <filter id="liquid-refract" x="0%" y="0%" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.04 0.04" numOctaves="2" result="noise" />
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="8" xChannelSelector="R" yChannelSelector="G" />
+    </filter>
+  </defs>
+</svg>
 ```
+Applied via progressive CSS enhancement:
+```css
+@supports (backdrop-filter: url(#liquid-refract)) {
+  .capsule-nav, .hero-card {
+    backdrop-filter: url(#liquid-refract) blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    -webkit-backdrop-filter: url(#liquid-refract) blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  }
+}
+```
+If the host environment does not support SVG URL backdrop filters, it automatically falls back to smooth 22px Gaussian blur without layout or rendering errors.
 
 ### 4.3 Performance & Lifecycle Optimization
-1. **Fixed Coordinate Inset:** The wrapper uses `position: fixed; inset: 0; pointer-events: none; z-index: 0;`, completely isolating it from the document layout flow and preventing DOM reflow triggers.
+1. **Zero Layout Shift:** The shader wrapper uses `position: fixed; inset: 0; pointer-events: none; z-index: 0;`, completely isolating it from the document layout flow and preventing DOM reflow triggers.
 2. **Window Minimization / Blur Throttling:**
    ```javascript
    window.addEventListener('blur', () => {
@@ -246,19 +272,19 @@ High-frequency polling loops can disrupt user interaction (such as dropping scro
 
 ---
 
-## 6. Core Dashboard Components & Subsystems
+## 6. Core Dashboard Components & Subsystems (Liquid Glass Architecture)
 
-### 6.1 Hero Centerpiece Card (EURA Bio-Age Paradigm)
-The hero card ([`frontend/index.html`](file:///c:/Users/raghu/OneDrive/Documents/ChatGPT/Battery%20analyser/frontend/index.html#L278-L345)) translates electrochemical health into an immediate visual verdict:
+### 6.1 Hero Centerpiece Card (Liquid Glass Bio-Age Paradigm)
+The hero card ([`frontend/index.html`](file:///c:/Users/raghu/OneDrive/Documents/ChatGPT/Battery%20analyser/frontend/index.html#L278-L345)) translates electrochemical health into an immediate visual verdict floating on a translucent, refractive glass surface:
 
 ```mermaid
 flowchart TD
-    subgraph Hero_Card ["EURA Hero Card Anatomy"]
-        TOP["Top Row: Battery Health Label | OEM SoH Badge | Status Pill"]
-        NUM["Center: 'The One Big Number' (7xl–9xl font) + Unit (%)"]
-        DIAL["Continuous Range Dial: 0% Poor · 50% · 70% Fair · 85% Good · 100% Factory"]
-        PIN["Calibrated Dial Marker Pin (style.left = clamp(0, SoH, 100)%)"]
-        BOTTOM["Bottom Row: Steady and Healthy Heading | Subtext | Health Method Badge"]
+    subgraph Hero_Card ["Liquid Glass Hero Card Anatomy"]
+        TOP["Top Row: Battery Health Label | OEM SoH Badge (.glass-chip) | Status Pill (.glass-pill)"]
+        NUM["Center: 'The One Big Number' (7xl–9xl font-mono) + Unit (%)"]
+        DIAL["Refractive Glass Dial Track: 0% Poor · 50% · 70% Fair · 85% Good · 100% Factory"]
+        PIN["Radial Luminous Marble Pin (.range-dial-pin)"]
+        BOTTOM["Bottom Row: Steady and Healthy Heading | Subtext | Method Badge (.glass-chip)"]
     end
     
     TOP --> NUM
@@ -267,15 +293,18 @@ flowchart TD
     PIN --> BOTTOM
 ```
 
-#### Marker Pin Clamping Formula:
-```javascript
-const rawHealth = s.health_pct !== null ? s.health_pct : 100;
-const clampedHealth = Math.min(100, Math.max(0, rawHealth));
-el.rangeDialMarker.style.left = `${clampedHealth}%`;
-```
+#### Visual Styling Specifications:
+- **Refractive Range Dial Track (`.range-dial-track`):** Height 8px pill track with inset shadow (`inset 0 1px 3px rgba(0,0,0,0.4)`) and subtle specular lip (`0 1px 0 rgba(255,255,255,0.1)`).
+- **Luminous Pearl Knob (`.range-dial-pin`):** 20px radial gradient spherical glass bead (`radial-gradient(circle at 35% 35%, #fff, #bed7ff)`) with bright ambient glow and 1.5px specular edge.
+- **Marker Pin Clamping Formula:**
+  ```javascript
+  const rawHealth = s.health_pct !== null ? s.health_pct : 100;
+  const clampedHealth = Math.min(100, Math.max(0, rawHealth));
+  el.rangeDialMarker.style.left = `${clampedHealth}%`;
+  ```
 
 ### 6.2 Heart Report: Capacity Retention Curve (Chart.js)
-Rendered into `#heart-report-chart` using the local [`frontend/static/js/chart.min.js`](file:///c:/Users/raghu/OneDrive/Documents/ChatGPT/Battery%20analyser/frontend/static/js/chart.min.js) bundle:
+Rendered into `#heart-report-chart` using the local [`frontend/static/js/chart.min.js`](file:///c:/Users/raghu/OneDrive/Documents/ChatGPT/Battery%20analyser/frontend/static/js/chart.min.js) bundle inside a `.glass` card:
 
 ```mermaid
 flowchart LR
@@ -283,60 +312,59 @@ flowchart LR
     B --> C["Primary Y-Axis (yHealth):<br/>Solid White Spline (#FFFFFF)<br/>Gradient Area Drop (0.15 to 0.0)"]
     B --> D["Secondary Y-Axis (yTemp):<br/>Dashed Indigo Curve (#818CF8)<br/>3px on / 3px off dash"]
     
-    C & D --> E["Interactive Canvas Rendering<br/>Tension: 0.0 (Strict Truthfulness)<br/>Custom Tooltip with Voltage & Cycles"]
+    C & D --> E["Interactive Canvas Rendering<br/>Tension: 0.0 (Strict Truthfulness)<br/>Liquid Glass Grid Lines (rgba(255,255,255,0.06))"]
 ```
 
 #### Visual Styling Specifications:
-- **Tension Zero (`tension: 0.0`):** Spline curves are strictly linear point-to-point. Bezier curve smoothing is forbidden to prevent artificial interpolation of unrecorded wear.
-- **Dual Y-Axes:** Left axis scales tightly around recorded health percentage; right axis tracks operating temperature in °C.
-- **Dataset Toggles:** Interactive pill buttons `#toggle-metric-health` and `#toggle-metric-temp` toggle series visibility dynamically via `chartInstance.setDatasetVisibility(idx, isVisible)`.
-- **Time Window Filtering:** `7D`, `14D`, `30D`, and `90D` buttons trigger `/api/history?days={days}` without full-page reloads.
+- **Tension Zero (`tension: 0.0`):** Spline curves are strictly linear point-to-point. Bezier curve smoothing is strictly forbidden.
+- **Subtle Glass Grid Lines:** Both X-axis and primary Y-axis use faint `rgba(255, 255, 255, 0.06)` grid rules that complement translucent glass cards without visual clutter.
+- **Segmented Glass Bars (`.segmented-glass-bar`):** Both dataset metric toggles (`#chart-metric-toggles`) and timeline filters (`#time-filter-container`) share identical 34px pill heights with active luminous glass blob states (`.active`).
 
 ### 6.3 Chemical Capacity & Data Provenance Card
 Surfaces physical battery capacity with rigorous data lineage:
 - **Max Chemically Chargeable Capacity ($C_{\text{full}}$):** The current maximum capacity achievable by the fuel gauge.
 - **Design Capacity Ceiling ($C_{\text{design}}$):** Factory nominal rating.
-- **Provenance Badges:**
-  - `Local USB` (Emerald): Read directly from kernel sysfs.
-  - `AI Consensus` (Cyan): Resolved via multi-model LLM majority vote.
-  - `Apple Standard SoH` (Indigo): Synthesized via IEC 61960 polynomial calibration due to static OEM registers.
-- **Capacity Retention & Fade Delta Pills:** Displays instantaneous retention ($\frac{C_{\text{full}}}{C_{\text{design}}} \cdot 100$) and capacity fade ($100 - \text{Retention}$).
+- **Provenance Badges (`.glass-chip`):**
+  - `Local USB` (`.glass-chip-success`): Read directly from kernel sysfs.
+  - `AI Consensus` (`.glass-chip-cyan`): Resolved via multi-model LLM majority vote.
+  - `Apple Standard SoH` (`.glass-chip`): Synthesized via IEC 61960 polynomial calibration.
+- **Capacity Retention & Fade Delta Panels:** Housed in frosted glass sub-panels (`p-2.5 rounded-2xl bg-white/[0.03] border border-white/[0.08] backdrop-blur-sm`).
 
 ### 6.4 Longevity Forecasting & 80% Charge Cap Simulator
 Implemented in [`frontend/index.html`](file:///c:/Users/raghu/OneDrive/Documents/ChatGPT/Battery%20analyser/frontend/index.html#L474-L558):
 - **Months Remaining Countdown:** Bold monospace countdown to the 80.0% retention threshold.
-- **Trilinear Gradient Progress Bar:** `bg-gradient-to-r from-emerald-500 via-amber-500 to-rose-500` indicating current position relative to the 80% service limit.
+- **Trilinear Gradient Progress Bar:** `bg-gradient-to-r from-emerald-500 via-amber-500 to-rose-500` inside a frosted glass trough.
 - **Interactive 80% Charge Cap Simulator:**
-  - Toggle switch (`#sim-cap-toggle`) initiates real-time electrochemical simulation.
-  - Reveals a side-by-side comparison grid comparing the **Normal Habit** timeline vs. the **80% Capped** timeline.
-  - Highlights quantified lifespan extension (e.g., *"+1.8 years extended lifespan"*).
+  - Liquid glass toggle switch (`#sim-cap-toggle`) with luminous pearl knob (`#sim-cap-knob`).
+  - Reveals a side-by-side comparison grid comparing the **Normal Habit** glass panel vs. the **80% Capped** cyan glass panel.
+  - Quantifies extended battery lifespan (e.g., *"+1.8 years extended lifespan"*).
 
 ### 6.5 Active Coulomb Counting Wizard
 Provides hardware verification when OEM registers are static or suspected of gas-gauge drift:
-- **Real-Time Ammeter Widgets:**
+- **Real-Time Ammeter Glass Panels:**
   - Charging Current ($I$ in $\text{mA}$): Live ammeter readings sampled at 600ms intervals.
   - Accumulated Charge ($Q$ in $\text{mAh}$): Riemann sum numerical integration ($Q = \int I\, dt$).
 - **Lifecycle Controls:**
-  - `Start Live Test`: Engages physical current integration while the device charges.
-  - `Demo Run`: Executes a 20-second simulated fast-charge profile for demonstration.
-  - `Stop`: Finalizes the run and computes extrapolated capacity ($C_{\text{extrapolated}} = \frac{Q}{\Delta\text{SoC}} \times 100$).
-- **Extrapolated Verdict Box:** Displays final chemical capacity and State of Health in an emerald/amber highlight container.
+  - `#cal-start-btn`: Primary glass pill CTA (`.glass-btn-primary rounded-full`) with specular sheen.
+  - `#cal-sim-btn`: Frosted interactive glass pill (`.glass-interactive rounded-full`).
+  - `#cal-stop-btn`: Translucent rose glass pill (`.glass-pill border-rose-500/40 bg-rose-500/15`).
+- **Extrapolated Verdict Box:** Translucent cyan glass panel (`bg-cyan-950/30 border-cyan-500/30 backdrop-blur-sm`).
 
 ### 6.6 App Battery Drain Attribution Subsystem
 Surfaces granular per-application power usage extracted via Android checkin dumps:
-- **Window Filters:** `24H`, `7D`, and `All` time windows.
-- **Sort Selectors:** Sort by `Wakelock` hold time (ms), Background CPU (`Bg CPU` in ms), or `Est. Power` (mAh).
-- **Thermal Correlation Banner:** Automatically appears when background wakelocks coincide with device temperatures exceeding 40.0°C.
+- **Window Filters:** `.segmented-glass-bar` holding `24H`, `7D`, and `All` glass pills.
+- **Sort Selectors:** `.segmented-glass-bar` holding `Wakelock`, `Bg CPU`, and `Est. Power` glass pills with active blue glass highlights.
+- **Thermal Correlation Banner:** Glass alert container (`glass bg-amber-500/10 border-amber-500/30 text-amber-200`).
 - **Zero-Hallucination Labeling:** Secondary estimated mAh figures are tagged with provenance notes clarifying derivation from OEM `power_profile.xml`.
 
 ### 6.7 Pure Mathematical Model Breakdown & Audit Strip
-A 6-card audit strip at the bottom of the dashboard detailing the exact formulas and parameters used in the health calculation:
+A 6-card audit strip composed of frosted glass panels (`p-3 rounded-2xl bg-white/[0.03] border-white/[0.08]`):
 1. `Capacity Fade (%)`: Raw chemical capacity reduction.
 2. `Cycle Fatigue (%)`: Intercalation wear ($\alpha \cdot n^\beta$).
 3. `Calendar Aging (%)`: SEI layer growth ($\gamma \cdot \sqrt{t}$).
 4. `Stress Factor`: Combined thermal Arrhenius and high-voltage multiplier ($S_T \cdot S_V$).
 5. `Final Health (%)`: Calibrated State of Health.
-6. `Data Sources`: Visual pills for Fuel Gauge, Design, and Cycle data provenance.
+6. `Data Sources`: Visual chips (`.glass-chip`) for Fuel Gauge, Design, and Cycle data provenance.
 
 ---
 

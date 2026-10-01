@@ -114,20 +114,37 @@
     --glass-fill: #0F1024;
     --glass-fill-strong: #161836;
     --glass-blur: 0px;
+    --glass-edge: rgba(255, 255, 255, 0.15);
+    --glass-edge-dim: rgba(255, 255, 255, 0.08);
   }
-  .glass, .glass-pill, .glass-active {
+  .glass, .glass-pill, .glass-active, .hero-card, .eura-dark-card, .eura-indigo-card, .capsule-nav, .segmented-glass-bar, .glass-inset, .toast-glassmorphic, #app-tooltip {
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
-    background: var(--card-secondary) !important;
+  }
+  .hero-card, .eura-dark-card, .eura-indigo-card {
+    background-color: var(--card-secondary) !important;
   }
 }
 
 body.no-glass .glass,
 body.no-glass .glass-pill,
-body.no-glass .glass-active {
+body.no-glass .glass-active,
+body.no-glass .hero-card,
+body.no-glass .eura-dark-card,
+body.no-glass .eura-indigo-card,
+body.no-glass .capsule-nav,
+body.no-glass .segmented-glass-bar,
+body.no-glass .glass-inset,
+body.no-glass .toast-glassmorphic,
+body.no-glass #app-tooltip {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
-  background: var(--card-secondary) !important;
+}
+
+body.no-glass .hero-card,
+body.no-glass .eura-dark-card,
+body.no-glass .eura-indigo-card {
+  background-color: var(--card-secondary) !important;
 }
 
 /* ==========================================================================
