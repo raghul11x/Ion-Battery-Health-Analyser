@@ -189,7 +189,7 @@ def main():
             width=1220,
             height=820,
             min_size=(980, 660),
-            background_color="#030a1c",
+            background_color="#020710",
             text_select=False,
             maximized=True,
             focus=True,
@@ -197,13 +197,13 @@ def main():
 
         def on_window_minimized():
             try:
-                window.evaluate_js("document.querySelector('.ion-aurora-wrap')?.classList.add('ion-aurora-paused')")
+                window.evaluate_js("document.querySelector('.aurora-bg')?.classList.add('is-paused')")
             except Exception:
                 pass
 
         def on_window_restored():
             try:
-                window.evaluate_js("document.querySelector('.ion-aurora-wrap')?.classList.remove('ion-aurora-paused')")
+                window.evaluate_js("document.querySelector('.aurora-bg')?.classList.remove('is-paused')")
             except Exception:
                 pass
 

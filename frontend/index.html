@@ -28,51 +28,32 @@
       }
     }
   </script>
-  <!-- Critical First-Paint Background (Prevents cold-start/pre-CSS flash) -->
+  <!-- Transparent viewport base allowing z-index -1 aurora-bg to shine through -->
   <style>
     html, body {
-      background-color: #030a1c !important;
-      background: #030a1c !important;
+      background: transparent !important;
+      background-color: transparent !important;
     }
   </style>
 </head>
-<body class="bg-[#030a1c] text-white flex flex-col min-h-screen relative">
+<body class="text-white flex flex-col min-h-screen relative">
 
-  <!-- Permanent Single Source of Truth Static Blue Liquid-Glass Backdrop -->
-  <div id="app-backdrop" class="app-backdrop" aria-hidden="true"></div>
-
-  <!-- Aurora / AnimatedRays Application Background (Disabled in Pass 1 for stability; reserved for Pass 2) -->
-  <div class="aurora-hero-wrapper ion-aurora-wrap" aria-hidden="true">
-    <div class="aurora-hero-bg ion-aurora-base">
-      <div class="ion-aurora-overlay"></div>
-    </div>
-    <div class="aurora-fade"></div>
-    <div class="aurora-scrim"></div>
+  <!-- Approved Aurora Background (Reference Implementation) -->
+  <div class="aurora-bg" aria-hidden="true">
+    <div class="aurora-bg__lights"></div>
+    <div class="aurora-bg__glass"></div>
+    <div class="aurora-bg__sky"></div>
+    <svg xmlns="http://www.w3.org/2000/svg" color-interpolation-filters="sRGB"
+         style="position:absolute;opacity:0;width:0;height:0;pointer-events:none" focusable="false">
+      <filter id="aurora-fluted" primitiveUnits="objectBoundingBox">
+        <feImage id="aurora-flute-img" x="0" y="0" result="image_0" crossorigin="anonymous"
+                 preserveAspectRatio="none meet" width=".03" height="1"/>
+        <feTile in="image_0" result="tile_0"/>
+        <feGaussianBlur stdDeviation=".0001" edgeMode="none" in="tile_0" result="bar_smoothness" x="0" y="0"/>
+        <feDisplacementMap scale=".08" xChannelSelector="R" yChannelSelector="G" in="SourceGraphic" in2="bar_smoothness" result="displacement_0"/>
+      </filter>
+    </svg>
   </div>
-
-  <!-- Fluted-glass SVG displacement filter (AuroraHero port) -->
-  <svg version="1.1" xmlns="http://www.w3.org/2000/svg"
-       xmlns:xlink="http://www.w3.org/1999/xlink"
-       color-interpolation-filters="sRGB"
-       style="position:absolute;opacity:0;height:0;width:0;pointer-events:none"
-       aria-hidden="true" focusable="false">
-    <defs>
-      <filter id="fluted" primitiveUnits="objectBoundingBox">
-        <feImage x="0" y="0" result="image_0" crossorigin="anonymous"
-          href="data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%201%201'%20color-interpolation-filters%3D'sRGB'%3E%3Cdefs%3E%3ClinearGradient%20id%3D'rib'%20x1%3D'0'%20y1%3D'0'%20x2%3D'1'%20y2%3D'0'%3E%3Cstop%20offset%3D'0%25'%20stop-color%3D'%23000000'%2F%3E%3Cstop%20offset%3D'50%25'%20stop-color%3D'%23ffffff'%2F%3E%3Cstop%20offset%3D'100%25'%20stop-color%3D'%23000000'%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D'1'%20height%3D'1'%20fill%3D'url(%23rib)'%2F%3E%3C%2Fsvg%3E"
-          preserveAspectRatio="none meet" width=".03" height="1" />
-        <feTile in="image_0" result="tile_0" />
-        <feGaussianBlur stdDeviation=".0001" edgeMode="none" in="tile_0" result="bar_smoothness" x="0" y="0" />
-        <feDisplacementMap scale=".08" xChannelSelector="R" yChannelSelector="G"
-          in="SourceGraphic" in2="bar_smoothness" result="displacement_0" />
-      </filter>
-      <!-- Optional Liquid Refraction Filter -->
-      <filter id="liquid-refract">
-        <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="2" result="noise" />
-        <feDisplacementMap in="SourceGraphic" in2="noise" scale="8" xChannelSelector="R" yChannelSelector="G" />
-      </filter>
-    </defs>
-  </svg>
 
   <!-- TOP BAR & CAPSULE NAVIGATION (Liquid Glass Restyle) -->
   <header class="sticky top-0 z-40 w-full px-6 py-4 flex items-center justify-between">
@@ -211,8 +192,6 @@
 
       <!-- CINEMATIC HERO ZONE (Design Doc v2 §2 & §5.1) -->
       <div class="cinematic-backdrop rounded-[32px] p-6 md:p-8 relative border border-white/[0.08] shadow-2xl">
-        <!-- Ambient Glow Backdrop Orb & Abstract Logo Watermark -->
-        <div class="ambient-glow-orb top-[-100px] left-[-50px]"></div>
         <img src="/static/assets/logo-mark.svg" alt="" class="backdrop-logo-watermark" aria-hidden="true">
 
         <!-- OEM SoH Divergence Alert Banner -->

@@ -2707,48 +2707,44 @@ function subscribeTopBatteryDrainers({ connected, mode, device }) {
 }
 
 /**
- * Aurora / AnimatedRays Lifecycle Management
- * Pauses continuous GPU background-position animation when the window loses focus
- * or is minimized/hidden, preventing idle battery drain.
+ * Approved Aurora Background Initialization (Reference Implementation)
+ * Sets displacement map tile for fluted glass and manages drift pause/resume.
  */
-function initAuroraAnimationLifecycle() {
-  const auroraWrap = document.querySelector('.ion-aurora-wrap');
-  if (!auroraWrap) return;
+function initAuroraBg() {
+  const root = document.querySelector('.aurora-bg');
+  if (!root) return;
 
-  function setAuroraPaused(paused) {
-    if (paused) {
-      auroraWrap.classList.add('ion-aurora-paused');
-    } else {
-      auroraWrap.classList.remove('ion-aurora-paused');
-    }
+  // Fluted-glass tile used as the displacement map
+  const TILE = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1' color-interpolation-filters='sRGB'>" +
+    "<g><rect width='1' height='1' fill='black'/>" +
+    "<rect width='1' height='1' fill='url(#red)' style='mix-blend-mode:screen'/>" +
+    "<rect width='1' height='1' fill='url(#green)' style='mix-blend-mode:screen'/>" +
+    "<rect width='1' height='1' fill='url(#yellow)' style='mix-blend-mode:screen'/></g>" +
+    "<defs>" +
+    "<radialGradient id='yellow' cx='0' cy='0' r='1'><stop stop-color='yellow'/><stop stop-color='yellow' offset='1' stop-opacity='0'/></radialGradient>" +
+    "<radialGradient id='green' cx='1' cy='0' r='1'><stop stop-color='green'/><stop stop-color='green' offset='1' stop-opacity='0'/></radialGradient>" +
+    "<radialGradient id='red' cx='0' cy='1' r='1'><stop stop-color='red'/><stop stop-color='red' offset='1' stop-opacity='0'/></radialGradient>" +
+    "</defs></svg>";
+  const fluteImg = document.getElementById('aurora-flute-img');
+  if (fluteImg) {
+    fluteImg.setAttribute('href', 'data:image/svg+xml,' + encodeURIComponent(TILE));
   }
 
-  // 1. Pause on window blur (window loses focus or user switches tasks)
-  window.addEventListener('blur', () => {
-    setAuroraPaused(true);
-  });
-
-  // 2. Resume on window focus (only if document is visible)
-  window.addEventListener('focus', () => {
-    if (!document.hidden) {
-      setAuroraPaused(false);
-    }
-  });
-
-  // 3. Pause when window is minimized or document is hidden
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-      setAuroraPaused(true);
-    } else if (document.hasFocus()) {
-      setAuroraPaused(false);
-    }
-  });
+  // Pause the slow drift when hidden and while scrolling, to keep scrolling smooth
+  let t;
+  const pause = () => root.classList.add('is-paused');
+  const resume = () => { if (!document.hidden) root.classList.remove('is-paused'); };
+  document.addEventListener('visibilitychange', () => (document.hidden ? pause() : resume()));
+  window.addEventListener('blur', () => pause());
+  window.addEventListener('focus', () => { if (!document.hidden) resume(); });
+  window.addEventListener('scroll', () => { pause(); clearTimeout(t); t = setTimeout(resume, 150); },
+    { capture: true, passive: true });
 }
 
 // Boot
 function init() {
-  // Initialize Aurora animation lifecycle (pause on blur / minimize, resume on focus)
-  initAuroraAnimationLifecycle();
+  // Initialize approved Aurora background
+  initAuroraBg();
 
   // Capsule Nav clicks & sliding blob
   el.capsuleSegments.forEach(seg => {

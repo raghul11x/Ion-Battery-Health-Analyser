@@ -2,25 +2,21 @@
 
 :root {
   /* ==========================================================================
-     Single Source of Truth: Permanent Blue Liquid-Glass Backdrop (Pass 1)
+     Approved Aurora Background Design Tokens
+     Target colors: blue #2b6fe6, cyan #22d3ee, teal #3de0b8.
+     The layer stack inverts the gradient, so these are PRE-INVERTED:
+     src = 255 - (target - 12.75) / 0.9 per channel. Recompute if a target changes.
      ========================================================================== */
-  --backdrop-base:    #030a1c;                  /* solid night-sky navy base */
-  --backdrop-stop-1:  #0b4a5a;                  /* teal ambient (var(--ambient-b)) */
-  --backdrop-stop-2:  #0a2a43;                  /* deep blue (var(--ambient-a)) */
-  --backdrop-stop-3:  #071524;                  /* midnight ocean transition */
-  --backdrop-stop-4:  var(--backdrop-base);     /* seamless base color blend */
+  --aurora-c-blue: #dd920e;
+  --aurora-c-cyan: #e72305;
+  --aurora-c-teal: #c91441;
 
-  --backdrop-gradient: radial-gradient(
-    ellipse 90% 70% at 50% -15%,
-    var(--backdrop-stop-1) 0%,
-    var(--backdrop-stop-2) 40%,
-    var(--backdrop-stop-3) 70%,
-    var(--backdrop-stop-4) 100%
-  );
+  /* Sky Gradient Stops (night sky background) */
+  --aurora-sky-top: #092a60;
+  --aurora-sky-mid: #061b40;
+  --aurora-sky-deep: #040f26;
+  --aurora-sky-edge: #020710;
 
-  /* Aurora Layer Switch (Pass 1: disabled for rock-solid stability; Pass 2 refines)
-     Toggle: add class .enable-aurora or attribute data-aurora="1" to :root */
-  --enable-aurora: 0;
 
   /* EURA Dynamic Hero Card Gradients by Health Band */
   --hero-gradient-healthy: linear-gradient(135deg, #14532D 0%, #15803D 50%, #22C55E 100%);
@@ -60,16 +56,7 @@
   --radius-pill: 999px;
   --ambient-a: #0a2a43;   /* deep blue */
   --ambient-b: #0b4a5a;   /* teal */
-  --ambient-c: #030a1c;   /* night-sky navy base */
-
-  /* Aurora tokens (preserved for Pass 2 refinement) */
-  --aurora-bg:        var(--backdrop-base);
-  --aurora-stripe-1:  #1d4ed8;
-  --aurora-stripe-2:  #22d3ee;
-  --aurora-stripe-3:  #2dd4bf;
-  --aurora-stripe-4:  #6ee7b7;
-  --aurora-stripe-5:  transparent;
-  --aurora-stripe-6:  #38bdf8;
+  --ambient-c: #020710;   /* night-sky base */
 }
 
 /* ==========================================================================
@@ -178,10 +165,6 @@ body.no-glass .eura-indigo-card {
 body.tier-medium, :root.tier-medium {
   --glass-blur: 8px;
 }
-body.tier-medium .ion-aurora-overlay {
-  animation: none !important;
-  opacity: 0.35 !important; /* reduce visual cost in medium tier */
-}
 
 body.tier-low, :root.tier-low {
   --glass-blur: 0px;
@@ -205,205 +188,73 @@ body.tier-low .eura-dark-card,
 body.tier-low .eura-indigo-card {
   background-color: var(--card-secondary) !important;
 }
-body.tier-low .ion-aurora-wrap,
-body.no-glass .ion-aurora-wrap {
-  display: none !important;
-}
 
 /* ==========================================================================
-   Application Aurora Background (Bug 3 — Clean Fluted-Rib Texture)
+   Approved Aurora Background (Reference Implementation)
    ========================================================================== */
 
-/*
- * Architecture (3 CSS layers, all position:absolute inside the fixed wrapper):
- *
- *  1. .ion-aurora-wrap     — position:fixed wrapper; solid --aurora-bg base
- *  2. .ion-aurora-base     — holds the rib overlay
- *     └ .ion-aurora-overlay — rib gradient mask composited over colour sweep;
- *                             background-position animated for slow horizontal drift
- *  3. .aurora-fade         — vertical bottom falloff (no repaint on scroll)
- *  4. .aurora-scrim        — subtle overall dark scrim for card contrast
- *
- * Rib design:
- *   Repeating vertical slats (~28px), each: bright leading edge → body → soft
- *   shadow trailing edge. The rib mask (multiply over a wide colour sweep)
- *   produces smooth hue variation left→right with no hard colour bands.
- *   Motion: the colour sweep layer shifts slowly (45s); ribs are static —
- *   gives the illusion that light is flowing across the glass slats.
- */
-
-/* ==========================================================================
-   Permanent Static Blue Liquid-Glass Backdrop (Single Source of Truth)
-   ========================================================================== */
-
-.app-backdrop {
+.aurora-bg {
+  --stripe-color: #fff;
+  --bg-filter: blur(10px) invert(100%);
+  /* Target colors: blue #2b6fe6, cyan #22d3ee, teal #3de0b8.
+     The layer stack inverts the gradient, so these are PRE-INVERTED:
+     src = 255 - (target - 12.75) / 0.9 per channel. Recompute if a target changes. */
+  --c-blue: var(--aurora-c-blue, #dd920e);
+  --c-cyan: var(--aurora-c-cyan, #e72305);
+  --c-teal: var(--aurora-c-teal, #c91441);
   position: fixed;
   inset: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 0;
-  pointer-events: none;
-  background-color: var(--backdrop-base);
-  background-image: var(--backdrop-gradient);
-  background-repeat: no-repeat;
-  background-size: cover;
-  background-position: center top;
-}
-
-/* Aurora Layer Switch (Pass 1: disabled behind switch for rock-solid stability; Pass 2 refines)
-   Preserved completely in CSS and DOM. Toggle by adding class 'enable-aurora' or
-   attribute data-aurora="1" to :root or documentElement. */
-.ion-aurora-wrap {
-  display: none !important;
-}
-:root.enable-aurora .ion-aurora-wrap,
-:root[data-aurora="1"] .ion-aurora-wrap {
-  display: block !important;
-}
-
-.aurora-hero-wrapper.ion-aurora-wrap,
-.ion-aurora-wrap {
-  position: fixed;
-  inset: 0;
+  z-index: -1;
   overflow: hidden;
   pointer-events: none;
-  z-index: 0;
-  background: var(--aurora-bg);
+  background: var(--stripe-color);
 }
-
-/* ---- Rib colour tokens (derived from existing blue glass tokens) ---- */
-:root {
-  /* Rib bright-edge highlight — same hue as glass-tint-active */
-  --rib-bright: rgba(120, 190, 255, 0.52);
-  /* Rib body fill — deep blue ambient */
-  --rib-body:   rgba(29, 78, 216, 0.28);
-  /* Rib shadow edge — teal ambient */
-  --rib-shadow: rgba(11, 74, 90, 0.12);
-  /* Colour sweep stops — reuse existing aurora-stripe tokens */
-  --sweep-a: var(--aurora-stripe-1);   /* #1d4ed8 deep blue   */
-  --sweep-b: var(--aurora-stripe-2);   /* #22d3ee cyan        */
-  --sweep-c: var(--aurora-stripe-3);   /* #2dd4bf teal        */
-  --sweep-d: var(--aurora-stripe-4);   /* #6ee7b7 mint        */
-  --sweep-e: var(--aurora-stripe-6);   /* #38bdf8 sky blue    */
-}
-
-@keyframes auroraShift {
-  from { background-position: 0% 0%, 0% 0%; }
-  to   { background-position: 200% 0%, 200% 0%; }
-}
-
-.aurora-hero-bg,
-.ion-aurora-base {
-  width: 100%;
-  height: 100%;
+.aurora-bg__lights {
   position: absolute;
   inset: 0;
+  --stripes: repeating-linear-gradient(100deg, var(--stripe-color) 0%, var(--stripe-color) 7%, transparent 10%, transparent 12%, var(--stripe-color) 16%);
+  --rainbow: repeating-linear-gradient(100deg, var(--c-blue) 10%, var(--c-cyan) 15%, var(--c-blue) 20%, var(--c-teal) 25%, var(--c-blue) 30%);
+  background-image: var(--stripes), var(--rainbow);
+  background-size: 300%, 200%;
+  background-position: 50% 50%, 50% 50%;
+  filter: var(--bg-filter);
+  mask-image: radial-gradient(ellipse at 100% 0%, black 40%, transparent 70%);
+  -webkit-mask-image: radial-gradient(ellipse at 100% 0%, black 40%, transparent 70%);
 }
-
-/* Rib overlay: two background layers composited together.
-   Layer 1 (top):    RIB MASK — repeating 28px slats; transparent gaps let
-                     the colour sweep show through. Each rib has a crisp
-                     bright leading edge, a body, and a soft trailing shadow.
-   Layer 2 (bottom): COLOUR SWEEP — a wide linear gradient that spans 200%
-                     of the element width, animated left→right.
-   The rib background-size is 28px wide so ribs tile at a fixed pixel pitch.
-   The sweep background-size is 200% so the animation gives a full-width pass. */
-.aurora-hero-bg .ion-aurora-overlay,
-.ion-aurora-base .ion-aurora-overlay {
+.aurora-bg__lights::after {
+  content: "";
   position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
-
-  /* RIB MASK: 28px period. Anatomy of each rib (left→right within 28px):
-       0–1px    bright highlight edge (crisp catch-light)
-       1–4px    highlight fade to body
-       4–18px   rib body (translucent body fill)
-       18–24px  body fade to shadow
-       24–28px  shadow / gap (transparent — aurora-bg shows through) */
-  --ribs: repeating-linear-gradient(
-    90deg,
-    var(--rib-bright)                0px,
-    var(--rib-body)                  4px,
-    var(--rib-body)                  18px,
-    var(--rib-shadow)                24px,
-    rgba(0, 0, 0, 0)                 28px
-  );
-
-  /* COLOUR SWEEP: wide non-repeating gradient; animated background-position
-     provides a slow left-to-right hue shift without per-frame JS.
-     opacity 0.65 keeps peak brightness ≤ 35–38% luminance so glass cards
-     remain the brightest UI elements. */
-  --sweep: linear-gradient(
-    90deg,
-    var(--sweep-a) 0%,
-    var(--sweep-b) 22%,
-    var(--sweep-c) 40%,
-    var(--sweep-d) 58%,
-    var(--sweep-e) 74%,
-    var(--sweep-b) 88%,
-    var(--sweep-a) 100%
-  );
-
-  background-image: var(--ribs), var(--sweep);
-  background-size: 28px 100%, 200% 100%;
-  background-position: 0% 0%, 0% 0%;
-  background-repeat: repeat-x, no-repeat;
-
-  opacity: 0.65;
-  /* Animate only background-position — no filter, no transform.
-     Compositor thread handles background-position without triggering layout. */
-  animation: auroraShift 45s linear infinite;
-  will-change: background-position;
+  background-image: var(--stripes), var(--rainbow);
+  background-size: 200%, 100%;
+  animation: aurora-drift 60s linear infinite;
+  /* was "fixed" in the hero demo; "scroll" looks identical here because the layer is
+     already viewport-sized and fixed, and it avoids fixed-attachment scroll bugs */
+  background-attachment: scroll;
+  mix-blend-mode: difference;
 }
-
-/* Vertical bottom falloff: smooth eased fade from the rib layer to the base
-   colour. Covers the bottom 55% of the viewport. No blur, no repaint. */
-.aurora-fade {
+.aurora-bg__glass {
   position: absolute;
   inset: 0;
-  background: linear-gradient(
-    to bottom,
-    transparent 35%,
-    rgba(3, 10, 28, 0.55) 70%,
-    var(--aurora-bg) 100%
-  );
-  pointer-events: none;
-  z-index: 1;
+  backdrop-filter: contrast(0.9) blur(7px) url(#aurora-fluted);
+  -webkit-backdrop-filter: contrast(0.9) blur(7px) url(#aurora-fluted);
+  mix-blend-mode: difference;
+  filter: invert(1);
 }
-
-/* aurora-content: keep the element but remove the expensive url(#fluted)
-   SVG displacement filter from the background layer. The fluted SVG filter
-   is retained in the DOM for potential use on text/card elements, but must
-   NOT be applied to the full-viewport fixed layer (causes compositor skip). */
-.aurora-content {
-  display: none; /* background-layer fluted filter removed — no longer needed */
-}
-
-.aurora-scrim {
+.aurora-bg__sky {
   position: absolute;
   inset: 0;
-  /* Subtle overall scrim to ensure enough contrast for glass cards */
-  background: rgba(3, 10, 28, 0.28);
-  pointer-events: none;
-  z-index: 2;
+  mix-blend-mode: lighten;
+  background: radial-gradient(ellipse at 85% 0%, var(--aurora-sky-top, #092a60) 0%, var(--aurora-sky-mid, #061b40) 40%, var(--aurora-sky-deep, #040f26) 75%, var(--aurora-sky-edge, #020710) 100%);
 }
-
-/* Pause animation when scrolling, window loses focus, or minimised */
-.ion-aurora-scrolling .ion-aurora-overlay,
-body.is-scrolling .ion-aurora-overlay,
-.ion-aurora-paused .ion-aurora-overlay,
-.ion-aurora-wrap.ion-aurora-paused .ion-aurora-overlay {
-  animation-play-state: paused !important;
+@keyframes aurora-drift {
+  from { background-position: 50% 50%, 50% 50%; }
+  to   { background-position: 350% 50%, 350% 50%; }
 }
-
+.aurora-bg.is-paused .aurora-bg__lights::after { animation-play-state: paused; }
 @media (prefers-reduced-motion: reduce) {
-  .ion-aurora-overlay {
-    animation: none !important;
-  }
+  .aurora-bg__lights::after { animation: none; }
 }
-
-
 
 html,
 body {
@@ -411,9 +262,8 @@ body {
   padding: 0;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Inter", sans-serif;
   font-variant-numeric: tabular-nums lining-nums;
-  /* Solid base matching the permanent blue liquid-glass backdrop */
-  background-color: var(--backdrop-base) !important;
-  background: var(--backdrop-base) !important;
+  background: transparent !important;
+  background-color: transparent !important;
   color: var(--text-primary);
   min-height: 100vh;
   overflow-x: hidden;
@@ -427,7 +277,9 @@ section,
 #view-dashboard,
 #view-trends,
 #view-habits,
-#view-diagnostics {
+#view-diagnostics,
+#history-scroll-container,
+#device-status-feed {
   background: transparent !important;
   background-color: transparent !important;
 }
@@ -461,17 +313,6 @@ section,
   z-index: 1;
 }
 
-/* Ambient Blurred Glow Orb in Backdrop */
-.ambient-glow-orb {
-  position: absolute;
-  width: 500px;
-  height: 500px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(14, 165, 233, 0.14) 0%, rgba(45, 212, 191, 0.08) 45%, rgba(0, 0, 0, 0) 70%);
-  filter: blur(80px);
-  pointer-events: none;
-  z-index: 0;
-}
 
 /* Inset Battery Health Glass Panel (No Nested Backdrop Blur) */
 .hero-card {
