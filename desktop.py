@@ -196,10 +196,16 @@ def main():
         )
 
         def on_window_minimized():
-            pass  # Aurora is static — no animation to pause on minimize
+            try:
+                window.evaluate_js("document.querySelector('.aurora-bg')?.classList.add('is-paused')")
+            except Exception:
+                pass
 
         def on_window_restored():
-            pass  # Aurora is static — no animation to resume on restore
+            try:
+                window.evaluate_js("document.querySelector('.aurora-bg')?.classList.remove('is-paused')")
+            except Exception:
+                pass
 
         window.events.minimized += on_window_minimized
         window.events.restored += on_window_restored

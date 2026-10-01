@@ -2729,7 +2729,12 @@ function initAuroraBg() {
   if (fluteImg) {
     fluteImg.setAttribute('href', 'data:image/svg+xml,' + encodeURIComponent(TILE));
   }
-  // Aurora is now fully static — no pause/resume listeners needed.
+  // Pause drift when hidden or blurred to conserve GPU/battery
+  const pause = () => root.classList.add('is-paused');
+  const resume = () => { if (!document.hidden) root.classList.remove('is-paused'); };
+  document.addEventListener('visibilitychange', () => (document.hidden ? pause() : resume()));
+  window.addEventListener('blur', () => pause());
+  window.addEventListener('focus', () => { if (!document.hidden) resume(); });
 }
 
 // Boot

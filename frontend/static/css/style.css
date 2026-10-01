@@ -221,18 +221,21 @@ body.tier-low .eura-indigo-card {
   -webkit-mask-image: radial-gradient(ellipse at 100% 0%, black 40%, transparent 70%);
 }
 .aurora-bg__lights::after {
-  /* Static compositing layer — mix-blend-mode:difference is structurally required.
-     Without it the raw pre-inverted rainbow stripes show through the whole app.
-     The animation and background-attachment:scroll (the actual scroll-darkening
-     cause) are removed; background-position is now fixed at 50% 50%. */
   content: "";
   position: absolute;
   inset: 0;
   background-image: var(--stripes), var(--rainbow);
   background-size: 200%, 100%;
-  background-position: 50% 50%, 50% 50%;
+  animation: aurora-drift 60s linear infinite;
   mix-blend-mode: difference;
-  /* No animation. No background-attachment. Fully static. */
+}
+.aurora-bg.is-paused .aurora-bg__lights::after {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .aurora-bg__lights::after {
+    animation: none;
+  }
 }
 .aurora-bg__glass {
   position: absolute;
@@ -248,7 +251,10 @@ body.tier-low .eura-indigo-card {
   mix-blend-mode: lighten;
   background: radial-gradient(ellipse at 85% 0%, var(--aurora-sky-top, #092a60) 0%, var(--aurora-sky-mid, #061b40) 40%, var(--aurora-sky-deep, #040f26) 75%, var(--aurora-sky-edge, #020710) 100%);
 }
-/* @keyframes aurora-drift removed (Change A: aurora is now fully static) */
+@keyframes aurora-drift {
+  from { background-position: 50% 50%, 50% 50%; }
+  to   { background-position: 350% 50%, 350% 50%; }
+}
 
 html,
 body {
