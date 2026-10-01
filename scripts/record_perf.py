@@ -148,7 +148,7 @@ def format_markdown_table(report, filename):
     print(f"[PERF HARNESS] Written report to {filename} and {json_path}")
 
 def main():
-    target_file = sys.argv[1] if len(sys.argv) > 1 else "docs/perf-baseline.md"
+    target_file = sys.argv[1] if len(sys.argv) > 1 else "Artifacts/perf-baseline.md"
     print(f"[PERF HARNESS] Starting server on {BASE_URL}...")
     server_thread = threading.Thread(target=run_server, daemon=True)
     server_thread.start()

@@ -42,3 +42,6 @@ extracted_*.png
 
 # Helper scripts
 push_to_github.bat
+
+# Project documentation (design docs, specs, notes — never pushed)
+Artifacts/
