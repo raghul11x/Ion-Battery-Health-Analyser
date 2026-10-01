@@ -451,17 +451,19 @@ function showDeviceConnectedToast(deviceName) {
   // Remove exiting state if currently transitioning out
   toastEl.classList.remove('toast-exiting');
 
-  // Reset progress bar drain animation
+  // Reset progress bar drain animation asynchronously
   if (progressEl) {
     progressEl.style.animation = 'none';
-    void progressEl.offsetWidth; // Force reflow to retrigger CSS animation
-    progressEl.style.animation = '';
+    requestAnimationFrame(() => {
+      progressEl.style.animation = '';
+    });
   }
 
   // Ensure visible with entrance animation
   if (!toastEl.classList.contains('toast-visible')) {
-    void toastEl.offsetWidth;
-    toastEl.classList.add('toast-visible');
+    requestAnimationFrame(() => {
+      toastEl.classList.add('toast-visible');
+    });
   }
 
   // 3-second hold timer
@@ -756,6 +758,15 @@ function renderDeviceStatus() {
   }
 }
 
+// Hardware-accelerated range dial positioner (compositor-only transform)
+function setRangeDialPosition(pct) {
+  if (!el.rangeDialMarker) return;
+  const track = el.rangeDialTrack || document.querySelector('.range-dial-track');
+  const trackWidth = track ? track.clientWidth : 200;
+  const x = (pct / 100) * trackWidth;
+  el.rangeDialMarker.style.setProperty('--dial-x', `${x}px`);
+}
+
 function renderIdleState() {
   const unauthDev = state.systemStatus?.connected_devices?.find(d => d.state === 'unauthorized');
   const offlineDev = state.systemStatus?.connected_devices?.find(d => d.state === 'offline');
@@ -810,7 +821,7 @@ function renderIdleState() {
     if (el.heroStatusSubtext) el.heroStatusSubtext.textContent = 'Connect phone over USB-C to compute real chemical health.';
     if (el.heroMethodBadge) el.heroMethodBadge.textContent = 'Standby';
   }
-  if (el.rangeDialMarker) el.rangeDialMarker.style.left = '0%';
+  if (el.rangeDialMarker) setRangeDialPosition(0);
 
   const oemBadge = document.getElementById('hero-oem-soh-badge');
   if (oemBadge) oemBadge.classList.add('hidden');
@@ -1019,7 +1030,7 @@ function renderSnapshot() {
     el.heroStatusPill.textContent = 'Gathering Data';
     el.heroStatusHeading.textContent = 'Insufficient Data to Compute Health';
     el.heroStatusSubtext.textContent = "Cycle count isn't exposed by this device's firmware — building an estimate from usage history, check back in a few days.";
-    el.rangeDialMarker.style.left = '0%';
+    setRangeDialPosition(0);
     const days = s.history_days !== undefined ? `${s.history_days}d history` : 'Gathering';
     el.heroMethodBadge.textContent = `Gathering Data · ${days}`;
   } else if (health === null || health === undefined) {
@@ -1031,7 +1042,7 @@ function renderSnapshot() {
 
     // Range Dial position (clamped 2% to 98% for clean pin alignment)
     const clampedPos = Math.min(98, Math.max(2, displayVal));
-    el.rangeDialMarker.style.left = `${clampedPos}%`;
+    setRangeDialPosition(clampedPos);
 
     // Dynamic Gradient & Evaluation
     if (health >= 85) {
@@ -1804,8 +1815,57 @@ function renderHistoryAndChart() {
     }
   }
 
-  // 2. History Log Table
+  // 2. History Log Table (Virtualized for 60+ FPS with 5,000+ rows)
   if (readings.length === 0) {
+    renderVirtualHistory([]);
+    return;
+  }
+
+  const reversed = [...readings].reverse();
+  renderVirtualHistory(reversed);
+}
+
+// Virtualized History Log Table Implementation
+let virtualHistoryState = {
+  items: [],
+  rowHeight: 44,
+  container: null,
+  scrollListenerAttached: false,
+  lastRenderedStart: -1,
+  lastRenderedEnd: -1,
+};
+
+function renderVirtualHistory(items) {
+  if (items) {
+    virtualHistoryState.items = items;
+    virtualHistoryState.lastRenderedStart = -1;
+    virtualHistoryState.lastRenderedEnd = -1;
+  }
+  const container = document.getElementById('history-scroll-container');
+  if (!container || !el.historyTableBody) return;
+
+  virtualHistoryState.container = container;
+
+  if (!virtualHistoryState.scrollListenerAttached) {
+    virtualHistoryState.scrollListenerAttached = true;
+    let scrollRaf = null;
+    container.addEventListener('scroll', () => {
+      if (!scrollRaf) {
+        scrollRaf = requestAnimationFrame(() => {
+          updateVirtualHistoryView();
+          scrollRaf = null;
+        });
+      }
+    }, { passive: true });
+  }
+
+  updateVirtualHistoryView();
+}
+
+function updateVirtualHistoryView() {
+  const { items, rowHeight, container } = virtualHistoryState;
+  if (!container || !el.historyTableBody) return;
+  if (!items || items.length === 0) {
     el.historyTableBody.innerHTML = `
       <tr>
         <td colspan="7" class="py-8 text-center text-zinc-500 text-xs">
@@ -1816,8 +1876,27 @@ function renderHistoryAndChart() {
     return;
   }
 
-  const reversed = [...readings].reverse();
-  el.historyTableBody.innerHTML = reversed.map(r => {
+  const scrollTop = container.scrollTop;
+  const viewportHeight = container.clientHeight || 500;
+  const totalItems = items.length;
+  const buffer = 10;
+
+  let startIndex = Math.max(0, Math.floor(scrollTop / rowHeight) - buffer);
+  let endIndex = Math.min(totalItems, Math.ceil((scrollTop + viewportHeight) / rowHeight) + buffer);
+
+  if (startIndex === virtualHistoryState.lastRenderedStart && endIndex === virtualHistoryState.lastRenderedEnd) {
+    return; // Already rendered this exact slice
+  }
+
+  virtualHistoryState.lastRenderedStart = startIndex;
+  virtualHistoryState.lastRenderedEnd = endIndex;
+
+  const topSpacerHeight = startIndex * rowHeight;
+  const bottomSpacerHeight = Math.max(0, (totalItems - endIndex) * rowHeight);
+
+  const visibleItems = items.slice(startIndex, endIndex);
+
+  const rowsHtml = visibleItems.map(r => {
     let badge = `<span class="glass-chip font-bold">${r.health_pct}%</span>`;
     if (r.health_pct >= 85) {
       badge = `<span class="glass-chip glass-chip-success font-bold">${r.health_pct}%</span>`;
@@ -1828,7 +1907,7 @@ function renderHistoryAndChart() {
     }
 
     return `
-      <tr class="border-b border-white/[0.04] hover:bg-white/[0.04] text-xs text-zinc-300 transition-colors">
+      <tr class="history-virtual-row border-b border-white/[0.04] hover:bg-white/[0.04] text-xs text-zinc-300 transition-colors">
         <td class="py-3 px-4 font-mono text-zinc-400">${formatDate(r.timestamp)}</td>
         <td class="py-3 px-4">${badge}</td>
         <td class="py-3 px-4 font-bold text-white font-mono">${r.level_pct}%</td>
@@ -1843,6 +1922,16 @@ function renderHistoryAndChart() {
       </tr>
     `;
   }).join('');
+
+  const topRow = topSpacerHeight > 0 
+    ? `<tr style="height:${topSpacerHeight}px; padding:0; border:none; pointer-events:none;"><td colspan="7" style="height:${topSpacerHeight}px; padding:0; border:none;"></td></tr>`
+    : '';
+
+  const bottomRow = bottomSpacerHeight > 0
+    ? `<tr style="height:${bottomSpacerHeight}px; padding:0; border:none; pointer-events:none;"><td colspan="7" style="height:${bottomSpacerHeight}px; padding:0; border:none;"></td></tr>`
+    : '';
+
+  el.historyTableBody.innerHTML = topRow + rowsHtml + bottomRow;
 }
 
 function renderInsights() {
@@ -1974,7 +2063,7 @@ function renderProbe() {
   `;
 }
 
-// Sliding Capsule Nav Indicator
+// Sliding Capsule Nav Indicator (Compositor-Only Scale/Translate)
 function updateCapsuleBlob(activeBtn) {
   const blob = document.getElementById('capsule-blob');
   if (!blob) return;
@@ -1986,8 +2075,7 @@ function updateCapsuleBlob(activeBtn) {
   const btnRect = target.getBoundingClientRect();
   if (btnRect.width === 0) return;
   const left = btnRect.left - navRect.left;
-  blob.style.transform = `translateX(${left}px)`;
-  blob.style.width = `${btnRect.width}px`;
+  blob.style.transform = `translate3d(${left}px, 0, 0) scaleX(${btnRect.width})`;
 }
 
 // Navigation Tab Switching
@@ -2660,13 +2748,13 @@ function initCursorTrackingGlow() {
     return;
   }
 
-  // Helper for delegated mousemove tracking on pill/button groups
+  // Helper for delegated mousemove tracking on pill/button groups (rAF batched)
   function setupDelegatedGlow(container, itemSelector) {
     if (!container) return;
     let rafId = null;
     let currentItem = null;
-    let latestX = 0;
-    let latestY = 0;
+    let rawClientX = 0;
+    let rawClientY = 0;
 
     container.addEventListener('mousemove', (e) => {
       const item = e.target.closest(itemSelector);
@@ -2676,15 +2764,15 @@ function initCursorTrackingGlow() {
       }
 
       currentItem = item;
-      const rect = item.getBoundingClientRect();
-      latestX = e.clientX - rect.left;
-      latestY = e.clientY - rect.top;
+      rawClientX = e.clientX;
+      rawClientY = e.clientY;
 
       if (!rafId) {
         rafId = requestAnimationFrame(() => {
           if (currentItem) {
-            currentItem.style.setProperty('--mouse-x', `${latestX}px`);
-            currentItem.style.setProperty('--mouse-y', `${latestY}px`);
+            const rect = currentItem.getBoundingClientRect();
+            currentItem.style.setProperty('--mouse-x', `${rawClientX - rect.left}px`);
+            currentItem.style.setProperty('--mouse-y', `${rawClientY - rect.top}px`);
           }
           rafId = null;
         });
@@ -2700,22 +2788,22 @@ function initCursorTrackingGlow() {
     }, { passive: true });
   }
 
-  // Helper for individual card surface glow
+  // Helper for individual card surface glow (rAF batched)
   function setupCardGlow(card) {
     if (!card) return;
     let rafId = null;
-    let latestX = 0;
-    let latestY = 0;
+    let rawClientX = 0;
+    let rawClientY = 0;
 
     card.addEventListener('mousemove', (e) => {
-      const rect = card.getBoundingClientRect();
-      latestX = e.clientX - rect.left;
-      latestY = e.clientY - rect.top;
+      rawClientX = e.clientX;
+      rawClientY = e.clientY;
 
       if (!rafId) {
         rafId = requestAnimationFrame(() => {
-          card.style.setProperty('--mouse-x', `${latestX}px`);
-          card.style.setProperty('--mouse-y', `${latestY}px`);
+          const rect = card.getBoundingClientRect();
+          card.style.setProperty('--mouse-x', `${rawClientX - rect.left}px`);
+          card.style.setProperty('--mouse-y', `${rawClientY - rect.top}px`);
           rafId = null;
         });
       }
@@ -2941,12 +3029,35 @@ function initSharedTooltips() {
     if (activeTooltipTarget) {
       positionSharedTooltip(activeTooltipTarget, getOrCreateSharedTooltip());
     }
+    const health = AppState.snapshot?.health_pct || state.snapshot?.health_pct;
+    if (health !== null && health !== undefined) {
+      setRangeDialPosition(Math.min(98, Math.max(2, Math.round(health))));
+    } else {
+      setRangeDialPosition(0);
+    }
   }, { passive: true });
 
+  let scrollPauseTimer = null;
+  let isScrollingActive = false;
   window.addEventListener('scroll', () => {
     if (activeTooltipTarget) {
       hideSharedTooltip();
     }
+    if (!isScrollingActive) {
+      isScrollingActive = true;
+      document.body.classList.add('is-scrolling');
+      if (typeof window.IonPerf?.onScrollStart === 'function') {
+        window.IonPerf.onScrollStart();
+      }
+    }
+    clearTimeout(scrollPauseTimer);
+    scrollPauseTimer = setTimeout(() => {
+      isScrollingActive = false;
+      document.body.classList.remove('is-scrolling');
+      if (typeof window.IonPerf?.onScrollEnd === 'function') {
+        window.IonPerf.onScrollEnd();
+      }
+    }, 150);
   }, { passive: true });
 }
 
