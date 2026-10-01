@@ -43,6 +43,14 @@
   --ambient-a: #0a2a43;   /* deep blue */
   --ambient-b: #0b4a5a;   /* teal */
   --ambient-c: #0B0B10;   /* obsidian base */
+
+  /* Theme-Matched Prism Aurora Tokens (Phase A) */
+  --prism-base:   var(--ambient-c);            /* obsidian base */
+  --prism-deep:   var(--ambient-a);            /* deep blue #0a2a43 */
+  --prism-mid:    var(--ambient-b);            /* teal #0b4a5a */
+  --prism-light:  rgba(120, 190, 255, 0.55);   /* same hue as --glass-tint-active */
+  --prism-glint:  rgba(207, 234, 255, 0.28);   /* cool white, thin rib catches only */
+  --prism-accent: rgba(94, 234, 212, 0.35);    /* teal glint, <= 8% of stripe length */
 }
 
 /* ==========================================================================
@@ -177,13 +185,18 @@ body.tier-low .eura-dark-card,
 body.tier-low .eura-indigo-card {
   background-color: var(--card-secondary) !important;
 }
-body.tier-low .ion-aurora-wrap {
+body.tier-low .ion-aurora-wrap,
+body.no-glass .ion-aurora-wrap {
   display: none !important;
 }
 
+body.tier-medium .aurora-content {
+  backdrop-filter: contrast(0.9) blur(6px) !important;
+  -webkit-backdrop-filter: contrast(0.9) blur(6px) !important;
+}
+
 /* ==========================================================================
-   Application Aurora Background (Liquid Glass Deep Blue/Teal Port)
-   Fluted-glass displacement, difference-blend overlay, smooth pan
+   Application Aurora Background (Theme-Matched Prism Fluted-Glass)
    ========================================================================== */
 
 .aurora-hero-wrapper.ion-aurora-wrap,
@@ -193,19 +206,16 @@ body.tier-low .ion-aurora-wrap {
   overflow: hidden;
   pointer-events: none;
   z-index: 0;
-  --stripe-color: #fff;
-  --bg-filter: blur(10px) invert(100%);
-  background: var(--stripe-color);
+  background: var(--ambient-c);
 }
 
 @keyframes smoothBg {
-  from { background-position: 50% 50%, 50% 50%; }
-  to   { background-position: 350% 50%, 350% 50%; }
-}
-
-@keyframes ion-aurora-breathe {
-  from { background-position: 50% 50%, 50% 50%; }
-  to   { background-position: 350% 50%, 350% 50%; }
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(-50%, 0, 0);
+  }
 }
 
 .aurora-hero-bg,
@@ -215,25 +225,18 @@ body.tier-low .ion-aurora-wrap {
   position: absolute;
   inset: 0;
   --stripes: repeating-linear-gradient(
-    100deg, 
-    var(--stripe-color) 0%, 
-    var(--stripe-color) 7%, 
-    transparent 10%, 
-    transparent 12%, 
-    var(--stripe-color) 16%
+    105deg, 
+    var(--prism-base) 0%, 
+    var(--prism-deep) 15%, 
+    var(--prism-mid) 28%, 
+    var(--prism-light) 40%, 
+    var(--prism-glint) 43%, 
+    var(--prism-accent) 47%, 
+    var(--prism-mid) 58%, 
+    var(--prism-deep) 70%, 
+    var(--prism-base) 85%, 
+    var(--prism-base) 100%
   );
-  --rainbow: repeating-linear-gradient(
-    100deg, 
-    #38bdf8 10%, 
-    #2dd4bf 15%, 
-    #60a5fa 20%, 
-    #0ea5e9 25%, 
-    #2dd4bf 30%
-  );
-  background-image: var(--stripes), var(--rainbow);
-  background-size: 300%, 200%;
-  background-position: 50% 50%, 50% 50%;
-  filter: var(--bg-filter);
   mask-image: radial-gradient(ellipse at 100% 0%, black 40%, transparent 70%);
   -webkit-mask-image: radial-gradient(ellipse at 100% 0%, black 40%, transparent 70%);
 }
@@ -242,11 +245,15 @@ body.tier-low .ion-aurora-wrap {
 .ion-aurora-base .ion-aurora-overlay {
   content: "";
   position: absolute;
-  inset: 0;
-  background-image: var(--stripes), var(--rainbow);
-  background-size: 200%, 100%;
+  top: 0;
+  left: 0;
+  width: 200%;
+  height: 100%;
+  background-image: var(--stripes);
+  background-size: 50% 100%;
   animation: smoothBg 60s linear infinite;
-  mix-blend-mode: difference;
+  mix-blend-mode: screen;
+  opacity: 0.65;
   will-change: transform;
   transform: translate3d(0, 0, 0);
 }
@@ -256,20 +263,19 @@ body.tier-low .ion-aurora-wrap {
   inset: 0;
   width: 100%;
   height: 100%;
-  backdrop-filter: contrast(0.9) blur(6px);
-  -webkit-backdrop-filter: contrast(0.9) blur(6px);
-  background: repeating-linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.035) 0px,
-    rgba(255, 255, 255, 0.035) 1px,
-    transparent 1px,
-    transparent 18px
-  );
-  mix-blend-mode: difference;
-  filter: invert(1);
+  backdrop-filter: contrast(0.9) blur(7px) url(#fluted);
+  -webkit-backdrop-filter: contrast(0.9) blur(7px) url(#fluted);
   pointer-events: none;
   will-change: transform;
   transform: translate3d(0, 0, 0);
+}
+
+.aurora-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 10, 18, 0.45);
+  pointer-events: none;
+  z-index: 2;
 }
 
 /* Pause when scrolling, window loses focus, or minimized */
@@ -278,6 +284,12 @@ body.is-scrolling .ion-aurora-overlay,
 .ion-aurora-paused .ion-aurora-overlay,
 .ion-aurora-wrap.ion-aurora-paused .ion-aurora-overlay {
   animation-play-state: paused !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ion-aurora-overlay {
+    animation: none !important;
+  }
 }
 
 body {
