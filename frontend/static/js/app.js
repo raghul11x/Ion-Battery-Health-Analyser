@@ -1974,18 +1974,40 @@ function renderProbe() {
   `;
 }
 
+// Sliding Capsule Nav Indicator
+function updateCapsuleBlob(activeBtn) {
+  const blob = document.getElementById('capsule-blob');
+  if (!blob) return;
+  const target = activeBtn || document.querySelector('.capsule-segment.active');
+  if (!target) return;
+  const nav = target.closest('.capsule-nav');
+  if (!nav) return;
+  const navRect = nav.getBoundingClientRect();
+  const btnRect = target.getBoundingClientRect();
+  if (btnRect.width === 0) return;
+  const left = btnRect.left - navRect.left;
+  blob.style.transform = `translateX(${left}px)`;
+  blob.style.width = `${btnRect.width}px`;
+}
+
 // Navigation Tab Switching
 function switchTab(tabId) {
   state.currentTab = tabId;
 
+  let activeSeg = null;
   // Update capsule segments
   el.capsuleSegments.forEach(seg => {
     if (seg.dataset.tab === tabId) {
       seg.classList.add('active');
+      activeSeg = seg;
     } else {
       seg.classList.remove('active');
     }
   });
+
+  if (activeSeg) {
+    updateCapsuleBlob(activeSeg);
+  }
 
   // Toggle views
   Object.keys(el.views).forEach(key => {
@@ -2439,9 +2461,17 @@ function init() {
   // Initialize Aurora animation lifecycle (pause on blur / minimize, resume on focus)
   initAuroraAnimationLifecycle();
 
-  // Capsule Nav clicks
+  // Capsule Nav clicks & sliding blob
   el.capsuleSegments.forEach(seg => {
     seg.addEventListener('click', () => switchTab(seg.dataset.tab));
+  });
+  const initialActive = document.querySelector('.capsule-segment.active');
+  if (initialActive) {
+    requestAnimationFrame(() => updateCapsuleBlob(initialActive));
+  }
+  window.addEventListener('resize', () => {
+    const curr = document.querySelector('.capsule-segment.active');
+    if (curr) updateCapsuleBlob(curr);
   });
 
   // Action Buttons

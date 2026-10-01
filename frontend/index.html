@@ -56,10 +56,15 @@
         <feDisplacementMap scale=".08" xChannelSelector="R" yChannelSelector="G"
           in="SourceGraphic" in2="bar_smoothness" result="displacement_0" />
       </filter>
+      <!-- Optional Liquid Refraction Filter -->
+      <filter id="liquid-refract">
+        <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="2" result="noise" />
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="8" xChannelSelector="R" yChannelSelector="G" />
+      </filter>
     </defs>
   </svg>
 
-  <!-- TOP BAR & CAPSULE NAVIGATION (Design Doc v2 §5.2) -->
+  <!-- TOP BAR & CAPSULE NAVIGATION (Liquid Glass Restyle) -->
   <header class="sticky top-0 z-40 w-full px-6 py-4 flex items-center justify-between">
     
     <!-- Left: Brand / Title -->
@@ -73,43 +78,40 @@
       </div>
     </div>
 
-    <!-- Center: Floating Pill Capsule Nav -->
-    <nav class="relative z-10 capsule-nav flex items-center gap-1 shadow-lg">
-      <button class="capsule-segment ion-glow-btn ion-glow-btn-secondary active" data-tab="dashboard">Dashboard</button>
-      <button class="capsule-segment ion-glow-btn ion-glow-btn-secondary" data-tab="trends">History</button>
-      <button class="capsule-segment ion-glow-btn ion-glow-btn-secondary" data-tab="habits">Insights</button>
-      <button class="capsule-segment ion-glow-btn ion-glow-btn-secondary" data-tab="diagnostics">Diagnostics</button>
+    <!-- Center: Floating Glass Pill Capsule Nav -->
+    <nav class="relative z-10 capsule-nav flex items-center shadow-lg" role="tablist">
+      <div id="capsule-blob" class="capsule-blob" aria-hidden="true"></div>
+      <button class="capsule-segment active" data-tab="dashboard" role="tab" aria-selected="true">Dashboard</button>
+      <button class="capsule-segment" data-tab="trends" role="tab" aria-selected="false">History</button>
+      <button class="capsule-segment" data-tab="habits" role="tab" aria-selected="false">Insights</button>
+      <button class="capsule-segment" data-tab="diagnostics" role="tab" aria-selected="false">Diagnostics</button>
     </nav>
 
-    <!-- Right: Connection Capsule & Actions -->
-    <div class="relative z-10 flex flex-col items-end">
-      <div class="flex items-center gap-3">
-        <!-- Status Pill with Additive Last-Seen Subtext -->
-        <div id="connection-pill" class="h-[34px] px-4 rounded-full bg-[#0F1024] border border-white/10 text-xs flex items-center gap-2.5 shadow-inner whitespace-nowrap">
-          <div id="conn-dot" class="dot-idle-gray"></div>
-          <span id="conn-status-label" class="font-semibold text-zinc-300">Checking ADB...</span>
-          <span id="conn-device-label" class="text-zinc-500 font-mono hidden sm:inline"></span>
-        </div>
-
-        <!-- Seed Demo Data Button -->
-        <button id="seed-btn" class="pill-button ion-glow-btn ion-glow-btn-secondary h-[34px] px-4 rounded-full bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 border border-white/10 text-xs flex items-center justify-center gap-1.5 whitespace-nowrap transition" data-tooltip="Populates a 30-day simulated dataset to preview degradation curves and insights.">
-          <span>Seed 30D</span>
-        </button>
-
-        <!-- Connect / Probe Device Pill CTA Button (Design Doc v2 §5.2) -->
-        <button id="probe-btn" class="pill-button ion-glow-btn ion-glow-btn-primary h-[34px] px-4 rounded-full text-white text-xs flex items-center justify-center gap-1.5 font-bold shadow-md whitespace-nowrap transition" data-tooltip="Scan and probe connected USB Android device">
-          <span class="ion-shine" aria-hidden="true"><span></span></span>
-          <svg id="probe-icon" class="w-3.5 h-3.5 relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-          </svg>
-          <span class="relative z-10">Connect Device</span>
-        </button>
+    <!-- Right: Connection Glass Pill & Actions -->
+    <div class="relative z-10 flex items-center gap-2.5">
+      <!-- Status Pill with Additive Last-Seen Subtext -->
+      <div id="connection-pill" class="glass-pill h-[38px] px-4 text-xs flex items-center gap-2.5 whitespace-nowrap shadow-inner">
+        <div id="conn-dot" class="dot-idle-gray"></div>
+        <span id="conn-status-label" class="font-semibold text-zinc-200">Checking ADB...</span>
+        <span id="conn-device-label" class="text-zinc-400 font-mono hidden sm:inline"></span>
       </div>
 
-      <!-- Additive Last-Seen Subtext Positioned Cleanly Beneath Connection Pill -->
-      <span id="conn-last-seen-label" class="hidden absolute top-[38px] left-0 text-[10px] text-zinc-500 font-mono tracking-tight whitespace-nowrap"></span>
-    </div>
+      <!-- Seed Demo Data Button -->
+      <button id="seed-btn" class="glass-pill glass-interactive h-[38px] px-3.5 text-zinc-300 text-xs flex items-center justify-center gap-1.5 whitespace-nowrap transition" data-tooltip="Populates a 30-day simulated dataset to preview degradation curves and insights.">
+        <span>Seed 30D</span>
+      </button>
 
+      <!-- Connect / Probe Device Pill CTA Button -->
+      <button id="probe-btn" class="glass-pill glass-interactive glass-btn-primary h-[38px] px-4 text-white text-xs flex items-center justify-center gap-2 font-bold whitespace-nowrap transition" data-tooltip="Scan and probe connected USB Android device">
+        <svg id="probe-icon" class="w-3.5 h-3.5 text-cyan-300 relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+        <span class="relative z-10">Connect Device</span>
+      </button>
+
+      <!-- Additive Last-Seen Subtext (accessible to JS) -->
+      <span id="conn-last-seen-label" class="hidden text-[10px] text-zinc-500 font-mono tracking-tight whitespace-nowrap"></span>
+    </div>
 
   </header>
 
