@@ -2729,16 +2729,7 @@ function initAuroraBg() {
   if (fluteImg) {
     fluteImg.setAttribute('href', 'data:image/svg+xml,' + encodeURIComponent(TILE));
   }
-
-  // Pause the slow drift when hidden and while scrolling, to keep scrolling smooth
-  let t;
-  const pause = () => root.classList.add('is-paused');
-  const resume = () => { if (!document.hidden) root.classList.remove('is-paused'); };
-  document.addEventListener('visibilitychange', () => (document.hidden ? pause() : resume()));
-  window.addEventListener('blur', () => pause());
-  window.addEventListener('focus', () => { if (!document.hidden) resume(); });
-  window.addEventListener('scroll', () => { pause(); clearTimeout(t); t = setTimeout(resume, 150); },
-    { capture: true, passive: true });
+  // Aurora is now fully static — no pause/resume listeners needed.
 }
 
 // Boot
