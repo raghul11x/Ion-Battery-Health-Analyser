@@ -221,14 +221,18 @@ body.tier-low .eura-indigo-card {
   -webkit-mask-image: radial-gradient(ellipse at 100% 0%, black 40%, transparent 70%);
 }
 .aurora-bg__lights::after {
-  /* REMOVED: scroll-position-relative drift animation.
-     Root cause of darkening on scroll: background-attachment:scroll with
-     mix-blend-mode:difference caused this layer's background-position to shift
-     relative to document scroll, darkening the left third and fading ribs.
-     The ::after has no visual content now — it exists only to preserve the
-     selector in case of future use, with zero visual impact. */
+  /* Static compositing layer — mix-blend-mode:difference is structurally required.
+     Without it the raw pre-inverted rainbow stripes show through the whole app.
+     The animation and background-attachment:scroll (the actual scroll-darkening
+     cause) are removed; background-position is now fixed at 50% 50%. */
   content: "";
-  display: none;
+  position: absolute;
+  inset: 0;
+  background-image: var(--stripes), var(--rainbow);
+  background-size: 200%, 100%;
+  background-position: 50% 50%, 50% 50%;
+  mix-blend-mode: difference;
+  /* No animation. No background-attachment. Fully static. */
 }
 .aurora-bg__glass {
   position: absolute;
