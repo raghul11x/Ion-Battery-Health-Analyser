@@ -169,7 +169,7 @@ body.tier-medium, :root.tier-medium {
 }
 body.tier-medium .ion-aurora-overlay {
   animation: none !important;
-  filter: blur(6px) opacity(45%) saturate(130%) !important;
+  opacity: 0.35 !important; /* reduce visual cost in medium tier */
 }
 
 body.tier-low, :root.tier-low {
@@ -199,14 +199,27 @@ body.no-glass .ion-aurora-wrap {
   display: none !important;
 }
 
-body.tier-medium .aurora-content {
-  backdrop-filter: contrast(0.9) blur(6px) !important;
-  -webkit-backdrop-filter: contrast(0.9) blur(6px) !important;
-}
-
 /* ==========================================================================
-   Application Aurora Background (Aurora-Hero.tsx Port — Blue/Cyan/Teal)
+   Application Aurora Background (Bug 3 — Clean Fluted-Rib Texture)
    ========================================================================== */
+
+/*
+ * Architecture (3 CSS layers, all position:absolute inside the fixed wrapper):
+ *
+ *  1. .ion-aurora-wrap     — position:fixed wrapper; solid --aurora-bg base
+ *  2. .ion-aurora-base     — holds the rib overlay
+ *     └ .ion-aurora-overlay — rib gradient mask composited over colour sweep;
+ *                             background-position animated for slow horizontal drift
+ *  3. .aurora-fade         — vertical bottom falloff (no repaint on scroll)
+ *  4. .aurora-scrim        — subtle overall dark scrim for card contrast
+ *
+ * Rib design:
+ *   Repeating vertical slats (~28px), each: bright leading edge → body → soft
+ *   shadow trailing edge. The rib mask (multiply over a wide colour sweep)
+ *   produces smooth hue variation left→right with no hard colour bands.
+ *   Motion: the colour sweep layer shifts slowly (45s); ribs are static —
+ *   gives the illusion that light is flowing across the glass slats.
+ */
 
 .aurora-hero-wrapper.ion-aurora-wrap,
 .ion-aurora-wrap {
@@ -215,13 +228,28 @@ body.tier-medium .aurora-content {
   overflow: hidden;
   pointer-events: none;
   z-index: 0;
-  /* Night-sky navy base — same as aurora-hero.tsx --stripe-color */
   background: var(--aurora-bg);
 }
 
-@keyframes smoothBg {
-  from { background-position: 50% 50%, 50% 50%; }
-  to   { background-position: 350% 50%, 350% 50%; }
+/* ---- Rib colour tokens (derived from existing blue glass tokens) ---- */
+:root {
+  /* Rib bright-edge highlight — same hue as glass-tint-active */
+  --rib-bright: rgba(120, 190, 255, 0.52);
+  /* Rib body fill — deep blue ambient */
+  --rib-body:   rgba(29, 78, 216, 0.28);
+  /* Rib shadow edge — teal ambient */
+  --rib-shadow: rgba(11, 74, 90, 0.12);
+  /* Colour sweep stops — reuse existing aurora-stripe tokens */
+  --sweep-a: var(--aurora-stripe-1);   /* #1d4ed8 deep blue   */
+  --sweep-b: var(--aurora-stripe-2);   /* #22d3ee cyan        */
+  --sweep-c: var(--aurora-stripe-3);   /* #2dd4bf teal        */
+  --sweep-d: var(--aurora-stripe-4);   /* #6ee7b7 mint        */
+  --sweep-e: var(--aurora-stripe-6);   /* #38bdf8 sky blue    */
+}
+
+@keyframes auroraShift {
+  from { background-position: 0% 0%, 0% 0%; }
+  to   { background-position: 200% 0%, 200% 0%; }
 }
 
 .aurora-hero-bg,
@@ -232,64 +260,96 @@ body.tier-medium .aurora-content {
   inset: 0;
 }
 
-/* The animated overlay carries both the stripe mask and the colour rainbow —
-   exactly as in aurora-hero.tsx (two background-image layers, one animation) */
+/* Rib overlay: two background layers composited together.
+   Layer 1 (top):    RIB MASK — repeating 28px slats; transparent gaps let
+                     the colour sweep show through. Each rib has a crisp
+                     bright leading edge, a body, and a soft trailing shadow.
+   Layer 2 (bottom): COLOUR SWEEP — a wide linear gradient that spans 200%
+                     of the element width, animated left→right.
+   The rib background-size is 28px wide so ribs tile at a fixed pixel pitch.
+   The sweep background-size is 200% so the animation gives a full-width pass. */
 .aurora-hero-bg .ion-aurora-overlay,
 .ion-aurora-base .ion-aurora-overlay {
-  content: "";
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  --stripes: repeating-linear-gradient(
-    100deg,
-    var(--aurora-bg)     0%,
-    var(--aurora-bg)     7%,
-    transparent          10%,
-    transparent          12%,
-    var(--aurora-bg)     16%
+
+  /* RIB MASK: 28px period. Anatomy of each rib (left→right within 28px):
+       0–1px    bright highlight edge (crisp catch-light)
+       1–4px    highlight fade to body
+       4–18px   rib body (translucent body fill)
+       18–24px  body fade to shadow
+       24–28px  shadow / gap (transparent — aurora-bg shows through) */
+  --ribs: repeating-linear-gradient(
+    90deg,
+    var(--rib-bright)                0px,
+    var(--rib-body)                  4px,
+    var(--rib-body)                  18px,
+    var(--rib-shadow)                24px,
+    rgba(0, 0, 0, 0)                 28px
   );
-  /* Blue/cyan/teal/mint aurora — aurora-hero.tsx palette; no pink/warm hues */
-  --rainbow: repeating-linear-gradient(
-    100deg,
-    var(--aurora-stripe-1)  10%,   /* #1d4ed8 deep blue      */
-    var(--aurora-stripe-2)  14%,   /* #22d3ee cyan           */
-    var(--aurora-stripe-3)  18%,   /* #2dd4bf teal           */
-    var(--aurora-stripe-4)  21%,   /* #6ee7b7 mint           */
-    var(--aurora-stripe-6)  26%,   /* #38bdf8 sky blue       */
-    var(--aurora-stripe-1)  30%    /* loop back to deep blue */
+
+  /* COLOUR SWEEP: wide non-repeating gradient; animated background-position
+     provides a slow left-to-right hue shift without per-frame JS.
+     opacity 0.65 keeps peak brightness ≤ 35–38% luminance so glass cards
+     remain the brightest UI elements. */
+  --sweep: linear-gradient(
+    90deg,
+    var(--sweep-a) 0%,
+    var(--sweep-b) 22%,
+    var(--sweep-c) 40%,
+    var(--sweep-d) 58%,
+    var(--sweep-e) 74%,
+    var(--sweep-b) 88%,
+    var(--sweep-a) 100%
   );
-  background-image: var(--stripes), var(--rainbow);
-  background-size: 300%, 200%;
-  background-position: 50% 50%, 50% 50%;
-  filter: blur(10px) opacity(60%) saturate(180%);
-  animation: smoothBg 60s linear infinite;
+
+  background-image: var(--ribs), var(--sweep);
+  background-size: 28px 100%, 200% 100%;
+  background-position: 0% 0%, 0% 0%;
+  background-repeat: repeat-x, no-repeat;
+
+  opacity: 0.65;
+  /* Animate only background-position — no filter, no transform.
+     Compositor thread handles background-position without triggering layout. */
+  animation: auroraShift 45s linear infinite;
   will-change: background-position;
-  mix-blend-mode: normal;
 }
 
-.aurora-content {
+/* Vertical bottom falloff: smooth eased fade from the rib layer to the base
+   colour. Covers the bottom 55% of the viewport. No blur, no repaint. */
+.aurora-fade {
   position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
-  backdrop-filter: contrast(0.9) blur(7px) url(#fluted);
-  -webkit-backdrop-filter: contrast(0.9) blur(7px) url(#fluted);
+  background: linear-gradient(
+    to bottom,
+    transparent 35%,
+    rgba(3, 10, 28, 0.55) 70%,
+    var(--aurora-bg) 100%
+  );
   pointer-events: none;
-  will-change: transform;
-  transform: translate3d(0, 0, 0);
+  z-index: 1;
+}
+
+/* aurora-content: keep the element but remove the expensive url(#fluted)
+   SVG displacement filter from the background layer. The fluted SVG filter
+   is retained in the DOM for potential use on text/card elements, but must
+   NOT be applied to the full-viewport fixed layer (causes compositor skip). */
+.aurora-content {
+  display: none; /* background-layer fluted filter removed — no longer needed */
 }
 
 .aurora-scrim {
   position: absolute;
   inset: 0;
-  /* Lighter scrim than prism version — aurora is already blur-dimmed */
-  background: rgba(3, 10, 28, 0.35);
+  /* Subtle overall scrim to ensure enough contrast for glass cards */
+  background: rgba(3, 10, 28, 0.28);
   pointer-events: none;
   z-index: 2;
 }
 
-/* Pause when scrolling, window loses focus, or minimized */
+/* Pause animation when scrolling, window loses focus, or minimised */
 .ion-aurora-scrolling .ion-aurora-overlay,
 body.is-scrolling .ion-aurora-overlay,
 .ion-aurora-paused .ion-aurora-overlay,
@@ -302,6 +362,7 @@ body.is-scrolling .ion-aurora-overlay,
     animation: none !important;
   }
 }
+
 
 
 body {
