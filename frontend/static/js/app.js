@@ -2944,118 +2944,12 @@ function init() {
   // Initialize Global Boundary-Aware Tooltip System
   initSharedTooltips();
 
-  // Initialize Cursor-Tracking Glow Effect (Spotlight Hover)
-  initCursorTrackingGlow();
+  // Cursor-Tracking Glow removed (Change B)
 }
 
-// Cursor-Tracking Spotlight Glow Hover Implementation
-function initCursorTrackingGlow() {
-  // 1. Accessibility: Skip tracking if user prefers reduced motion
-  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  // 2. Touch Check: Skip on touch / coarse pointer devices (no real hover)
-  const supportsHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+// initCursorTrackingGlow removed (Change B): all mousemove/pointermove listeners
+// and --mouse-x/--mouse-y CSS variable writes deleted. No hover light remains.
 
-  if (prefersReducedMotion || !supportsHover) {
-    return;
-  }
-
-  // Helper for delegated mousemove tracking on pill/button groups (rAF batched)
-  function setupDelegatedGlow(container, itemSelector) {
-    if (!container) return;
-    let rafId = null;
-    let currentItem = null;
-    let rawClientX = 0;
-    let rawClientY = 0;
-
-    container.addEventListener('mousemove', (e) => {
-      const item = e.target.closest(itemSelector);
-      if (!item) {
-        currentItem = null;
-        return;
-      }
-
-      currentItem = item;
-      rawClientX = e.clientX;
-      rawClientY = e.clientY;
-
-      if (!rafId) {
-        rafId = requestAnimationFrame(() => {
-          if (currentItem) {
-            const rect = currentItem.getBoundingClientRect();
-            currentItem.style.setProperty('--mouse-x', `${rawClientX - rect.left}px`);
-            currentItem.style.setProperty('--mouse-y', `${rawClientY - rect.top}px`);
-          }
-          rafId = null;
-        });
-      }
-    }, { passive: true });
-
-    container.addEventListener('mouseleave', () => {
-      if (rafId) {
-        cancelAnimationFrame(rafId);
-        rafId = null;
-      }
-      currentItem = null;
-    }, { passive: true });
-  }
-
-  // Helper for individual card surface glow (rAF batched)
-  function setupCardGlow(card) {
-    if (!card) return;
-    let rafId = null;
-    let rawClientX = 0;
-    let rawClientY = 0;
-
-    card.addEventListener('mousemove', (e) => {
-      rawClientX = e.clientX;
-      rawClientY = e.clientY;
-
-      if (!rafId) {
-        rafId = requestAnimationFrame(() => {
-          const rect = card.getBoundingClientRect();
-          card.style.setProperty('--mouse-x', `${rawClientX - rect.left}px`);
-          card.style.setProperty('--mouse-y', `${rawClientY - rect.top}px`);
-          rafId = null;
-        });
-      }
-    }, { passive: true });
-
-    card.addEventListener('mouseleave', () => {
-      if (rafId) {
-        cancelAnimationFrame(rafId);
-        rafId = null;
-      }
-    }, { passive: true });
-  }
-
-  // A. Delegated tracking on Navigation Capsule
-  const navContainer = document.querySelector('.capsule-nav');
-  if (navContainer) {
-    setupDelegatedGlow(navContainer, '.capsule-segment');
-  }
-
-  // B. Delegated tracking on Header Action Pills (#connection-pill, #seed-btn, #probe-btn)
-  const headerActions = document.getElementById('probe-btn')?.parentElement;
-  if (headerActions) {
-    setupDelegatedGlow(headerActions, '.pill-button, #connection-pill');
-  }
-
-  // C. Delegated tracking on Timeline Filter Pills (7D / 14D / 30D / 90D) and Metric Toggles
-  const timeFilterContainer = document.querySelector('.time-filter-pill')?.parentElement;
-  if (timeFilterContainer) {
-    setupDelegatedGlow(timeFilterContainer, '.time-filter-pill');
-  }
-
-  const chartMetricContainer = document.querySelector('.chart-metric-pill')?.parentElement;
-  if (chartMetricContainer) {
-    setupDelegatedGlow(chartMetricContainer, '.chart-metric-pill');
-  }
-
-
-  // D. Surface tracking on Cards (Hero card, Health Report, Current Charge, Chemical Capacity, etc.)
-  const cardElements = document.querySelectorAll('#hero-card, .eura-dark-card, .eura-indigo-card');
-  cardElements.forEach(card => setupCardGlow(card));
-}
 
 // ==========================================================================
 // Reusable Single-Instance Tooltip System with Boundary Collision Detection
