@@ -609,6 +609,7 @@
           framesWithin1_2xPct: pctWithin1_2x,
           longTasksDetected: newLongTasks,
           worstLongTaskMs: window.IonPerf.worstLongTaskMs,
+          tier: window.IonPerf.qualityTier,
         };
 
         if (typeof onComplete === 'function') {
@@ -620,7 +621,7 @@
     requestAnimationFrame(step);
   };
 
-  // Full 8-test baseline & verification suite
+  // Full baseline & verification suite
   window.IonPerf.runFullSuite = function (onComplete) {
     const views = ['view-dashboard', 'view-trends', 'view-habits', 'view-diagnostics'];
     const suiteResults = {
@@ -644,7 +645,34 @@
           }, 1500);
           return;
         } else {
-          done(suiteResults);
+          // Run forced low tier benchmarks on Dashboard and Trends
+          console.log('[PERF SUITE] Testing forced LOW tier on Dashboard and Trends...');
+          window.IonPerf.setQualityTier('low');
+          setTimeout(() => {
+            if (typeof window.switchTab === 'function') {
+              window.switchTab('dashboard');
+            }
+            window.IonPerf.startBenchmark('view-dashboard', 10, (lowDashRes) => {
+              lowDashRes.state = 'connected (forced low tier)';
+              lowDashRes.tier = 'low';
+              suiteResults.tests.push(lowDashRes);
+              console.log(`[PERF SUITE] Completed view-dashboard [connected (forced low tier)]: ${lowDashRes.avgFps} FPS, worst: ${lowDashRes.worstFrameMs}ms, hitches: ${lowDashRes.hitchCount}`);
+              setTimeout(() => {
+                if (typeof window.switchTab === 'function') {
+                  window.switchTab('trends');
+                }
+                window.IonPerf.startBenchmark('view-trends', 10, (lowTrendsRes) => {
+                  lowTrendsRes.state = 'connected (forced low tier)';
+                  lowTrendsRes.tier = 'low';
+                  suiteResults.tests.push(lowTrendsRes);
+                  console.log(`[PERF SUITE] Completed view-trends [connected (forced low tier)]: ${lowTrendsRes.avgFps} FPS, worst: ${lowTrendsRes.worstFrameMs}ms, hitches: ${lowTrendsRes.hitchCount}`);
+                  // Restore high tier
+                  window.IonPerf.setQualityTier('high');
+                  done(suiteResults);
+                });
+              }, 500);
+            });
+          }, 500);
           return;
         }
       }
@@ -664,6 +692,7 @@
       setTimeout(() => {
         window.IonPerf.startBenchmark(viewId, 10, (res) => {
           res.state = isConnected ? 'connected' : 'idle';
+          res.tier = 'high';
           suiteResults.tests.push(res);
           console.log(`[PERF SUITE] Completed ${viewId} [${res.state}]: ${res.avgFps} FPS, worst: ${res.worstFrameMs}ms, hitches: ${res.hitchCount}`);
           setTimeout(() => {
