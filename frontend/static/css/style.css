@@ -206,8 +206,8 @@ body.tier-low #app-tooltip {
   background-size: 300%, 200%;
   background-position: 50% 50%, 50% 50%;
   filter: var(--bg-filter);
-  mask-image: radial-gradient(ellipse at 90% 20%, black 50%, rgba(0, 0, 0, 0.7) 80%, rgba(0, 0, 0, 0.4) 100%);
-  -webkit-mask-image: radial-gradient(ellipse at 90% 20%, black 50%, rgba(0, 0, 0, 0.7) 80%, rgba(0, 0, 0, 0.4) 100%);
+  mask-image: radial-gradient(ellipse at 100% 0%, black 40%, transparent 70%);
+  -webkit-mask-image: radial-gradient(ellipse at 100% 0%, black 40%, transparent 70%);
 }
 .aurora-bg__lights::after {
   content: "";
@@ -216,6 +216,7 @@ body.tier-low #app-tooltip {
   background-image: var(--stripes), var(--rainbow);
   background-size: 200%, 100%;
   animation: aurora-drift 60s linear infinite;
+  background-attachment: fixed;
   mix-blend-mode: difference;
 }
 .aurora-bg.is-paused .aurora-bg__lights::after {
@@ -238,7 +239,7 @@ body.tier-low #app-tooltip {
   position: absolute;
   inset: 0;
   mix-blend-mode: lighten;
-  background: radial-gradient(ellipse at 85% 25%, var(--aurora-sky-top, #092a60) 0%, var(--aurora-sky-mid, #061b40) 45%, var(--aurora-sky-deep, #040f26) 80%, var(--aurora-sky-edge, #020710) 100%);
+  background: radial-gradient(ellipse at 100% 0%, var(--aurora-sky-top, #092a60) 0%, var(--aurora-sky-mid, #061b40) 40%, var(--aurora-sky-deep, #040f26) 70%, var(--aurora-sky-edge, #020710) 100%);
 }
 @keyframes aurora-drift {
   from { background-position: 50% 50%, 50% 50%; }
