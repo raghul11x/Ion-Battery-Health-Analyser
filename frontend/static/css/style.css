@@ -1,7 +1,7 @@
 /* EURA iOS Health/Wellness App Style (Design Doc v2) */
 
 :root {
-  --bg-gradient: linear-gradient(145deg, #0A0E27 0%, #1B1035 45%, #000000 100%);
+  --bg-gradient: linear-gradient(145deg, #091a2e 0%, #0a2f44 45%, #07131e 100%);
   --surface-base: #0B0B10;
   
   /* EURA Dynamic Hero Card Gradients by Health Band */
@@ -24,11 +24,114 @@
   --text-muted: #71717A;
 
   /* Aurora Header Accent */
-  --aurora-stripe: rgba(139, 92, 246, 0.14); /* violet, tuned to EURA palette */
+  --aurora-stripe: rgba(56, 189, 248, 0.14); /* retinted to cyan/teal */
+
+  /* Liquid Glass Design Tokens (iOS 26 Restyle) */
+  --glass-fill: rgba(255, 255, 255, 0.06);
+  --glass-fill-strong: rgba(255, 255, 255, 0.12);
+  --glass-tint-active: rgba(120, 190, 255, 0.22);
+  --glass-edge: rgba(255, 255, 255, 0.22);
+  --glass-edge-dim: rgba(255, 255, 255, 0.06);
+  --glass-blur: 22px;
+  --glass-saturate: 1.6;
+  --glass-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
+  --glass-highlight: inset 0 1px 0 rgba(255,255,255,0.35),
+                     inset 0 -1px 0 rgba(255,255,255,0.06),
+                     inset 0 0 24px rgba(255,255,255,0.04);
+  --radius-card: 28px;
+  --radius-pill: 999px;
+  --ambient-a: #0a2a43;   /* deep blue */
+  --ambient-b: #0b4a5a;   /* teal */
+  --ambient-c: #0B0B10;   /* obsidian base */
 }
 
 /* ==========================================================================
-   Application Aurora Background (AuroraHero Port)
+   Core Liquid Glass Utility Classes
+   ========================================================================== */
+
+.glass {
+  background: var(--glass-fill);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-edge-dim);
+  box-shadow: var(--glass-shadow), var(--glass-highlight);
+  border-radius: var(--radius-card);
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.12s ease;
+}
+
+.glass-pill {
+  background: var(--glass-fill);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-edge-dim);
+  box-shadow: var(--glass-shadow), var(--glass-highlight);
+  border-radius: var(--radius-pill);
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.12s ease;
+}
+
+.glass-active {
+  background: var(--glass-tint-active) !important;
+  border-color: var(--glass-edge) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5),
+              inset 0 -1px 0 rgba(255, 255, 255, 0.1),
+              0 4px 16px rgba(0, 0, 0, 0.25) !important;
+}
+
+.glass-edge {
+  position: relative;
+}
+
+.glass-edge::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0.05) 50%, rgba(255, 255, 255, 0.15) 100%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.glass-interactive {
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.12s ease, box-shadow 0.2s ease;
+}
+
+.glass-interactive:hover {
+  background: var(--glass-fill-strong);
+  border-color: var(--glass-edge);
+}
+
+.glass-interactive:active {
+  transform: scale(0.98);
+}
+
+/* Reduced transparency and .no-glass fallback */
+@media (prefers-reduced-transparency: reduce) {
+  body, :root {
+    --glass-fill: #0F1024;
+    --glass-fill-strong: #161836;
+    --glass-blur: 0px;
+  }
+  .glass, .glass-pill, .glass-active {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: var(--card-secondary) !important;
+  }
+}
+
+body.no-glass .glass,
+body.no-glass .glass-pill,
+body.no-glass .glass-active {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: var(--card-secondary) !important;
+}
+
+/* ==========================================================================
+   Application Aurora Background (Liquid Glass Deep Blue/Teal Port)
    Fluted-glass displacement, difference-blend overlay, smooth pan
    ========================================================================== */
 
@@ -70,11 +173,11 @@
   );
   --rainbow: repeating-linear-gradient(
     100deg, 
-    #60a5fa 10%, 
-    #e879f9 15%, 
+    #38bdf8 10%, 
+    #2dd4bf 15%, 
     #60a5fa 20%, 
-    #5eead4 25%, 
-    #60a5fa 30%
+    #0ea5e9 25%, 
+    #2dd4bf 30%
   );
   background-image: var(--stripes), var(--rainbow);
   background-size: 300%, 200%;
@@ -117,7 +220,9 @@ body {
   margin: 0;
   padding: 0;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Inter", sans-serif;
-  background-color: var(--surface-base);
+  background-color: var(--ambient-c);
+  background: radial-gradient(ellipse 90% 70% at 50% -15%, var(--ambient-b) 0%, var(--ambient-a) 40%, #071524 70%, var(--ambient-c) 100%) !important;
+  background-attachment: fixed;
   color: var(--text-primary);
   min-height: 100vh;
   overflow-x: hidden;
@@ -150,7 +255,7 @@ body {
   width: 550px;
   height: 550px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(99, 102, 241, 0.18) 0%, rgba(139, 92, 246, 0.10) 45%, rgba(0, 0, 0, 0) 70%);
+  background: radial-gradient(circle, rgba(14, 165, 233, 0.18) 0%, rgba(45, 212, 191, 0.10) 45%, rgba(0, 0, 0, 0) 70%);
   filter: blur(80px);
   pointer-events: none;
   z-index: 0;
