@@ -492,11 +492,11 @@
   }
 
   window.IonPerf.onScrollStart = function () {
-    startGovernorTracking(3000);
+    // Disabled: scroll does not demote quality tiers or darken cards
   };
 
   window.IonPerf.onScrollEnd = function () {
-    startGovernorTracking(2500);
+    // Disabled
   };
 
   // Keyboard shortcut: Ctrl + Shift + P

@@ -154,12 +154,6 @@ body.no-glass #app-tooltip {
   -webkit-backdrop-filter: none !important;
 }
 
-body.no-glass .hero-card,
-body.no-glass .eura-dark-card,
-body.no-glass .eura-indigo-card {
-  background-color: var(--card-secondary) !important;
-}
-
 /* Quality Tier Overrides (Adaptive Governor) */
 body.tier-medium, :root.tier-medium {
   --glass-blur: 8px;
@@ -181,11 +175,6 @@ body.tier-low .toast-glassmorphic,
 body.tier-low #app-tooltip {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
-}
-body.tier-low .hero-card,
-body.tier-low .eura-dark-card,
-body.tier-low .eura-indigo-card {
-  background-color: var(--card-secondary) !important;
 }
 
 /* ==========================================================================
@@ -217,8 +206,8 @@ body.tier-low .eura-indigo-card {
   background-size: 300%, 200%;
   background-position: 50% 50%, 50% 50%;
   filter: var(--bg-filter);
-  mask-image: radial-gradient(ellipse at 100% 0%, black 40%, transparent 70%);
-  -webkit-mask-image: radial-gradient(ellipse at 100% 0%, black 40%, transparent 70%);
+  mask-image: radial-gradient(ellipse at 90% 20%, black 50%, rgba(0, 0, 0, 0.7) 80%, rgba(0, 0, 0, 0.4) 100%);
+  -webkit-mask-image: radial-gradient(ellipse at 90% 20%, black 50%, rgba(0, 0, 0, 0.7) 80%, rgba(0, 0, 0, 0.4) 100%);
 }
 .aurora-bg__lights::after {
   content: "";
@@ -241,7 +230,7 @@ body.tier-low .eura-indigo-card {
   position: absolute;
   inset: 0;
   mix-blend-mode: lighten;
-  background: radial-gradient(ellipse at 85% 0%, var(--aurora-sky-top, #092a60) 0%, var(--aurora-sky-mid, #061b40) 40%, var(--aurora-sky-deep, #040f26) 75%, var(--aurora-sky-edge, #020710) 100%);
+  background: radial-gradient(ellipse at 85% 25%, var(--aurora-sky-top, #092a60) 0%, var(--aurora-sky-mid, #061b40) 45%, var(--aurora-sky-deep, #040f26) 80%, var(--aurora-sky-edge, #020710) 100%);
 }
 
 html,

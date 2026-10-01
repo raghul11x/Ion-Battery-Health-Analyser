@@ -3148,26 +3148,13 @@ function initSharedTooltips() {
   }, { passive: true });
 
   let scrollPauseTimer = null;
-  let isScrollingActive = false;
   window.addEventListener('scroll', () => {
     lastScrollTimestamp = performance.now();
     if (activeTooltipTarget) {
       hideSharedTooltip();
     }
-    if (!isScrollingActive) {
-      isScrollingActive = true;
-      document.body.classList.add('is-scrolling');
-      if (typeof window.IonPerf?.onScrollStart === 'function') {
-        window.IonPerf.onScrollStart();
-      }
-    }
     clearTimeout(scrollPauseTimer);
     scrollPauseTimer = setTimeout(() => {
-      isScrollingActive = false;
-      document.body.classList.remove('is-scrolling');
-      if (typeof window.IonPerf?.onScrollEnd === 'function') {
-        window.IonPerf.onScrollEnd();
-      }
       if (pendingScrollFlush) {
         pendingScrollFlush = false;
         runIdle(() => flushPendingRenders());
