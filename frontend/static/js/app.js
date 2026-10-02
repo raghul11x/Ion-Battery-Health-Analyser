@@ -6,6 +6,7 @@
 // Phase 3: Pacing & Render Scheduling Foundation
 if (typeof Chart !== 'undefined') {
   Chart.defaults.devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+  Chart.defaults.font.family = "'Geist', system-ui, -apple-system, sans-serif";
 }
 
 const runIdle = typeof window.requestIdleCallback === 'function'
@@ -1955,7 +1956,7 @@ function renderHistoryAndChart() {
                 align: 'end',
                 labels: {
                   color: '#A1A1AA',
-                  font: { family: '-apple-system, sans-serif', size: 11 },
+                  font: { size: 11 },
                   boxWidth: 10,
                   boxHeight: 10,
                   usePointStyle: true,
@@ -2859,6 +2860,9 @@ function init() {
     document.fonts.ready.then(() => {
       const curr = document.querySelector('.capsule-segment.active');
       if (curr) updateCapsuleBlob(curr);
+      if (state.chartInstance) {
+        state.chartInstance.update('none');
+      }
     });
   }
 
