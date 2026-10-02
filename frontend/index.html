@@ -11,12 +11,19 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Local Offline-Ready Chart.js -->
   <script src="/static/js/chart.min.js"></script>
+  <!-- Preload Geist Variable Font for Offline Standalone UI -->
+  <link rel="preload" href="/static/fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
   <!-- EURA Health Style Theme -->
   <link rel="stylesheet" href="/static/css/style.css">
   <script>
     tailwind.config = {
       theme: {
         extend: {
+          fontFamily: {
+            sans: ['Geist', 'system-ui', 'Segoe UI', 'sans-serif'],
+            mono: ['Geist', 'system-ui', 'Segoe UI', 'sans-serif'],
+            serif: ['Geist', 'system-ui', 'Segoe UI', 'sans-serif'],
+          },
           colors: {
             eura: {
               dark: '#0B0B10',
@@ -31,6 +38,7 @@
   <!-- Transparent viewport base allowing z-index -1 aurora-bg to shine through -->
   <style>
     html, body {
+      font-family: var(--font-sans) !important;
       background: transparent !important;
       background-color: transparent !important;
     }
