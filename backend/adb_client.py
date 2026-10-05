@@ -350,7 +350,12 @@ class ADBClient:
         out, _, code = self.run_shell(serial, "ls /sys/class/power_supply")
         if code != 0 or not out:
             # Fallback to standard nodes if ls fails
-            subdirs = ["battery", "bms", "main", "fg", "usb", "oplus_chg", "mtk-battery"]
+            subdirs = [
+                "battery", "bms", "main", "fg", "usb", "oplus_chg", "bbc_battery",
+                "mtk-battery", "mtk_gauge", "mtk-gauge", "mtk_charger", "google,battery",
+                "google,charger", "qcom,battery", "sec-battery", "smb1351", "smb1355",
+                "smb1390", "max77960", "bq27z561-0", "hw_power"
+            ]
         else:
             subdirs = [s.strip() for s in out.split() if s.strip()]
 
@@ -368,10 +373,15 @@ class ADBClient:
             "health",
             "technology",
             "model_name",
-            # Vendor / OEM registers
+            # Vendor / OEM SoH registers
             "battery_soh",
             "batt_soh",
             "soh",
+            "state_of_health",
+            "battery_health",
+            "health_pct",
+            "soh_ratio",
+            "fg_soh",
             "fg_cycle",
             "battery_cycle",
             "batt_temp",
@@ -387,6 +397,11 @@ class ADBClient:
             "battery_cycles",
             "soh_cycle_count",
             "batt_discharge_level",
+            "cycle_cnt",
+            "cycles",
+            "accumulated_cycle",
+            "cycle_count_raw",
+            "battery_cycle_count_raw",
             # OEM design capacity aliases
             "charge_full_design_uah",
             "batt_capacity_max",
@@ -394,6 +409,10 @@ class ADBClient:
             "charge_design",
             "charge_full_uah",
             "batt_full_capacity",
+            "full_charge_capacity",
+            "batt_design_capacity",
+            "capacity_max",
+            "full_charge_capacity_design",
         ]
 
         for node in subdirs:
@@ -643,7 +662,7 @@ class ADBClient:
         # 1. Locate charge_full
         charge_full_raw: Optional[int] = None
         charge_full_path: Optional[str] = None
-        cf_aliases = ["charge_full", "charge_full_uah", "batt_full_capacity", "charge_counter_full"]
+        cf_aliases = ["charge_full", "charge_full_uah", "batt_full_capacity", "charge_counter_full", "full_charge_capacity"]
         for node in search_nodes:
             node_data = power_tree.get(node, {})
             for cf_key in cf_aliases:
@@ -658,7 +677,11 @@ class ADBClient:
         # 2. Locate charge_full_design
         charge_full_design_raw: Optional[int] = None
         charge_full_design_path: Optional[str] = None
-        cfd_aliases = ["charge_full_design", "charge_full_design_uah", "batt_capacity_max", "design_capacity", "charge_design"]
+        cfd_aliases = [
+            "charge_full_design", "charge_full_design_uah", "batt_capacity_max",
+            "design_capacity", "charge_design", "batt_design_capacity",
+            "capacity_max", "full_charge_capacity_design"
+        ]
         for node in search_nodes:
             node_data = power_tree.get(node, {})
             for cfd_key in cfd_aliases:
@@ -673,9 +696,11 @@ class ADBClient:
         # Tier 2.5: Fallback to dumpsys batterystats for capacity if sysfs omitted design capacity
         if charge_full_design_raw is None:
             bs_out, _, bs_code = self.run_shell(serial, "dumpsys batterystats --charged", timeout=6.0)
+            if bs_code != 0 or not bs_out:
+                bs_out, _, bs_code = self.run_shell(serial, "dumpsys batterystats", timeout=6.0)
             if bs_code == 0 and bs_out:
                 import re
-                m = re.search(r"(?:Estimated battery capacity|Capacity|Battery capacity)\s*[:=]\s*(\d+)\s*(?:mAh|uAh)?", bs_out, re.IGNORECASE)
+                m = re.search(r"(?:Estimated battery capacity|Capacity|Battery capacity|design capacity|Battery Design Capacity|Estimated Capacity)\s*[:=]\s*(\d+)\s*(?:mAh|uAh)?", bs_out, re.IGNORECASE)
                 if m:
                     cap_val = int(m.group(1))
                     if 1000 <= cap_val <= 20000:
@@ -684,6 +709,31 @@ class ADBClient:
                     elif 1000000 <= cap_val <= 20000000:
                         charge_full_design_raw = cap_val
                         charge_full_design_path = "dumpsys batterystats (Capacity)"
+
+        # Tier 2.6: Vendor OEM direct design capacity fallback paths (Samsung, Pixel, MediaTek)
+        if charge_full_design_raw is None:
+            vendor_cfd_paths = [
+                "/efs/FactoryApp/batt_capacity_max",
+                "/sys/class/power_supply/battery/batt_capacity_max",
+                "/sys/class/power_supply/google,battery/charge_full_design",
+                "/sys/class/power_supply/mtk-battery/charge_full_design",
+                "/sys/class/power_supply/mtk_gauge/charge_full_design",
+                "/sys/class/power_supply/bms/charge_full_design",
+            ]
+            for vcfd_path in vendor_cfd_paths:
+                out, _, code = self.run_shell(serial, f"cat {vcfd_path}")
+                if code == 0 and out:
+                    val_str = out.strip()
+                    if val_str.isdigit():
+                        val = int(val_str)
+                        if 1000 <= val <= 20000:
+                            charge_full_design_raw = val * 1000
+                            charge_full_design_path = vcfd_path
+                            break
+                        elif 1000000 <= val <= 20000000:
+                            charge_full_design_raw = val
+                            charge_full_design_path = vcfd_path
+                            break
 
         # 3. Locate charge_counter
         charge_counter_raw: Optional[int] = dumpsys.get("charge_counter")
@@ -723,6 +773,11 @@ class ADBClient:
                 "battery_cycles",
                 "soh_cycle_count",
                 "batt_discharge_level",
+                "cycle_cnt",
+                "cycles",
+                "accumulated_cycle",
+                "cycle_count_raw",
+                "battery_cycle_count_raw",
             ]
             for node in search_nodes:
                 node_data = power_tree.get(node, {})
@@ -759,9 +814,14 @@ class ADBClient:
             vendor_paths = [
                 "/sys/class/power_supply/battery/batt_cycle_count",
                 "/sys/class/power_supply/battery/cycle_count",
+                "/sys/class/power_supply/battery/battery_cycle",
                 "/sys/class/power_supply/bms/cycle_count",
                 "/sys/class/power_supply/google,battery/cycle_count",
+                "/sys/class/power_supply/max77759_battery/cycle_count",
+                "/sys/class/power_supply/oplus_chg/battery_cycle",
+                "/sys/class/power_supply/oplus_chg/soh_cycle_count",
                 "/efs/FactoryApp/batt_discharge_level",
+                "/efs/FactoryApp/batt_cycle_count",
             ]
             for vpath in vendor_paths:
                 out, _, code = self.run_shell(serial, f"cat {vpath}")
@@ -773,6 +833,26 @@ class ADBClient:
                             cycle_count_raw = val
                             cycle_count_path = vpath
                             break
+
+        # 5. Direct OEM SoH extraction from hardware registers
+        oem_soh_raw: Optional[float] = None
+        oem_soh_path: Optional[str] = None
+        for node in search_nodes:
+            node_data = power_tree.get(node, {})
+            for soh_key in ["battery_soh", "batt_soh", "soh", "state_of_health", "battery_health", "health_pct", "soh_ratio", "fg_soh"]:
+                entry = node_data.get(soh_key)
+                if entry and entry.get("readable") and entry.get("int_val") is not None:
+                    raw_val = float(entry["int_val"])
+                    if 0.0 <= raw_val <= 100.0:
+                        oem_soh_raw = raw_val
+                        oem_soh_path = entry["path"]
+                        break
+                    elif 100.0 < raw_val <= 10000.0:
+                        oem_soh_raw = round(raw_val / 100.0, 1)
+                        oem_soh_path = entry["path"]
+                        break
+            if oem_soh_raw is not None:
+                break
 
         # Check unit scale mismatch
         from backend.health import normalize_capacity_units
@@ -818,6 +898,10 @@ class ADBClient:
                     "exposed_by_hardware": cycle_count_raw is not None,
                     "status": "hardware" if cycle_count_raw is not None else "unavailable",
                 },
+                "oem_reported_soh": {
+                    "value": oem_soh_raw,
+                    "path": oem_soh_path,
+                },
                 "unit_audit": {
                     "raw_ratio_before_conversion": raw_ratio_unconverted,
                     "normalized_ratio_pct": (norm_full / float(norm_design) * 100.0) if norm_full and norm_design else None,
@@ -854,6 +938,8 @@ class ADBClient:
                 "cycle_count_path": cycle_count_path,
                 "cycle_count_exposed": cycle_count_raw is not None,
                 "cycle_count_status": "hardware" if cycle_count_raw is not None else "unavailable",
+                "oem_reported_soh": oem_soh_raw,
+                "oem_soh_path": oem_soh_path,
                 "has_design_capacity": norm_design is not None,
                 "recommended_method": "capacity_ratio" if norm_design is not None else "trend_estimate",
             },

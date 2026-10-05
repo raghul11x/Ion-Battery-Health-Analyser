@@ -40,25 +40,24 @@ logger = logging.getLogger("battery_analyzer.device_profiler")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
 HF_API_KEY = os.getenv("HF_API_KEY", "").strip()
 
-# Configured Models
-OPENROUTER_MODEL_1 = os.getenv("OPENROUTER_MODEL_1", "meta-llama/llama-3.3-70b-instruct:free").strip()
-OPENROUTER_MODEL_2 = os.getenv("OPENROUTER_MODEL_2", "google/gemini-2.0-flash-exp:free").strip()
-HF_MODEL = os.getenv("HF_MODEL", "Qwen/Qwen2.5-Coder-7B-Instruct").strip()
+# Configured Models per User Specification
+# Primary API: OpenRouter
+OPENROUTER_MODEL_1 = os.getenv("OPENROUTER_MODEL_1", "nvidia/nemotron-3-ultra-550b-a55b:free").strip()
+OPENROUTER_MODEL_2 = os.getenv("OPENROUTER_MODEL_2", "nvidia/nemotron-3.5-lightning:free").strip()
 
-# Iterative Model Pool (batches of 3 across OpenRouter and Hugging Face)
+# Secondary / Fallback API: Hugging Face
+HF_MODEL_1 = os.getenv("HF_MODEL_1", os.getenv("HF_MODEL", "deepseek-ai/DeepSeek-V4-Flash-0731")).strip()
+HF_MODEL = HF_MODEL_1
+HF_MODEL_2 = os.getenv("HF_MODEL_2", "Qwen/Qwen3-32B").strip()
+
+# Model Hierarchy Pool: OpenRouter Primary -> OpenRouter Fallback -> HF Primary -> HF Fallback
 DEFAULT_MODEL_POOL: List[Dict[str, str]] = [
-    # Batch 1 (Primary high-accuracy models)
+    # Tier 1: OpenRouter (Primary & Fallback)
     {"provider": "openrouter", "model": OPENROUTER_MODEL_1},
     {"provider": "openrouter", "model": OPENROUTER_MODEL_2},
+    # Tier 2: Hugging Face (Primary & Fallback)
     {"provider": "huggingface", "model": HF_MODEL},
-    # Batch 2 (Secondary robust fallback)
-    {"provider": "openrouter", "model": os.getenv("OPENROUTER_MODEL_3", "deepseek/deepseek-chat:free").strip()},
-    {"provider": "openrouter", "model": os.getenv("OPENROUTER_MODEL_4", "qwen/qwen-2.5-coder-32b-instruct:free").strip()},
-    {"provider": "huggingface", "model": os.getenv("HF_MODEL_2", "meta-llama/Llama-3.1-8B-Instruct").strip()},
-    # Batch 3 (Tertiary fallback)
-    {"provider": "openrouter", "model": os.getenv("OPENROUTER_MODEL_5", "mistralai/mistral-7b-instruct:free").strip()},
-    {"provider": "openrouter", "model": os.getenv("OPENROUTER_MODEL_6", "google/gemini-2.0-flash-thinking-exp:free").strip()},
-    {"provider": "huggingface", "model": os.getenv("HF_MODEL_3", "mistralai/Mistral-7B-Instruct-v0.3").strip()},
+    {"provider": "huggingface", "model": HF_MODEL_2},
 ]
 
 
@@ -159,6 +158,8 @@ def clean_json_response(raw_text: str) -> Optional[Dict[str, str]]:
                 if isinstance(v, str):
                     val_str = v.strip()
                     normalized[str(k).strip()] = "not_found" if val_str.lower() in ["not_found", "none", "null", "unknown", "n/a"] else val_str
+                elif isinstance(v, (int, float)):
+                    normalized[str(k).strip()] = str(v)
                 else:
                     normalized[str(k).strip()] = "not_found"
             return normalized
@@ -923,6 +924,160 @@ class DeviceProfiler:
 
         return final_consensus, audit_detail
 
+    async def query_ai_cascade(
+        self,
+        serial: str,
+        unresolved_fields: List[str],
+        context_block: str,
+        timeout_per_model: float = 25.0,
+    ) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Any]]:
+        """
+        Hierarchical AI parameter lookup cascade per User Specification:
+        1. Primary API: OpenRouter
+           - Stage 1: OPENROUTER_MODEL_1 ("nvidia/nemotron-3-ultra-550b-a55b:free")
+           - Stage 2: Fallback to OPENROUTER_MODEL_2 ("nvidia/nemotron-3.5-lightning:free")
+        2. Secondary API: Hugging Face (if OpenRouter fails / unavailable / incomplete)
+           - Stage 3: HF_MODEL ("deepseek-ai/DeepSeek-V4-Flash-0731")
+           - Stage 4: Fallback to HF_MODEL_2 ("Qwen/Qwen3-32B")
+
+        Hardware Verification:
+        Any candidate path returned by AI is verified on the connected phone via ADB:
+        `cat <cand_path>`. If verified, the field is confirmed with real hardware value.
+        """
+        start_time = time.monotonic()
+        remaining_fields = list(unresolved_fields)
+        results: Dict[str, Dict[str, Any]] = {}
+        cascade_logs: List[Dict[str, Any]] = []
+
+        cascade_stages = [
+            {"provider": "openrouter", "model": OPENROUTER_MODEL_1, "stage": "openrouter_primary"},
+            {"provider": "openrouter", "model": OPENROUTER_MODEL_2, "stage": "openrouter_fallback"},
+            {"provider": "huggingface", "model": HF_MODEL, "stage": "hf_primary"},
+            {"provider": "huggingface", "model": HF_MODEL_2, "stage": "hf_fallback"},
+        ]
+
+        for stage_info in cascade_stages:
+            if not remaining_fields:
+                break
+
+            provider = stage_info["provider"]
+            model = stage_info["model"]
+            stage_name = stage_info["stage"]
+
+            if provider == "openrouter" and not OPENROUTER_API_KEY:
+                logger.info(f"[PROFILER CASCADE] Skipping {stage_name} ({model}): OPENROUTER_API_KEY not configured.")
+                continue
+            if provider == "huggingface" and not HF_API_KEY:
+                logger.info(f"[PROFILER CASCADE] Skipping {stage_name} ({model}): HF_API_KEY not configured.")
+                continue
+
+            stage_start = time.monotonic()
+            logger.info(f"[PROFILER CASCADE] Running {stage_name} ({provider}:{model}) for remaining fields: {remaining_fields}...")
+
+            resp = None
+            try:
+                if provider == "openrouter":
+                    resp = await self.call_openrouter(model, remaining_fields, context_block, timeout=timeout_per_model)
+                else:
+                    resp = await self.call_huggingface(model, remaining_fields, context_block, timeout=timeout_per_model)
+            except Exception as e:
+                logger.warning(f"[PROFILER CASCADE] {stage_name} ({model}) error: {e}")
+
+            stage_elapsed = round(time.monotonic() - stage_start, 2)
+            resolved_in_stage: List[str] = []
+
+            if resp and isinstance(resp, dict):
+                for f in list(remaining_fields):
+                    cand_val = resp.get(f)
+                    if cand_val and cand_val.lower() != "not_found":
+                        cand_path = cand_val.strip()
+                        # Hardware verification via ADB: test if path exists and is readable
+                        is_valid = False
+                        read_val = None
+                        if cand_path.startswith("/"):
+                            out, _, code = self.adb.run_shell(serial, f"cat {cand_path}")
+                            if code == 0 and out.strip():
+                                val_str = out.strip()
+                                if val_str.isdigit() or (val_str.startswith("-") and val_str[1:].isdigit()):
+                                    read_val = int(val_str)
+                                    is_valid = True
+                                else:
+                                    read_val = val_str
+                                    is_valid = True
+
+                        if is_valid:
+                            results[f] = {
+                                "path": cand_path,
+                                "source": "ai_verified",
+                                "value": read_val,
+                                "model": f"{provider}:{model}",
+                                "models_agreed": [f"{provider}:{model}"],
+                            }
+                            resolved_in_stage.append(f)
+                            remaining_fields.remove(f)
+                            logger.info(f"[PROFILER CASCADE] {f} verified on phone via {cand_path} (val={read_val}) by {model}")
+                        elif cand_path.startswith("/sys/") and cand_path in context_block:
+                            results[f] = {
+                                "path": cand_path,
+                                "source": "ai_consensus",
+                                "value": None,
+                                "model": f"{provider}:{model}",
+                                "models_agreed": [f"{provider}:{model}"],
+                            }
+                            resolved_in_stage.append(f)
+                            remaining_fields.remove(f)
+                            logger.info(f"[PROFILER CASCADE] {f} matched context path {cand_path} by {model}")
+
+                # Optional OEM design capacity resolution in mAh
+                if "charge_full_design" in remaining_fields and "design_capacity_mah" in resp:
+                    try:
+                        mah_val = int(float(resp["design_capacity_mah"]))
+                        if 1000 <= mah_val <= 20000:
+                            results["charge_full_design"] = {
+                                "path": f"OEM Design Spec ({mah_val} mAh)",
+                                "source": "ai_design_spec",
+                                "value": mah_val * 1000,
+                                "model": f"{provider}:{model}",
+                                "models_agreed": [f"{provider}:{model}"],
+                            }
+                            resolved_in_stage.append("charge_full_design")
+                            remaining_fields.remove("charge_full_design")
+                            logger.info(f"[PROFILER CASCADE] charge_full_design resolved via OEM design capacity ({mah_val} mAh) by {model}")
+                    except Exception:
+                        pass
+
+            cascade_logs.append({
+                "stage": stage_name,
+                "provider": provider,
+                "model": model,
+                "success": bool(resp),
+                "resolved_fields": resolved_in_stage,
+                "elapsed_seconds": stage_elapsed,
+                "response": resp,
+            })
+
+            if not remaining_fields:
+                logger.info(f"[PROFILER CASCADE] All fields resolved after {stage_name}. Halting cascade early.")
+                break
+
+        for f in remaining_fields:
+            if f not in results:
+                results[f] = {
+                    "path": None,
+                    "source": "unresolved_no_consensus",
+                    "value": None,
+                    "models_agreed": [],
+                }
+
+        total_elapsed = round(time.monotonic() - start_time, 2)
+        audit_detail = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "cascade_logs": cascade_logs,
+            "total_elapsed_seconds": total_elapsed,
+            "results": results,
+        }
+        return results, audit_detail
+
     async def verify_oem_soh_iterative(
         self,
         cand: Dict[str, Any],
@@ -1094,32 +1249,42 @@ class DeviceProfiler:
         consensus_results: Dict[str, Dict[str, Any]] = {}
         consensus_detail: Optional[Dict[str, Any]] = None
 
-        # Step 2: If unresolved fields exist, run iterative batch fallback
+        # Step 2: If unresolved fields exist, run cascade fallback (or iterative if custom pool provided)
         active_pool = get_active_model_pool(model_pool)
-        if unresolved_fields and active_pool:
+        if unresolved_fields and (active_pool or OPENROUTER_API_KEY or HF_API_KEY):
             context_block = self.build_raw_context_block(serial, probe_data)
             logger.info(
-                f"[PROFILER] Running iterative fallback for unresolved fields: {unresolved_fields} "
-                f"across pool of {len(active_pool)} models (time cap: {time_cap_seconds}s)..."
+                f"[PROFILER] Running parameter discovery for unresolved fields: {unresolved_fields}..."
             )
             emit_status(
                 serial,
                 "consensus",
-                f"Starting AI consensus for {len(unresolved_fields)} unresolved fields ({', '.join(unresolved_fields)}) across {len(active_pool)} models",
-                {"unresolved_fields": unresolved_fields, "model_count": len(active_pool)},
+                f"Starting AI parameter discovery for {len(unresolved_fields)} unresolved fields ({', '.join(unresolved_fields)})...",
+                {"unresolved_fields": unresolved_fields},
             )
-            consensus_results, consensus_detail = await self.query_ai_consensus_iterative(
-                unresolved_fields=unresolved_fields,
-                context_block=context_block,
-                model_pool=model_pool,
-                time_cap_seconds=time_cap_seconds,
-            )
+            if model_pool is not None:
+                # Custom pool passed (e.g. unit test simulation)
+                consensus_results, consensus_detail = await self.query_ai_consensus_iterative(
+                    unresolved_fields=unresolved_fields,
+                    context_block=context_block,
+                    model_pool=model_pool,
+                    time_cap_seconds=time_cap_seconds,
+                )
+            else:
+                # Primary cascade per User Specification: OpenRouter M1 -> OpenRouter M2 -> HF M1 -> HF M2
+                consensus_results, consensus_detail = await self.query_ai_cascade(
+                    serial=serial,
+                    unresolved_fields=unresolved_fields,
+                    context_block=context_block,
+                    timeout_per_model=min(25.0, time_cap_seconds / 4.0),
+                )
         elif unresolved_fields:
             logger.info("[PROFILER] Unresolved fields exist, but no AI API keys are configured. Proceeding without AI fallback.")
             for f in unresolved_fields:
                 consensus_results[f] = {
                     "path": None,
                     "source": "unresolved_no_consensus",
+                    "value": None,
                     "models_agreed": [],
                 }
 
@@ -1134,39 +1299,40 @@ class DeviceProfiler:
                     "value": loc.get("value"),
                     "models_agreed": [],
                 }
-            elif loc.get("source") in ["local", "ai_consensus"] and loc.get("path"):
+            elif loc.get("source") in ["local", "ai_consensus", "ai_verified", "ai_design_spec"] and (loc.get("path") or loc.get("value")):
                 final_fields[f] = {
-                    "path": loc["path"],
+                    "path": loc.get("path"),
                     "source": loc["source"],
-                    "value": None,
-                    "models_agreed": [],
+                    "value": loc.get("value"),
+                    "models_agreed": loc.get("models_agreed", []),
                 }
             else:
                 ai_res = consensus_results.get(f, {})
                 final_fields[f] = {
                     "path": ai_res.get("path"),
                     "source": ai_res.get("source", "unresolved_no_consensus"),
-                    "value": None,
+                    "value": ai_res.get("value"),
                     "models_agreed": ai_res.get("models_agreed", []),
                 }
 
         for f in unresolved_fields:
             ai_res = consensus_results.get(f, {})
             src = ai_res.get("source", "unresolved_no_consensus")
-            if src == "ai_consensus":
+            if src in ["ai_consensus", "ai_verified", "ai_design_spec"]:
                 models_str = " + ".join(ai_res.get("models_agreed", []))
+                display_path = ai_res.get("path") or "Discovered"
                 emit_status(
                     serial,
                     "consensus",
-                    f"AI consensus confirmed '{f}' via {models_str} -> {ai_res.get('path')}",
-                    {"field": f, "path": ai_res.get("path"), "models": ai_res.get("models_agreed", [])},
+                    f"AI discovery confirmed '{f}' via {models_str} -> {display_path}",
+                    {"field": f, "path": ai_res.get("path"), "value": ai_res.get("value"), "models": ai_res.get("models_agreed", [])},
                     level="success",
                 )
             else:
                 emit_status(
                     serial,
                     "consensus",
-                    f"AI consensus: '{f}' remains unresolved (no agreement)",
+                    f"AI discovery: '{f}' remains unresolved (no agreement or not found)",
                     {"field": f, "source": src},
                     level="info",
                 )
@@ -1174,6 +1340,13 @@ class DeviceProfiler:
         # Step 4: OEM-Reported SoH Detection & Iterative AI Verification
         oem_soh_val = cached_oem_soh
         oem_soh_audit = None
+
+        # Check if USB probe directly detected OEM hardware SoH
+        if oem_soh_val is None:
+            oem_soh_val = probe_data.get("summary", {}).get("oem_reported_soh")
+            if oem_soh_val is not None:
+                oem_soh_audit = {"decision": "local_hardware", "accepted_soh": oem_soh_val}
+                logger.info(f"[PROFILER] OEM SoH detected directly from USB debugging hardware registers: {oem_soh_val}%")
 
         if oem_soh_val is None or force_ai:
             candidates = self.detect_oem_soh_candidates(deep_scan_data)
@@ -1279,7 +1452,7 @@ async def check_model_health() -> Dict[str, Any]:
     """
     global DEFAULT_MODEL_POOL
 
-    FALLBACKS = ["poolside/laguna-s-2.1:free", "nvidia/nemotron-3.5-lightning:free"]
+    FALLBACKS = ["nvidia/nemotron-3.5-lightning:free", "Qwen/Qwen3-32B"]
 
     def _is_dead_response(status: int, body: str) -> bool:
         if status in (404, 422):
@@ -1337,8 +1510,8 @@ async def check_model_health() -> Dict[str, Any]:
             logger.debug(f"[MODEL HEALTH] HF '{model}' ping error: {e}")
             return model, "ok"
 
-    # Only check the first 3 pool slots (primary batch)
-    primary = DEFAULT_MODEL_POOL[:3]
+    # Check the model pool slots (primary cascade models)
+    primary = DEFAULT_MODEL_POOL[:4]
     tasks = []
     for item in primary:
         if item["provider"] == "openrouter":

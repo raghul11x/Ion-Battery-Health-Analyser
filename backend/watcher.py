@@ -269,8 +269,45 @@ class DeviceWatcher:
         charge_full_uah = summary.get("charge_full_uah")
         charge_full_design_uah = summary.get("charge_full_design_uah")
 
+        # Check cached profile for OEM SoH and discovered parameters
+        profile = db.get_device_profile(serial)
+        profile_fields = profile.get("fields", {}) if profile else {}
+        oem_soh = summary.get("oem_reported_soh") or (profile.get("oem_reported_soh") if profile else None)
+        history_days = db.get_history_duration_days(serial)
+
+        # If design capacity missing from live probe, check discovered profile
+        if charge_full_design_uah is None and profile_fields:
+            cfd_field = profile_fields.get("charge_full_design", {})
+            if cfd_field.get("value"):
+                charge_full_design_uah = cfd_field["value"]
+            elif cfd_field.get("path") and str(cfd_field.get("path")).startswith("/"):
+                out, _, code = self.adb.run_shell(serial, f"cat {cfd_field['path']}")
+                if code == 0 and out.strip().isdigit():
+                    charge_full_design_uah = int(out.strip())
+
+        # If full capacity missing from live probe, check discovered profile
+        if charge_full_uah is None and profile_fields:
+            cf_field = profile_fields.get("charge_full", {})
+            if cf_field.get("value"):
+                charge_full_uah = cf_field["value"]
+            elif cf_field.get("path") and str(cf_field.get("path")).startswith("/"):
+                out, _, code = self.adb.run_shell(serial, f"cat {cf_field['path']}")
+                if code == 0 and out.strip().isdigit():
+                    charge_full_uah = int(out.strip())
+
         # Hardware cycle count vs estimated cycle count fallback
         hw_cycle_count = summary.get("cycle_count")
+        if hw_cycle_count is None and profile_fields:
+            cy_field = profile_fields.get("cycle_count", {})
+            if cy_field.get("value") is not None and isinstance(cy_field["value"], int) and 0 <= cy_field["value"] < 20000:
+                hw_cycle_count = cy_field["value"]
+            elif cy_field.get("path") and str(cy_field.get("path")).startswith("/"):
+                out, _, code = self.adb.run_shell(serial, f"cat {cy_field['path']}")
+                if code == 0 and out.strip().isdigit():
+                    c_val = int(out.strip())
+                    if 0 <= c_val < 20000:
+                        hw_cycle_count = c_val
+
         if hw_cycle_count is not None and hw_cycle_count >= 0:
             cycle_count = hw_cycle_count
             cycle_count_type = "hardware"
@@ -301,6 +338,8 @@ class DeviceWatcher:
             cycle_count=cycle_count,
             voltage_mv=voltage_mv,
             temperature_c=temp_c,
+            history_days=history_days,
+            oem_reported_soh=oem_soh,
         )
 
         record = db.insert_reading(
