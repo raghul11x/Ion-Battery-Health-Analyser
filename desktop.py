@@ -16,7 +16,9 @@ import webview
 
 from backend.main import app
 
-# Ensure streams exist even in windowless execution (pythonw.exe)
+# Ensure streams exist even in windowless execution (pythonw.exe / PyInstaller)
+if sys.stdin is None:
+    sys.stdin = open(os.devnull, "r", encoding="utf-8")
 if sys.stdout is None:
     sys.stdout = open(os.devnull, "w", encoding="utf-8")
 if sys.stderr is None:

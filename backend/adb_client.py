@@ -122,18 +122,28 @@ class ADBClient:
             return False
 
     def run_cmd(self, args: List[str], timeout: float = 12.0) -> Tuple[str, str, int]:
-        """Executes an adb command safely."""
+        """Executes an adb command safely with zero console window flickering on Windows."""
         if not self.is_available():
             return "", "ADB executable not found", -1
 
         cmd = [self.adb_path] + args
         try:
+            startupinfo = None
+            creationflags = 0
+            if os.name == "nt":
+                creationflags = subprocess.CREATE_NO_WINDOW
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+
             res = subprocess.run(
                 cmd,
                 capture_output=True,
+                stdin=subprocess.DEVNULL,
                 text=True,
                 timeout=timeout,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                creationflags=creationflags,
+                startupinfo=startupinfo,
             )
             return res.stdout.strip(), res.stderr.strip(), res.returncode
         except subprocess.TimeoutExpired:
