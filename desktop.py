@@ -213,61 +213,47 @@ def main():
         window.events.restored += on_window_restored
 
         def on_started(w):
-            """Ensures window always opens un-minimized in active foreground maximized state."""
+            """Ensures window always opens un-minimized in active foreground maximized state without flickering."""
             try:
                 if sys.platform == "win32":
                     user32 = ctypes.windll.user32
                     kernel32 = ctypes.windll.kernel32
 
-                    # Poll for up to 4.5 seconds to guarantee window is caught as soon as it initializes
-                    for attempt in range(30):
-                        time.sleep(0.15)
-                        try:
-                            w.restore()
-                            w.maximize()
-                            w.show()
-                        except Exception:
-                            pass
-
+                    # Poll briefly until native window handle is found
+                    for attempt in range(25):
+                        time.sleep(0.12)
                         hwnd = user32.FindWindowW(None, "Ion+")
-                        if hwnd:
-                            # 1. If iconic (minimized in taskbar), restore to normal first
-                            if user32.IsIconic(hwnd):
-                                user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                        if not hwnd:
+                            continue
 
-                            # 2. Maximize the window
+                        # 1. If iconic (minimized in taskbar), restore directly to maximized
+                        if user32.IsIconic(hwnd):
+                            user32.ShowWindow(hwnd, 3)  # SW_MAXIMIZE
+                        elif not user32.IsZoomed(hwnd):
                             user32.ShowWindow(hwnd, 3)  # SW_MAXIMIZE
 
-                            # 3. Punch through Windows 11 foreground lockout via topmost nudge
-                            user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040)
-                            user32.SetWindowPos(hwnd, -2, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040)
-
-                            # 4. Attach thread input to bypass SetForegroundWindow restrictions
-                            fore_hwnd = user32.GetForegroundWindow()
-                            if fore_hwnd and fore_hwnd != hwnd:
-                                fore_thread = user32.GetWindowThreadProcessId(fore_hwnd, None)
-                                cur_thread = kernel32.GetCurrentThreadId()
-                                if fore_thread != cur_thread:
-                                    user32.AttachThreadInput(cur_thread, fore_thread, True)
-                                    user32.SetForegroundWindow(hwnd)
-                                    user32.BringWindowToTop(hwnd)
-                                    user32.AttachThreadInput(cur_thread, fore_thread, False)
-
-                            # 5. Bring to front & switch focus
-                            user32.SwitchToThisWindow(hwnd, True)
+                        # 2. Seamlessly bring to foreground without Z-order thrashing or window resize
+                        fore_hwnd = user32.GetForegroundWindow()
+                        if fore_hwnd != hwnd:
+                            fore_thread = user32.GetWindowThreadProcessId(fore_hwnd, None)
+                            cur_thread = kernel32.GetCurrentThreadId()
+                            if fore_thread and fore_thread != cur_thread:
+                                user32.AttachThreadInput(cur_thread, fore_thread, True)
+                                user32.SetForegroundWindow(hwnd)
+                                user32.BringWindowToTop(hwnd)
+                                user32.AttachThreadInput(cur_thread, fore_thread, False)
+                            else:
+                                user32.SetForegroundWindow(hwnd)
+                                user32.BringWindowToTop(hwnd)
+                        else:
                             user32.SetForegroundWindow(hwnd)
-                            user32.BringWindowToTop(hwnd)
-                            user32.SetActiveWindow(hwnd)
 
-                            # If window is verified active and not minimized, wait 2 passes to stabilize and break
-                            if not user32.IsIconic(hwnd) and attempt >= 2:
-                                break
+                        # Window is confirmed maximized and foreground — exit loop immediately
+                        break
                 else:
-                    for _ in range(5):
-                        time.sleep(0.2)
-                        w.restore()
+                    time.sleep(0.2)
+                    if hasattr(w, "maximize"):
                         w.maximize()
-                        w.show()
             except Exception:
                 pass
 
