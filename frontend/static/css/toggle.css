@@ -20,9 +20,46 @@
   vertical-align: middle;
 }
 
-/* Size modifier for compact headers & pills */
+/* ============================================================
+   COMPACT MODIFIER — used inside header capsule pills and
+   the Live Device Feed bar. Zoom scales the *entire* component
+   (layout box + visual footprint) uniformly, so the 50px
+   height becomes ~28px at zoom:0.56, matching the 38px pill
+   height after accounting for the parent's flex centering.
+
+   Key fixes vs. the old 0.44 version:
+   1. display:inline-flex + align-items:center eliminates the
+      baseline gap that pushed the toggle below neighboring text.
+   2. height:auto lets the flex container hug its content so
+      the layout box matches the real visual footprint.
+   3. .toggle-label { display:block } removes the inline-block
+      baseline descender gap inside the zoomed context.
+   4. .toggle-label::before halo is tightened to +0.5rem so it
+      no longer overflows the parent capsule/pill boundary.
+   ============================================================ */
 .toggle-cont--sm {
-  zoom: 0.44;
+  zoom: 0.50;
+
+  /* Remove the inline-block baseline gap so the toggle sits
+     on the same centre-line as adjacent text and pill elements */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: auto;
+  padding: 0.25rem;
+}
+
+/* Inside the compact variant, switch label to block so it no
+   longer participates in baseline alignment */
+.toggle-cont--sm .toggle-label {
+  display: block;
+}
+
+/* Tighten the halo so it cannot bleed outside the parent capsule */
+.toggle-cont--sm .toggle-label::before {
+  width: calc(100% + 0.5rem);
+  height: calc(100% + 0.5rem);
 }
 
 /* Accessibility: visually-hidden input preserves full keyboard focus */

@@ -237,8 +237,9 @@ const AppState = {
       state.is80CapSimulated = false;
       state.deviceStatusEvents = [];
 
-      // Disable live toggle when disconnected
+      // Disable live toggle when disconnected and render unchecked without overwriting stored preference
       if (components.liveToggle) {
+        components.liveToggle.setChecked(false, { silent: true });
         components.liveToggle.setDisabled(true, 'Connect a device to use live telemetry');
       }
 
@@ -3343,7 +3344,7 @@ function initSparkleToggles() {
     components.liveToggle = createSparkleToggle({
       id: 'toggle-live-telemetry',
       label: 'Live telemetry polling',
-      checked: AppState.liveTelemetryEnabled,
+      checked: AppState.connected ? AppState.liveTelemetryEnabled : false,
       disabled: !AppState.connected,
       size: 'sm',
       onChange: (checked) => {
@@ -3352,6 +3353,7 @@ function initSparkleToggles() {
     });
     liveSlot.appendChild(components.liveToggle.element);
     if (!AppState.connected) {
+      components.liveToggle.setChecked(false, { silent: true });
       components.liveToggle.setDisabled(true, 'Connect a device to use live telemetry');
     }
   }

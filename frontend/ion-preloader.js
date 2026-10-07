@@ -10,13 +10,20 @@
  *   IonPreloader.finish();                                  // when the app is really ready
  *   window.addEventListener('ionpl:done', ...);             // fired after it is removed
  * Add data-manual to the script tag to call IonPreloader.start() yourself.
+ * Timing: on screen for at least 3s and at most 5s in total (data-min / data-max, in ms).
  */
 (function () {
   'use strict';
   if (typeof window === 'undefined' || window.IonPreloader) return;
 
   var script = document.currentScript;
-  var cfg = { target: (script && script.dataset.target) || '', minMs: 900, maxMs: 12000 };
+  // minMs / maxMs = total time on screen, including the exit animation (override with data-min / data-max)
+  var cfg = {
+    target: (script && script.dataset.target) || '',
+    minMs: Number(script && script.dataset.min) || 3000,
+    maxMs: Number(script && script.dataset.max) || 5000
+  };
+  var EXIT = 1700; // ignite (750ms) + handoff (950ms)
   var calm = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   var k = calm ? 0.25 : 1;
 
@@ -26,9 +33,9 @@
 .root{--blue:#2b6fe6;--cyan:#22d3ee;--teal:#3de0b8;position:absolute;inset:0;display:flex;flex-direction:column;
   align-items:center;justify-content:center;gap:30px;color:#eaf2ff;font-family:system-ui,"Segoe UI",sans-serif}
 .bg{position:absolute;inset:0;transition:opacity .8s ease;background:
-  repeating-linear-gradient(90deg,rgba(255,255,255,.04) 0 2px,transparent 2px 46px),
-  linear-gradient(100deg,transparent 28%,rgba(43,111,230,.5) 52%,rgba(34,211,238,.42) 68%,rgba(61,224,184,.36) 84%,transparent 100%),
-  linear-gradient(180deg,rgba(5,11,31,.35),rgba(5,11,31,.75)),#050b1f}
+  radial-gradient(60% 55% at 50% 48%,rgba(43,111,230,.38),transparent 70%),
+  radial-gradient(40% 40% at 62% 56%,rgba(34,211,238,.18),transparent 70%),
+  #050b1f}
 .out .bg{opacity:0}
 .atom{position:relative;width:200px;height:200px;display:grid;place-items:center}
 .ring{position:absolute;inset:0;border:1px solid rgba(34,211,238,.34);border-radius:50%;
@@ -98,7 +105,7 @@
     stepEl = sh.querySelector('.step');
     (document.documentElement || document.body).appendChild(host);
     t0 = Date.now();
-    setTimeout(finish, cfg.maxMs); // failsafe: never trap the user behind the loader
+    setTimeout(finish, Math.max(0, cfg.maxMs - EXIT) * k); // hard cap: gone by maxMs even if finish() is never called
   }
 
   // Real progress only: call with a label and/or a 0..1 fraction.
@@ -114,7 +121,7 @@
   function finish() {
     if (!root || finished) return;
     finished = true;
-    setTimeout(ignite, Math.max(0, cfg.minMs * k - (Date.now() - t0)));
+    setTimeout(ignite, Math.max(0, (cfg.minMs - EXIT) * k - (Date.now() - t0))); // floor: never gone before minMs
   }
 
   function ignite() {
