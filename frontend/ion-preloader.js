@@ -28,16 +28,17 @@
   var k = calm ? 0.25 : 1;
 
   var CSS = `
+@font-face{font-family:'Geist';src:url('/static/fonts/Geist-Variable.woff2') format('woff2');font-weight:100 900;font-style:normal;font-display:swap}
 :host{all:initial;position:fixed;inset:0;z-index:2147483000;display:block}
 *{box-sizing:border-box}
 .root{--blue:#2b6fe6;--cyan:#22d3ee;--teal:#3de0b8;position:absolute;inset:0;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;gap:30px;color:#eaf2ff;font-family:system-ui,"Segoe UI",sans-serif}
+  align-items:center;justify-content:center;gap:24px;color:#eaf2ff;font-family:"Geist",system-ui,"Segoe UI",sans-serif}
 .bg{position:absolute;inset:0;transition:opacity .8s ease;background:
   radial-gradient(60% 55% at 50% 48%,rgba(43,111,230,.38),transparent 70%),
   radial-gradient(40% 40% at 62% 56%,rgba(34,211,238,.18),transparent 70%),
   #050b1f}
 .out .bg{opacity:0}
-.atom{position:relative;width:200px;height:200px;display:grid;place-items:center}
+.atom{position:relative;width:180px;height:180px;display:grid;place-items:center}
 .ring{position:absolute;inset:0;border:1px solid rgba(34,211,238,.34);border-radius:50%;
   transform:rotate(var(--a)) scaleY(.38);animation:fade .9s ease backwards;animation-delay:calc(var(--n)*.18s);
   transition:transform .55s cubic-bezier(.6,0,.9,.4),opacity .4s}
@@ -46,21 +47,31 @@
 .ring:nth-child(3) i{animation-duration:2.9s}
 .ring i::after{content:"";position:absolute;top:-4px;left:50%;margin-left:-4px;width:8px;height:8px;border-radius:50%;
   background:var(--teal);box-shadow:0 0 12px 2px var(--cyan)}
-.tile{position:relative;z-index:2;width:84px;height:84px;border-radius:24px;display:grid;place-items:center;
+.tile{position:relative;z-index:2;width:80px;height:80px;border-radius:22px;display:grid;place-items:center;
   background:linear-gradient(145deg,#fff,#cfe3ff);box-shadow:0 0 40px rgba(34,211,238,.45);
   transition:transform .85s cubic-bezier(.7,0,.2,1),opacity .25s ease}
 .tile svg{width:60%;height:60%}
-.pulse{position:absolute;width:84px;height:84px;border-radius:50%;border:2px solid var(--cyan);opacity:0}
+.pulse{position:absolute;width:80px;height:80px;border-radius:50%;border:2px solid var(--cyan);opacity:0}
 .ignite .ring{transform:rotate(var(--a)) scaleY(.38) scale(.15);opacity:0}
 .ignite .pulse{animation:pulse .9s ease-out}
 .ignite .tile{animation:flash .6s ease}
+.brand{display:flex;flex-direction:column;align-items:center;gap:3px;user-select:none;margin-top:-6px}
+.out .brand{opacity:0;transition:opacity .35s ease}
+.brand-eyebrow{font-size:10px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;
+  background:linear-gradient(90deg,#38bdf8 0%,#2dd4bf 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  line-height:1;margin-bottom:2px}
+.brand-title{font-size:24px;font-weight:700;letter-spacing:-.035em;line-height:1;display:inline-flex;align-items:baseline}
+.brand-name{background:linear-gradient(180deg,#ffffff 0%,#cbd5e1 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  filter:drop-shadow(0 2px 4px rgba(0,0,0,.45))}
+.brand-plus{font-weight:600;font-size:20px;margin-left:1px;color:#38bdf8;transform:translateY(-3px);display:inline-block;
+  text-shadow:0 0 12px rgba(56,189,248,.8),0 0 24px rgba(45,212,191,.45)}
 .meta{display:flex;flex-direction:column;align-items:center;gap:12px}
 .out .meta{opacity:0;transition:opacity .3s}
 .bar{width:min(260px,70vw);height:6px;border-radius:99px;background:rgba(255,255,255,.12);overflow:hidden}
 .bar b{display:block;height:100%;width:0;border-radius:inherit;transition:width .6s ease;
   background:linear-gradient(90deg,var(--blue),var(--cyan),var(--teal))}
 .indet b{width:35%;transition:none;animation:sweep 1.2s ease-in-out infinite alternate}
-.step{margin:0;font-size:14px;color:#9db2d6;min-height:1.4em}
+.step{margin:0;font-size:13px;font-weight:500;letter-spacing:.02em;color:#9db2d6;min-height:1.4em;font-family:inherit}
 @keyframes orbit{to{transform:rotate(360deg)}}
 @keyframes fade{from{opacity:0}}
 @keyframes pulse{from{opacity:.9;transform:scale(.6)}to{opacity:0;transform:scale(3.4)}}
@@ -84,6 +95,12 @@
         <ellipse cx="24" cy="24" rx="19" ry="7.5" transform="rotate(120 24 24)"/>
         <circle cx="24" cy="24" r="3.4" fill="#2b6fe6" stroke="none"/>
       </svg>
+    </div>
+  </div>
+  <div class="brand">
+    <div class="brand-eyebrow">INTELLIGENCE AT THE CORE</div>
+    <div class="brand-title">
+      <span class="brand-name">Ion</span><span class="brand-plus">+</span>
     </div>
   </div>
   <div class="meta"><div class="bar indet"><b></b></div><p class="step" role="status"></p></div>

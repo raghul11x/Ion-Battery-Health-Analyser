@@ -93,14 +93,26 @@ class AdobeSplashScreen:
         )
         eyebrow.pack(anchor=tk.W)
 
-        title = tk.Label(
-            text_frame,
-            text="Ion+",
+        title_frame = tk.Frame(text_frame, bg=self.bg_color)
+        title_frame.pack(anchor=tk.W, pady=(0, 0))
+
+        title_word = tk.Label(
+            title_frame,
+            text="Ion",
             fg="#FFFFFF",
             bg=self.bg_color,
             font=("Geist", 24, "bold"),
         )
-        title.pack(anchor=tk.W, pady=(0, 0))
+        title_word.pack(side=tk.LEFT)
+
+        title_plus = tk.Label(
+            title_frame,
+            text="+",
+            fg="#38BDF8",
+            bg=self.bg_color,
+            font=("Geist", 20, "bold"),
+        )
+        title_plus.pack(side=tk.LEFT, padx=(1, 0), pady=(0, 3))
 
         subtitle = tk.Label(
             text_frame,
