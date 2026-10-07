@@ -75,7 +75,10 @@ def reconnect_adb() -> Dict[str, Any]:
 
 
 @router.get("/snapshot")
-def get_snapshot(serial: Optional[str] = None) -> Dict[str, Any]:
+def get_snapshot(
+    serial: Optional[str] = None,
+    include_demo: Optional[bool] = Query(default=None),
+) -> Dict[str, Any]:
     """
     Returns current snapshot. If phone is connected, returns live hardware reading.
     Otherwise returns latest recorded reading from SQLite.
@@ -327,7 +330,7 @@ def get_snapshot(serial: Optional[str] = None) -> Dict[str, Any]:
             logger.error(f"Error generating live hardware snapshot for {target_serial}: {e}", exc_info=True)
 
     # 2. LATEST RECORDED FROM DATABASE (DISCONNECTED STATE)
-    latest = db.get_latest_reading(target_serial)
+    latest = db.get_latest_reading(target_serial, include_demo=include_demo)
     if latest:
         eff_cap = latest.get("effective_capacity_uah")
         if eff_cap is None:
@@ -450,9 +453,10 @@ def get_history(
     serial: Optional[str] = None,
     limit: int = Query(default=500, ge=10, le=1000),
     days: Optional[int] = Query(default=None, ge=1, le=365),
+    include_demo: Optional[bool] = Query(default=None),
 ) -> Dict[str, Any]:
     """Returns chronological reading entries for trend graphing."""
-    readings = db.get_history(device_serial=serial, limit=limit, days=days)
+    readings = db.get_history(device_serial=serial, limit=limit, days=days, include_demo=include_demo)
     return {
         "count": len(readings),
         "device_serial": serial,
@@ -461,9 +465,12 @@ def get_history(
 
 
 @router.get("/insights")
-def get_insights(serial: Optional[str] = None) -> Dict[str, Any]:
+def get_insights(
+    serial: Optional[str] = None,
+    include_demo: Optional[bool] = Query(default=None),
+) -> Dict[str, Any]:
     """Returns charging habit metrics, thermal events, and wear indicators."""
-    return db.get_insights(device_serial=serial)
+    return db.get_insights(device_serial=serial, include_demo=include_demo)
 
 
 @router.get("/probe")
@@ -529,9 +536,9 @@ def unseed_mock_data(payload: Optional[SeedRequest] = None) -> Dict[str, Any]:
 
 
 @router.get("/devices")
-def list_devices() -> List[Dict[str, Any]]:
+def list_devices(include_demo: Optional[bool] = Query(default=None)) -> List[Dict[str, Any]]:
     """Returns all devices seen in database history, merged with any currently connected USB device."""
-    db_devs = db.get_devices()
+    db_devs = db.get_devices(include_demo=include_demo if include_demo is not None else False)
     known_serials = {d["serial"] for d in db_devs}
 
     if adb.is_available():

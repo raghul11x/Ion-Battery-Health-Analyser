@@ -6,6 +6,7 @@
 *.db-wal
 *.db-shm
 *.sqlite3
+*.backup
 
 # Python cache & virtual environment
 __pycache__/

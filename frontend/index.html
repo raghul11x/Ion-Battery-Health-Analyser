@@ -15,6 +15,8 @@
   <link rel="preload" href="/static/fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
   <!-- EURA Health Style Theme -->
   <link rel="stylesheet" href="/static/css/style.css">
+  <!-- Sparkle Toggle Theme -->
+  <link rel="stylesheet" href="/static/css/toggle.css">
   <script>
     tailwind.config = {
       theme: {
@@ -95,10 +97,11 @@
         <span id="conn-device-label" class="text-zinc-400 font-mono hidden sm:inline"></span>
       </div>
 
-      <!-- Seed Demo Data Button -->
-      <button id="seed-btn" class="glass-pill glass-interactive h-[38px] px-3.5 text-zinc-300 text-xs flex items-center justify-center gap-1.5 whitespace-nowrap transition" data-tooltip="Populates a 30-day simulated dataset to preview degradation curves and insights.">
-        <span>Seed 30D</span>
-      </button>
+      <!-- Demo Data Capsule Pill (Uiverse Sparkle Toggle) -->
+      <div id="demo-data-capsule" class="glass-pill h-[38px] px-3.5 flex items-center gap-2 select-none shadow-inner" data-tooltip="Simulate a 30-day historical dataset for preview">
+        <span class="text-xs font-semibold text-zinc-200 whitespace-nowrap">Demo data</span>
+        <div id="demo-data-slot" class="flex items-center"></div>
+      </div>
 
       <!-- Connect / Probe Device Pill CTA Button -->
       <button id="probe-btn" class="glass-pill glass-interactive glass-btn-primary h-[38px] px-4 text-white text-xs flex items-center justify-center gap-2 font-bold whitespace-nowrap transition" data-tooltip="Scan and probe connected USB Android device">
@@ -164,7 +167,7 @@
     <!-- LIVE DEVICE ACTIVITY FEED (Collapsible Strip) -->
     <div id="device-status-panel" class="hidden rounded-2xl glass shadow-xl overflow-hidden transition-all duration-300">
       <!-- Collapsible Header Bar -->
-      <button id="device-status-toggle" type="button" class="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-white/[0.04] transition-colors focus:outline-none select-none" aria-expanded="false" aria-controls="device-status-content">
+      <div id="device-status-toggle" role="button" tabindex="0" class="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-white/[0.04] transition-colors focus:outline-none select-none cursor-pointer" aria-expanded="false" aria-controls="device-status-content">
         <div class="flex items-center gap-2.5 min-w-0 pr-2">
           <span class="relative flex h-2 w-2 shrink-0">
             <span id="status-feed-ping" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
@@ -178,6 +181,11 @@
           </span>
         </div>
         <div class="flex items-center gap-2.5 shrink-0 ml-2">
+          <!-- Live Telemetry Toggle Container -->
+          <div id="live-telemetry-container" class="flex items-center gap-1.5" data-tooltip="Toggle live device telemetry polling">
+            <span class="text-[11px] font-semibold text-zinc-300 select-none">Live</span>
+            <div id="live-telemetry-slot" class="flex items-center"></div>
+          </div>
           <span id="status-feed-count-badge" class="glass-chip glass-chip-cyan">
             0 events
           </span>
@@ -185,7 +193,7 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
           </svg>
         </div>
-      </button>
+      </div>
 
       <!-- Expandable Events List Container -->
       <div id="device-status-content" class="hidden border-t border-white/[0.06] px-4 py-3 bg-black/30">
@@ -376,6 +384,10 @@
 
             <!-- Chart.js Canvas (White curve) with Stale State Container -->
             <div id="chart-canvas-container" class="relative h-64 w-full pt-2 transition duration-300">
+              <div id="chart-empty-state" class="hidden absolute inset-0 flex flex-col items-center justify-center text-center p-4 select-none pointer-events-none">
+                <p class="text-zinc-500 text-sm font-medium">No history yet</p>
+                <p class="text-zinc-600 text-xs mt-1">Connect a device to record telemetry or toggle Demo data to preview</p>
+              </div>
               <canvas id="heart-report-chart"></canvas>
             </div>
           </div>
@@ -863,6 +875,8 @@
 
   <!-- Performance Subsystem & Dev HUD -->
   <script src="/static/js/perf.js"></script>
+  <!-- Sparkle Toggle Component (Uiverse.io by MuhammadHasann) -->
+  <script src="/static/js/toggle.js"></script>
   <!-- Script -->
   <script src="/static/js/app.js"></script>
 </body>
