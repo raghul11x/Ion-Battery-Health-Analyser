@@ -1036,6 +1036,7 @@ function renderIdleState() {
   renderForecastIdle();
   if (el.simCapToggle) {
     el.simCapToggle.disabled = true;
+    el.simCapToggle.checked = false;
     el.simCapToggle.classList.add('opacity-40', 'cursor-not-allowed');
     el.simCapToggle.setAttribute('data-tooltip', 'Connect phone to run longevity forecast');
   }
@@ -1478,6 +1479,7 @@ function renderForecastIdle() {
     el.simCapResult.classList.add('hidden');
   }
   if (el.simCapToggle) {
+    el.simCapToggle.checked = false;
     el.simCapToggle.setAttribute('aria-checked', 'false');
     el.simCapToggle.classList.remove('bg-indigo-600');
     el.simCapToggle.classList.add('bg-zinc-700');
@@ -1583,6 +1585,7 @@ function renderSimulatedForecast(forecast) {
   }
 
   if (el.simCapToggle) {
+    el.simCapToggle.checked = true;
     el.simCapToggle.setAttribute('aria-checked', 'true');
     el.simCapToggle.classList.remove('bg-zinc-700');
     el.simCapToggle.classList.add('bg-indigo-600');
@@ -1607,6 +1610,11 @@ function renderForecastInsufficientData(message = 'Not enough data yet') {
   if (el.forecastCyclesLeft) el.forecastCyclesLeft.textContent = 'Insufficient cycle data';
   if (el.forecastDailyCadence) el.forecastDailyCadence.textContent = '—';
   if (el.simCapResult) el.simCapResult.classList.add('hidden');
+  state.is80CapSimulated = false;
+  if (el.simCapToggle) {
+    el.simCapToggle.checked = false;
+    el.simCapToggle.setAttribute('aria-checked', 'false');
+  }
 }
 
 function renderForecastError(message = 'Forecast calculation error', subtext = 'API request failed') {
@@ -1629,6 +1637,7 @@ function renderForecastError(message = 'Forecast calculation error', subtext = '
   // Revert toggle state to OFF
   state.is80CapSimulated = false;
   if (el.simCapToggle) {
+    el.simCapToggle.checked = false;
     el.simCapToggle.setAttribute('aria-checked', 'false');
     el.simCapToggle.classList.remove('bg-indigo-600');
     el.simCapToggle.classList.add('bg-zinc-700');
@@ -1638,32 +1647,32 @@ function renderForecastError(message = 'Forecast calculation error', subtext = '
 }
 
 async function handleSimCapToggle(e) {
-  if (e) {
-    if (typeof e.preventDefault === 'function') e.preventDefault();
-    if (typeof e.stopPropagation === 'function') e.stopPropagation();
-  }
-
   // Preserve scroll position to eliminate any jump on click or reflow
   const savedScrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0;
 
   const isConnected = AppState.connected || AppState.mode === 'seeded';
   if (!isConnected) {
-    renderForecastInsufficientData('Awaiting device connection');
     if (el.simCapToggle) {
+      el.simCapToggle.checked = false;
       el.simCapToggle.setAttribute('aria-checked', 'false');
-      el.simCapToggle.classList.remove('bg-indigo-600');
-      el.simCapToggle.classList.add('bg-zinc-700');
-      el.simCapKnob?.classList.remove('translate-x-5');
-      el.simCapKnob?.classList.add('translate-x-0');
     }
+    state.is80CapSimulated = false;
+    renderForecastInsufficientData('Awaiting device connection');
     if (typeof window.scrollTo === 'function') {
       window.scrollTo({ top: savedScrollY, behavior: 'instant' });
     }
     return;
   }
 
-  // Toggle state
-  state.is80CapSimulated = !state.is80CapSimulated;
+  // Toggle state: sync with checkbox checked status or toggle if programmatically invoked
+  if (el.simCapToggle && typeof el.simCapToggle.checked === 'boolean' && e) {
+    state.is80CapSimulated = el.simCapToggle.checked;
+  } else {
+    state.is80CapSimulated = !state.is80CapSimulated;
+    if (el.simCapToggle) {
+      el.simCapToggle.checked = state.is80CapSimulated;
+    }
+  }
   const isCapped = state.is80CapSimulated;
 
   if (!isCapped) {
@@ -1671,11 +1680,8 @@ async function handleSimCapToggle(e) {
     forecastRequestId++;
     if (el.simCapResult) el.simCapResult.classList.add('hidden');
     if (el.simCapToggle) {
+      el.simCapToggle.checked = false;
       el.simCapToggle.setAttribute('aria-checked', 'false');
-      el.simCapToggle.classList.remove('bg-indigo-600');
-      el.simCapToggle.classList.add('bg-zinc-700');
-      el.simCapKnob?.classList.remove('translate-x-5');
-      el.simCapKnob?.classList.add('translate-x-0');
     }
     if (state.normalForecast) {
       renderForecast(state.normalForecast);
@@ -1688,11 +1694,8 @@ async function handleSimCapToggle(e) {
 
   // Toggle ON: update toggle button and show simulation side-by-side
   if (el.simCapToggle) {
+    el.simCapToggle.checked = true;
     el.simCapToggle.setAttribute('aria-checked', 'true');
-    el.simCapToggle.classList.remove('bg-zinc-700');
-    el.simCapToggle.classList.add('bg-indigo-600');
-    el.simCapKnob?.classList.add('translate-x-5');
-    el.simCapKnob?.classList.remove('translate-x-0');
   }
 
   // Unhide simulation drawer
@@ -2895,11 +2898,7 @@ function init() {
   }
 
   // Calibration & Prediction actions
-  el.simCapToggle?.addEventListener('click', (e) => {
-    if (e) {
-      if (typeof e.preventDefault === 'function') e.preventDefault();
-      if (typeof e.stopPropagation === 'function') e.stopPropagation();
-    }
+  el.simCapToggle?.addEventListener('change', (e) => {
     handleSimCapToggle(e);
   });
   el.calStartBtn?.addEventListener('click', () => startCalibration(false));
