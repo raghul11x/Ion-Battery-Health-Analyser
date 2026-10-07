@@ -947,6 +947,49 @@ section,
   color: var(--text-muted);
 }
 
+/* Brand Header Lockup (Sleek Ultra-Minimalist) */
+.brand-lockup-eyebrow {
+  font-family: var(--font-sans);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  background: linear-gradient(90deg, #38bdf8 0%, #2dd4bf 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  line-height: 1;
+  margin-bottom: 3px;
+  user-select: none;
+}
+
+.brand-lockup-title {
+  font-family: var(--font-sans);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  display: inline-flex;
+  align-items: baseline;
+  user-select: none;
+}
+
+.brand-lockup-name {
+  background: linear-gradient(180deg, #ffffff 0%, #cbd5e1 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45));
+}
+
+.brand-lockup-plus {
+  font-weight: 600;
+  font-size: 16px;
+  margin-left: 1px;
+  color: #38bdf8;
+  transform: translateY(-2px);
+  display: inline-block;
+  text-shadow: 0 0 10px rgba(56, 189, 248, 0.8), 0 0 20px rgba(45, 212, 191, 0.45);
+}
+
 /* Live Pulse Animation */
 @keyframes pulseDot {
   0% {

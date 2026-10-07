@@ -237,8 +237,9 @@ const AppState = {
       state.is80CapSimulated = false;
       state.deviceStatusEvents = [];
 
-      // Disable live toggle when disconnected
+      // Disable live toggle when disconnected and render unchecked without overwriting stored preference
       if (components.liveToggle) {
+        components.liveToggle.setChecked(false, { silent: true });
         components.liveToggle.setDisabled(true, 'Connect a device to use live telemetry');
       }
 
@@ -3211,13 +3212,19 @@ function init() {
   // Initial queries with progress telemetry
   async function runInitialBootSequence() {
     try {
+      const stageDelay = (ms) => new Promise(r => setTimeout(r, ms));
+
+      // Let initial "Starting local engine" stage render cleanly
+      await stageDelay(1200);
+
       if (typeof IonPreloader !== 'undefined' && IonPreloader.step) {
         IonPreloader.step('Opening history database', 0.6);
       }
       await Promise.allSettled([
         fetchHistory(state.selectedDays),
         fetchInsights(),
-        fetchAppDrain()
+        fetchAppDrain(),
+        stageDelay(1500)
       ]);
 
       if (typeof IonPreloader !== 'undefined' && IonPreloader.step) {
@@ -3226,7 +3233,8 @@ function init() {
       await Promise.allSettled([
         fetchStatus(),
         fetchSnapshot(),
-        fetchDeviceStatus()
+        fetchDeviceStatus(),
+        stageDelay(1500)
       ]);
     } catch (err) {
       console.warn('Initial boot sequence warning:', err);
@@ -3343,7 +3351,7 @@ function initSparkleToggles() {
     components.liveToggle = createSparkleToggle({
       id: 'toggle-live-telemetry',
       label: 'Live telemetry polling',
-      checked: AppState.liveTelemetryEnabled,
+      checked: AppState.connected ? AppState.liveTelemetryEnabled : false,
       disabled: !AppState.connected,
       size: 'sm',
       onChange: (checked) => {
@@ -3352,6 +3360,7 @@ function initSparkleToggles() {
     });
     liveSlot.appendChild(components.liveToggle.element);
     if (!AppState.connected) {
+      components.liveToggle.setChecked(false, { silent: true });
       components.liveToggle.setDisabled(true, 'Connect a device to use live telemetry');
     }
   }
