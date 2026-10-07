@@ -58,6 +58,7 @@ class BatteryReading(Base):
     health_method = Column(String(32), nullable=False)  # 'capacity_ratio' or 'trend_estimate'
     status = Column(String(32), default="Unknown")
     health_flag = Column(String(32), default="Good")
+    is_demo = Column(Integer, default=0, nullable=True)  # 1 if seeded demo data, 0 for real
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -80,6 +81,7 @@ class BatteryReading(Base):
             "health_method": self.health_method,
             "status": self.status,
             "health_flag": self.health_flag,
+            "is_demo": bool(self.is_demo),
         }
 
 
@@ -278,6 +280,10 @@ class Database:
                     logger.info("Migrating database: adding effective_capacity_uah column...")
                     conn.execute(text("ALTER TABLE battery_readings ADD COLUMN effective_capacity_uah INTEGER"))
 
+                if "is_demo" not in existing_cols:
+                    logger.info("Migrating database: adding is_demo column...")
+                    conn.execute(text("ALTER TABLE battery_readings ADD COLUMN is_demo INTEGER DEFAULT 0"))
+
                 # Migrations for device_profiles
                 result_dp = conn.execute(text("PRAGMA table_info(device_profiles)"))
                 existing_dp_cols = {row[1] for row in result_dp.fetchall()}
@@ -398,6 +404,7 @@ class Database:
         status: str = "Unknown",
         health_flag: str = "Good",
         timestamp: Optional[datetime] = None,
+        is_demo: int = 0,
     ) -> Dict[str, Any]:
         """Inserts a new reading and commits to SQLite."""
         session = self.get_session()
@@ -429,6 +436,7 @@ class Database:
                 health_method=health_method,
                 status=status,
                 health_flag=health_flag,
+                is_demo=1 if is_demo else 0,
             )
             session.add(reading)
             session.commit()
@@ -437,13 +445,18 @@ class Database:
         finally:
             session.close()
 
-    def get_latest_reading(self, device_serial: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def get_latest_reading(self, device_serial: Optional[str] = None, include_demo: Optional[bool] = None) -> Optional[Dict[str, Any]]:
         """Fetches the most recently recorded reading."""
         session = self.get_session()
         try:
             query = session.query(BatteryReading)
             if device_serial:
                 query = query.filter(BatteryReading.device_serial == device_serial)
+            if include_demo is False or (include_demo is None and not device_serial):
+                query = query.filter(
+                    (BatteryReading.is_demo == 0) | (BatteryReading.is_demo.is_(None)),
+                    ~BatteryReading.device_serial.like("mock-%")
+                )
             reading = query.order_by(desc(BatteryReading.timestamp)).first()
             return reading.to_dict() if reading else None
         finally:
@@ -454,6 +467,7 @@ class Database:
         device_serial: Optional[str] = None,
         limit: int = 500,
         days: Optional[int] = None,
+        include_demo: Optional[bool] = None,
     ) -> List[Dict[str, Any]]:
         """
         Retrieves chronological history records.
@@ -464,6 +478,11 @@ class Database:
             query = session.query(BatteryReading)
             if device_serial:
                 query = query.filter(BatteryReading.device_serial == device_serial)
+            if include_demo is False or (include_demo is None and not device_serial):
+                query = query.filter(
+                    (BatteryReading.is_demo == 0) | (BatteryReading.is_demo.is_(None)),
+                    ~BatteryReading.device_serial.like("mock-%")
+                )
             if days:
                 cutoff = datetime.utcnow() - timedelta(days=days)
                 query = query.filter(BatteryReading.timestamp >= cutoff)
@@ -474,13 +493,18 @@ class Database:
         finally:
             session.close()
 
-    def get_first_baseline(self, device_serial: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def get_first_baseline(self, device_serial: Optional[str] = None, include_demo: Optional[bool] = None) -> Optional[Dict[str, Any]]:
         """Finds the earliest valid reading for the device to establish a baseline."""
         session = self.get_session()
         try:
             query = session.query(BatteryReading)
             if device_serial:
                 query = query.filter(BatteryReading.device_serial == device_serial)
+            if include_demo is False or (include_demo is None and not device_serial):
+                query = query.filter(
+                    (BatteryReading.is_demo == 0) | (BatteryReading.is_demo.is_(None)),
+                    ~BatteryReading.device_serial.like("mock-%")
+                )
             reading = (
                 query.filter(
                     (BatteryReading.charge_full_uah.isnot(None))
@@ -493,7 +517,7 @@ class Database:
         finally:
             session.close()
 
-    def get_estimated_cycles(self, device_serial: Optional[str] = None) -> int:
+    def get_estimated_cycles(self, device_serial: Optional[str] = None, include_demo: Optional[bool] = None) -> int:
         """
         Estimates total charge cycles from accumulated positive charge_counter deltas
         logged in SQLite: sum(positive deltas) / charge_full_design.
@@ -503,6 +527,11 @@ class Database:
             query = session.query(BatteryReading)
             if device_serial:
                 query = query.filter(BatteryReading.device_serial == device_serial)
+            if include_demo is False or (include_demo is None and not device_serial):
+                query = query.filter(
+                    (BatteryReading.is_demo == 0) | (BatteryReading.is_demo.is_(None)),
+                    ~BatteryReading.device_serial.like("mock-%")
+                )
             readings = query.order_by(BatteryReading.timestamp.asc()).all()
 
             total_positive_deltas = 0
@@ -523,7 +552,7 @@ class Database:
         finally:
             session.close()
 
-    def get_history_duration_days(self, device_serial: Optional[str] = None) -> float:
+    def get_history_duration_days(self, device_serial: Optional[str] = None, include_demo: Optional[bool] = None) -> float:
         """
         Calculates the temporal span in days between the earliest and latest logged readings
         for the given device. Returns 0.0 if fewer than 2 readings exist.
@@ -537,6 +566,11 @@ class Database:
             )
             if device_serial:
                 query = query.filter(BatteryReading.device_serial == device_serial)
+            if include_demo is False or (include_demo is None and not device_serial):
+                query = query.filter(
+                    (BatteryReading.is_demo == 0) | (BatteryReading.is_demo.is_(None)),
+                    ~BatteryReading.device_serial.like("mock-%")
+                )
             min_ts, max_ts, count = query.one()
             if not count or count < 2 or not min_ts or not max_ts:
                 return 0.0
@@ -545,18 +579,23 @@ class Database:
         finally:
             session.close()
 
-    def get_devices(self) -> List[Dict[str, Any]]:
+    def get_devices(self, include_demo: bool = False) -> List[Dict[str, Any]]:
         """Lists distinct devices recorded in the database."""
         session = self.get_session()
         try:
-            rows = (
-                session.query(
-                    BatteryReading.device_serial,
-                    BatteryReading.device_model,
-                    func.count(BatteryReading.id).label("readings_count"),
-                    func.max(BatteryReading.timestamp).label("last_seen"),
+            query = session.query(
+                BatteryReading.device_serial,
+                BatteryReading.device_model,
+                func.count(BatteryReading.id).label("readings_count"),
+                func.max(BatteryReading.timestamp).label("last_seen"),
+            )
+            if not include_demo:
+                query = query.filter(
+                    (BatteryReading.is_demo == 0) | (BatteryReading.is_demo.is_(None)),
+                    ~BatteryReading.device_serial.like("mock-%")
                 )
-                .group_by(BatteryReading.device_serial, BatteryReading.device_model)
+            rows = (
+                query.group_by(BatteryReading.device_serial, BatteryReading.device_model)
                 .all()
             )
             return [
@@ -571,13 +610,18 @@ class Database:
         finally:
             session.close()
 
-    def get_insights(self, device_serial: Optional[str] = None) -> Dict[str, Any]:
+    def get_insights(self, device_serial: Optional[str] = None, include_demo: Optional[bool] = None) -> Dict[str, Any]:
         """Calculates charging habits, temperature exposure, and degradation delta."""
         session = self.get_session()
         try:
             query = session.query(BatteryReading)
             if device_serial:
                 query = query.filter(BatteryReading.device_serial == device_serial)
+            if include_demo is False or (include_demo is None and not device_serial):
+                query = query.filter(
+                    (BatteryReading.is_demo == 0) | (BatteryReading.is_demo.is_(None)),
+                    ~BatteryReading.device_serial.like("mock-%")
+                )
 
             all_readings = query.order_by(BatteryReading.timestamp.asc()).all()
             if not all_readings:
@@ -747,6 +791,7 @@ class Database:
                         health_method="capacity_ratio",
                         status=status,
                         health_flag="Good",
+                        is_demo=1,
                     )
                 )
 
@@ -761,9 +806,9 @@ class Database:
         session = self.get_session()
         try:
             count = 0
-            # 1. Delete BatteryReading records
+            # 1. Delete BatteryReading records where is_demo == 1 or matching mock-* serial
             count += session.query(BatteryReading).filter(
-                (BatteryReading.device_serial == device_serial) | (BatteryReading.device_serial.like("mock-%"))
+                (BatteryReading.is_demo == 1) | (BatteryReading.device_serial == device_serial) | (BatteryReading.device_serial.like("mock-%"))
             ).delete(synchronize_session=False)
 
             # 2. Delete AppPowerReading records
@@ -794,7 +839,7 @@ class Database:
         session = self.get_session()
         try:
             reading = session.query(BatteryReading).filter(
-                (BatteryReading.device_serial == "mock-phone-2a") | (BatteryReading.device_serial.like("mock-%"))
+                (BatteryReading.is_demo == 1) | (BatteryReading.device_serial == "mock-phone-2a") | (BatteryReading.device_serial.like("mock-%"))
             ).first()
             return reading is not None
         finally:

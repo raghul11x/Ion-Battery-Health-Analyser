@@ -211,7 +211,7 @@
       border-radius: 14px;
       padding: 12px 16px;
       color: #E2E8F0;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-family: var(--font-sans), 'Geist', sans-serif;
       font-size: 11px;
       line-height: 1.5;
       box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.15);

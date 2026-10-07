@@ -97,6 +97,18 @@ def read_history():
     return FileResponse(index_file)
 
 
+@app.get("/ion-preloader.js")
+def read_preloader():
+    """Serves the isolated Ion+ preloader script."""
+    preloader_file = os.path.join(STATIC_DIR, "js", "ion-preloader.js")
+    if os.path.isfile(preloader_file):
+        return FileResponse(preloader_file, media_type="application/javascript")
+    root_file = os.path.join(FRONTEND_DIR, "ion-preloader.js")
+    if os.path.isfile(root_file):
+        return FileResponse(root_file, media_type="application/javascript")
+    return {"message": "Preloader not found"}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("backend.main:app", host="127.0.0.1", port=8000, reload=True)

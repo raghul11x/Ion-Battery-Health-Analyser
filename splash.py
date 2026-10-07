@@ -89,7 +89,7 @@ class AdobeSplashScreen:
             text="INTELLIGENCE AT THE CORE",
             fg="#38BDF8",
             bg=self.bg_color,
-            font=("Segoe UI", 8, "bold"),
+            font=("Geist", 8, "bold"),
         )
         eyebrow.pack(anchor=tk.W)
 
@@ -98,7 +98,7 @@ class AdobeSplashScreen:
             text="Ion+",
             fg="#FFFFFF",
             bg=self.bg_color,
-            font=("Segoe UI", 24, "bold"),
+            font=("Geist", 24, "bold"),
         )
         title.pack(anchor=tk.W, pady=(0, 0))
 
@@ -107,7 +107,7 @@ class AdobeSplashScreen:
             text="IEC 61960 Electrochemical Longevity & Hardware Diagnostics",
             fg="#94A3B8",
             bg=self.bg_color,
-            font=("Segoe UI", 9),
+            font=("Geist", 9),
         )
         subtitle.pack(anchor=tk.W, pady=(2, 0))
 
@@ -124,7 +124,7 @@ class AdobeSplashScreen:
             text="Initializing...",
             fg="#E2E8F0",
             bg=self.bg_color,
-            font=("Segoe UI", 9),
+            font=("Geist", 9),
             anchor=tk.W,
         )
         self.status_lbl.pack(fill=tk.X)
@@ -134,7 +134,7 @@ class AdobeSplashScreen:
             text="0%",
             fg="#64748B",
             bg=self.bg_color,
-            font=("Segoe UI", 9, "bold"),
+            font=("Geist", 9, "bold"),
             anchor=tk.E,
         )
         self.progress_text.place(relx=1.0, rely=0.0, anchor=tk.NE)
@@ -164,7 +164,7 @@ class AdobeSplashScreen:
             text="Ion+ v2.4.0 · Production Release",
             fg="#475569",
             bg=self.bg_color,
-            font=("Segoe UI", 8),
+            font=("Geist", 8),
         )
         ver_lbl.pack(side=tk.LEFT)
 
@@ -173,7 +173,7 @@ class AdobeSplashScreen:
             text="100% Local · Offline Architecture",
             fg="#475569",
             bg=self.bg_color,
-            font=("Segoe UI", 8),
+            font=("Geist", 8),
         )
         local_lbl.pack(side=tk.RIGHT)
 

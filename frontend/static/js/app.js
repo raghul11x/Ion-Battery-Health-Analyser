@@ -6,6 +6,7 @@
 // Phase 3: Pacing & Render Scheduling Foundation
 if (typeof Chart !== 'undefined') {
   Chart.defaults.devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+  Chart.defaults.font.family = "'Geist', system-ui, -apple-system, sans-serif";
 }
 
 const runIdle = typeof window.requestIdleCallback === 'function'
@@ -102,12 +103,23 @@ const state = {
 };
 
 // Global Application Connection State (Single Source of Truth)
+const _storedLivePref = (function() {
+  try {
+    return localStorage.getItem('ion_live_telemetry_enabled') !== 'false';
+  } catch (_) {
+    return true;
+  }
+})();
+
 const AppState = {
   connected: false,
   mode: 'idle', // 'idle' | 'connected' | 'seeded'
   device: null,
   snapshot: null,
   systemStatus: null,
+  liveTelemetryEnabled: _storedLivePref,
+  liveTelemetryPaused: !_storedLivePref,
+  lastTelemetryTimestamp: null,
   _listeners: [],
 
   subscribe(listener) {
@@ -119,6 +131,8 @@ const AppState = {
         device: this.device,
         snapshot: this.snapshot,
         systemStatus: this.systemStatus,
+        liveTelemetryEnabled: this.liveTelemetryEnabled,
+        liveTelemetryPaused: this.liveTelemetryPaused,
       });
     } catch (e) {
       console.error('AppState listener error on mount:', e);
@@ -139,6 +153,8 @@ const AppState = {
       device: this.device,
       snapshot: this.snapshot,
       systemStatus: this.systemStatus,
+      liveTelemetryEnabled: this.liveTelemetryEnabled,
+      liveTelemetryPaused: this.liveTelemetryPaused,
     };
     for (const listener of this._listeners) {
       try {
@@ -147,6 +163,30 @@ const AppState = {
         console.error('AppState subscriber error:', err);
       }
     }
+  },
+
+  setLiveTelemetry(enabled) {
+    const isEn = Boolean(enabled);
+    this.liveTelemetryEnabled = isEn;
+    this.liveTelemetryPaused = !isEn;
+    try {
+      localStorage.setItem('ion_live_telemetry_enabled', isEn ? 'true' : 'false');
+    } catch (_) {}
+
+    if (isEn) {
+      if (this.connected) {
+        fetchStatus();
+        fetchSnapshot();
+        fetchHistory(state.selectedDays);
+        fetchAppDrain();
+        fetchDeviceStatus();
+      }
+    }
+    updateLiveTelemetryPausedUI();
+    if (components.liveToggle) {
+      components.liveToggle.setChecked(isEn, { silent: true });
+    }
+    this.notify();
   },
 
   updateFromSystemStatus(status) {
@@ -165,26 +205,26 @@ const AppState = {
       this.device = activeDev;
       state.selectedSerial = serial;
 
+      // Re-enable Live Telemetry toggle and restore stored preference
+      if (components.liveToggle) {
+        components.liveToggle.setDisabled(false);
+        components.liveToggle.setChecked(this.liveTelemetryEnabled, { silent: true });
+      }
+
       if (deviceChanged) {
         this.notify();
-        fetchSnapshot(serial);
-        fetchHistory(state.selectedDays, serial);
-        fetchInsights(serial);
+        if (!this.liveTelemetryPaused) {
+          fetchSnapshot(serial);
+          fetchHistory(state.selectedDays, serial);
+          fetchInsights(serial);
+        }
       }
     } else {
       // If currently displaying seeded demo evaluation, do not let an empty poll kick out to idle
       if (this.mode === 'seeded') {
         return;
       }
-      // If DB has seeded data and user has not explicitly unseeded, restore seeded mode
-      if (status?.has_seeded_data && !this._userExplicitlyUnseeded) {
-        fetchSnapshot('mock-phone-2a').then(() => {
-          this.setSeededMode('mock-phone-2a', state.snapshot);
-          fetchHistory(state.selectedDays, 'mock-phone-2a');
-          fetchInsights('mock-phone-2a');
-        });
-        return;
-      }
+      // Demo mode does NOT auto-restore on restart / disconnect!
       // Disconnected / idle
       const hadSession = this.connected || this.mode !== 'idle' || state.selectedSerial !== null;
       this.connected = false;
@@ -197,6 +237,11 @@ const AppState = {
       state.is80CapSimulated = false;
       state.deviceStatusEvents = [];
 
+      // Disable live toggle when disconnected
+      if (components.liveToggle) {
+        components.liveToggle.setDisabled(true, 'Connect a device to use live telemetry');
+      }
+
       if (hadSession) {
         this.notify();
       }
@@ -204,6 +249,9 @@ const AppState = {
   },
 
   setSnapshot(snapshot) {
+    if (snapshot?.timestamp) {
+      this.lastTelemetryTimestamp = snapshot.timestamp;
+    }
     if (!this.connected && this.mode !== 'seeded') {
       if (snapshot?.connection_state === 'unauthorized' || snapshot?.connection_state === 'offline') {
         this.snapshot = snapshot;
@@ -229,6 +277,13 @@ const AppState = {
     this.snapshot = mockSnapshot;
     state.selectedSerial = mockSerial;
     state.snapshot = mockSnapshot;
+    if (components.demoToggle) {
+      components.demoToggle.setChecked(true, { silent: true });
+    }
+    const capsule = el.demoDataCapsule || document.getElementById('demo-data-capsule');
+    if (capsule) {
+      capsule.classList.add('border-amber-500/40', 'bg-amber-500/10', 'text-amber-300');
+    }
     this.notify();
   },
 
@@ -246,8 +301,21 @@ const AppState = {
     state.history = [];
     state.insights = null;
     if (state.appDrain) state.appDrain.data = null;
+    if (components.demoToggle) {
+      components.demoToggle.setChecked(false, { silent: true });
+    }
+    const capsule = el.demoDataCapsule || document.getElementById('demo-data-capsule');
+    if (capsule) {
+      capsule.classList.remove('border-amber-500/40', 'bg-amber-500/10', 'text-amber-300');
+    }
     this.notify();
   }
+};
+
+// Registered Sparkle Toggle Instances
+const components = {
+  liveToggle: null,
+  demoToggle: null,
 };
 
 // DOM References
@@ -261,6 +329,8 @@ const el = {
   statusFeedChevron: document.getElementById('status-feed-chevron'),
   deviceStatusList: document.getElementById('device-status-list'),
   statusFeedPing: document.getElementById('status-feed-ping'),
+  liveTelemetryContainer: document.getElementById('live-telemetry-container'),
+  liveTelemetrySlot: document.getElementById('live-telemetry-slot'),
 
   // Toast Notification
   connectToast: document.getElementById('device-connect-toast'),
@@ -276,6 +346,8 @@ const el = {
   probeBtn: document.getElementById('probe-btn'),
   probeIcon: document.getElementById('probe-icon'),
   seedBtn: document.getElementById('seed-btn'),
+  demoDataCapsule: document.getElementById('demo-data-capsule'),
+  demoDataSlot: document.getElementById('demo-data-slot'),
 
   // Hero Card (EURA Bio-Age Style)
   heroEyebrow: document.getElementById('hero-eyebrow'),
@@ -317,6 +389,7 @@ const el = {
 
   // Chart & History
   chartCanvasContainer: document.getElementById('chart-canvas-container'),
+  chartEmptyState: document.getElementById('chart-empty-state'),
   chartLastSyncedLabel: document.getElementById('chart-last-synced-label'),
   chartCanvas: document.getElementById('heart-report-chart'),
   historyCountBadge: document.getElementById('history-count-badge'),
@@ -429,9 +502,13 @@ async function fetchStatus() {
 
 async function fetchSnapshot(serial = null) {
   try {
+    const isSeeded = AppState.mode === 'seeded';
     // Only query a specific serial if connected or in seeded mode; otherwise fetch clean idle snapshot
-    const targetSerial = (AppState.connected || AppState.mode === 'seeded') ? (serial || state.selectedSerial) : null;
-    const url = targetSerial ? `/api/snapshot?serial=${encodeURIComponent(targetSerial)}` : '/api/snapshot';
+    const targetSerial = (AppState.connected || isSeeded) ? (serial || state.selectedSerial) : null;
+    const includeDemoParam = isSeeded ? 'include_demo=true' : 'include_demo=false';
+    const url = targetSerial
+      ? `/api/snapshot?serial=${encodeURIComponent(targetSerial)}&${includeDemoParam}`
+      : `/api/snapshot?${includeDemoParam}`;
     const res = await fetch(url);
     if (res.ok) {
       const data = await res.json();
@@ -444,9 +521,11 @@ async function fetchSnapshot(serial = null) {
 
 async function fetchHistory(days = 30, serial = null) {
   try {
+    const isSeeded = AppState.mode === 'seeded';
     const targetSerial = serial || state.selectedSerial;
     const serialParam = targetSerial ? `&serial=${encodeURIComponent(targetSerial)}` : '';
-    const res = await fetch(`/api/history?days=${days}&limit=500${serialParam}`);
+    const includeDemoParam = isSeeded ? '&include_demo=true' : '&include_demo=false';
+    const res = await fetch(`/api/history?days=${days}&limit=500${serialParam}${includeDemoParam}`);
     if (res.ok) {
       const data = await res.json();
       state.history = data.readings || [];
@@ -459,9 +538,11 @@ async function fetchHistory(days = 30, serial = null) {
 
 async function fetchInsights(serial = null) {
   try {
+    const isSeeded = AppState.mode === 'seeded';
     const targetSerial = serial || state.selectedSerial;
-    const serialParam = targetSerial ? `?serial=${encodeURIComponent(targetSerial)}` : '';
-    const res = await fetch(`/api/insights${serialParam}`);
+    const serialParam = targetSerial ? `serial=${encodeURIComponent(targetSerial)}&` : '';
+    const includeDemoParam = isSeeded ? 'include_demo=true' : 'include_demo=false';
+    const res = await fetch(`/api/insights?${serialParam}${includeDemoParam}`);
     if (res.ok) {
       state.insights = await res.json();
       scheduleRenderPass('insights');
@@ -690,7 +771,7 @@ function subscribeTopBar({ connected, mode, systemStatus }) {
     }
   } else if (mode === 'seeded') {
     if (el.connDot && el.connDot.className !== 'w-2.5 h-2.5 rounded-full bg-emerald-400') el.connDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400';
-    updateTextIfChanged(el.connStatusLabel, 'Seeded Demo');
+    updateTextIfChanged(el.connStatusLabel, 'Demo Mode');
     if (el.connDeviceLabel) {
       updateTextIfChanged(el.connDeviceLabel, '· Nothing Phone 2a');
       el.connDeviceLabel.classList.remove('hidden');
@@ -722,11 +803,22 @@ function subscribeTopBar({ connected, mode, systemStatus }) {
     updateLastSeenDeviceLabel();
   }
 
-  // Synchronize Seed / Unseed button state
+  // Synchronize Demo Toggle and button state
   updateSeedBtnState(mode === 'seeded');
 }
 
 function updateSeedBtnState(isSeeded) {
+  if (components.demoToggle) {
+    components.demoToggle.setChecked(isSeeded, { silent: true });
+  }
+  const capsule = el.demoDataCapsule || document.getElementById('demo-data-capsule');
+  if (capsule) {
+    if (isSeeded) {
+      capsule.classList.add('border-amber-500/40', 'bg-amber-500/10', 'text-amber-300');
+    } else {
+      capsule.classList.remove('border-amber-500/40', 'bg-amber-500/10', 'text-amber-300');
+    }
+  }
   if (!el.seedBtn) return;
   const label = isSeeded ? 'Unseed' : 'Seed 30D';
   const tooltip = isSeeded
@@ -810,6 +902,7 @@ function renderDeviceStatus() {
 
   const isConnected = AppState.connected;
   const isSeeded = AppState.mode === 'seeded';
+  const isPaused = AppState.liveTelemetryPaused;
   const events = isConnected ? (state.deviceStatusEvents || []) : [];
 
   panel.classList.remove('hidden');
@@ -819,7 +912,45 @@ function renderDeviceStatus() {
   const listEl = el.deviceStatusList || document.getElementById('device-status-list');
   const pingEl = el.statusFeedPing || document.getElementById('status-feed-ping');
 
-  if (isConnected && events.length > 0) {
+  if (isConnected && isPaused) {
+    const timeStr = getFormattedLastReadingTime();
+    if (previewEl) {
+      previewEl.textContent = `Telemetry paused · Last reading: ${timeStr}`;
+      previewEl.removeAttribute('title');
+      previewEl.setAttribute('data-tooltip', `Live polling paused. Last reading received at ${timeStr}`);
+    }
+    if (badgeEl) {
+      badgeEl.textContent = 'Paused';
+      badgeEl.className = 'glass-chip glass-chip-amber text-amber-300';
+    }
+    if (pingEl) pingEl.classList.add('hidden');
+    if (listEl && events.length > 0) {
+      listEl.innerHTML = events.map((ev, index) => {
+        const isLatest = index === 0;
+        let badgeClass = 'status-badge-default';
+        const cat = (ev.category || '').toLowerCase();
+        if (cat === 'connection') badgeClass = 'status-badge-connection';
+        else if (cat === 'probe') badgeClass = 'status-badge-probe';
+        else if (cat === 'consensus') badgeClass = 'status-badge-consensus';
+        else if (cat === 'health') badgeClass = 'status-badge-health';
+        else if (cat === 'calibration') badgeClass = 'status-badge-calibration';
+
+        const time = escapeHtml(ev.time_display || '—');
+        const categoryText = escapeHtml((ev.category || 'INFO').toUpperCase());
+        const msg = escapeHtml(ev.message || '');
+        const itemClass = isLatest ? 'status-item status-item-latest py-1 flex items-start gap-2.5' : 'status-item py-1 flex items-start gap-2.5 opacity-85 hover:opacity-100';
+        const textClass = isLatest ? 'text-zinc-100 font-medium' : 'text-zinc-400';
+
+        return `
+          <div class="${itemClass}">
+            <span class="text-zinc-500 shrink-0 font-mono text-[11px] pt-0.5">${time}</span>
+            <span class="status-badge ${badgeClass}">${categoryText}</span>
+            <span class="${textClass} flex-1 break-words leading-relaxed">${msg}</span>
+          </div>
+        `;
+      }).join('');
+    }
+  } else if (isConnected && events.length > 0) {
     const latest = events[0];
     if (previewEl) {
       previewEl.textContent = latest.message;
@@ -828,6 +959,7 @@ function renderDeviceStatus() {
     }
     if (badgeEl) {
       badgeEl.textContent = `${events.length} event${events.length === 1 ? '' : 's'}`;
+      badgeEl.className = 'glass-chip glass-chip-cyan';
     }
     if (pingEl) pingEl.classList.remove('hidden');
     if (listEl) {
@@ -858,15 +990,16 @@ function renderDeviceStatus() {
     }
   } else if (isSeeded) {
     if (previewEl) {
-      previewEl.textContent = 'Seeded demo session active (mock-phone-2a)';
+      previewEl.textContent = 'Demo data active (mock-phone-2a)';
       previewEl.removeAttribute('data-tooltip');
     }
     if (badgeEl) {
-      badgeEl.textContent = 'Seeded';
+      badgeEl.textContent = 'Demo Data';
+      badgeEl.className = 'glass-chip glass-chip-amber text-amber-300';
     }
     if (pingEl) pingEl.classList.add('hidden');
     if (listEl) {
-      listEl.innerHTML = '<div class="text-zinc-500 py-2 italic text-center">Seeded demo session active. Connect phone for live telemetry.</div>';
+      listEl.innerHTML = '<div class="text-zinc-500 py-2 italic text-center">Demo data session active. Connect phone for live telemetry.</div>';
     }
   } else {
     // Neutral Idle / Standby mode
@@ -876,6 +1009,7 @@ function renderDeviceStatus() {
     }
     if (badgeEl) {
       badgeEl.textContent = 'Standby';
+      badgeEl.className = 'glass-chip glass-chip-cyan';
     }
     if (pingEl) pingEl.classList.add('hidden');
     if (listEl) {
@@ -1035,6 +1169,7 @@ function renderIdleState() {
   renderForecastIdle();
   if (el.simCapToggle) {
     el.simCapToggle.disabled = true;
+    el.simCapToggle.checked = false;
     el.simCapToggle.classList.add('opacity-40', 'cursor-not-allowed');
     el.simCapToggle.setAttribute('data-tooltip', 'Connect phone to run longevity forecast');
   }
@@ -1095,15 +1230,21 @@ function renderSnapshot() {
   }
 
   // Active connected phone vs seeded/cached evaluation
-  const modeKey = AppState.connected ? 'connected' : 'idle_seeded';
+  const modeKey = AppState.connected ? (AppState.liveTelemetryPaused ? 'connected_paused' : 'connected_live') : 'idle_seeded';
   if (el.heroEyebrow && lastRenderedSnapshotState.connectionMode !== modeKey) {
     lastRenderedSnapshotState.connectionMode = modeKey;
     if (AppState.connected) {
-      el.heroEyebrow.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"></span>Live Biometric Evaluation';
-      el.heroEyebrow.className = 'eyebrow-label text-indigo-400 flex items-center gap-2';
+      if (AppState.liveTelemetryPaused) {
+        const timeStr = getFormattedLastReadingTime();
+        el.heroEyebrow.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>Paused · Last reading: ${timeStr}`;
+        el.heroEyebrow.className = 'eyebrow-label text-amber-300 flex items-center gap-2';
+      } else {
+        el.heroEyebrow.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"></span>Live Biometric Evaluation';
+        el.heroEyebrow.className = 'eyebrow-label text-indigo-400 flex items-center gap-2';
+      }
     } else {
-      el.heroEyebrow.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>Historical / Seeded Evaluation';
-      el.heroEyebrow.className = 'eyebrow-label text-emerald-300 flex items-center gap-2';
+      el.heroEyebrow.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>Demo Data Preview (mock-phone-2a)';
+      el.heroEyebrow.className = 'eyebrow-label text-amber-300 flex items-center gap-2';
     }
   }
 
@@ -1115,8 +1256,14 @@ function renderSnapshot() {
       el.chartCanvasContainer.classList.remove('chart-stale-dimmed');
     }
     if (el.chartLastSyncedLabel) {
-      el.chartLastSyncedLabel.classList.add('hidden');
-      updateTextIfChanged(el.chartLastSyncedLabel, '');
+      if (AppState.liveTelemetryPaused) {
+        const timeStr = getFormattedLastReadingTime();
+        el.chartLastSyncedLabel.classList.remove('hidden');
+        updateTextIfChanged(el.chartLastSyncedLabel, `Paused · Last reading: ${timeStr}`);
+      } else {
+        el.chartLastSyncedLabel.classList.add('hidden');
+        updateTextIfChanged(el.chartLastSyncedLabel, '');
+      }
     }
     if (el.connLastSeenLabel) {
       el.connLastSeenLabel.classList.add('hidden');
@@ -1130,7 +1277,11 @@ function renderSnapshot() {
     }
     if (el.chartLastSyncedLabel) {
       el.chartLastSyncedLabel.classList.remove('hidden');
-      updateTextIfChanged(el.chartLastSyncedLabel, 'Seeded Demo Preview');
+      updateTextIfChanged(el.chartLastSyncedLabel, 'Demo Data Preview');
+    }
+    if (el.heroStatusPill) {
+      el.heroStatusPill.className = 'glass-pill px-3.5 py-1 text-xs font-semibold text-amber-300 border border-amber-500/30 bg-amber-500/10';
+      updateTextIfChanged(el.heroStatusPill, 'Demo Data');
     }
     updateLastSeenDeviceLabel();
     el.heroHealthNumber.classList.remove('skeleton-shimmer');
@@ -1477,6 +1628,7 @@ function renderForecastIdle() {
     el.simCapResult.classList.add('hidden');
   }
   if (el.simCapToggle) {
+    el.simCapToggle.checked = false;
     el.simCapToggle.setAttribute('aria-checked', 'false');
     el.simCapToggle.classList.remove('bg-indigo-600');
     el.simCapToggle.classList.add('bg-zinc-700');
@@ -1582,6 +1734,7 @@ function renderSimulatedForecast(forecast) {
   }
 
   if (el.simCapToggle) {
+    el.simCapToggle.checked = true;
     el.simCapToggle.setAttribute('aria-checked', 'true');
     el.simCapToggle.classList.remove('bg-zinc-700');
     el.simCapToggle.classList.add('bg-indigo-600');
@@ -1606,6 +1759,11 @@ function renderForecastInsufficientData(message = 'Not enough data yet') {
   if (el.forecastCyclesLeft) el.forecastCyclesLeft.textContent = 'Insufficient cycle data';
   if (el.forecastDailyCadence) el.forecastDailyCadence.textContent = '—';
   if (el.simCapResult) el.simCapResult.classList.add('hidden');
+  state.is80CapSimulated = false;
+  if (el.simCapToggle) {
+    el.simCapToggle.checked = false;
+    el.simCapToggle.setAttribute('aria-checked', 'false');
+  }
 }
 
 function renderForecastError(message = 'Forecast calculation error', subtext = 'API request failed') {
@@ -1628,6 +1786,7 @@ function renderForecastError(message = 'Forecast calculation error', subtext = '
   // Revert toggle state to OFF
   state.is80CapSimulated = false;
   if (el.simCapToggle) {
+    el.simCapToggle.checked = false;
     el.simCapToggle.setAttribute('aria-checked', 'false');
     el.simCapToggle.classList.remove('bg-indigo-600');
     el.simCapToggle.classList.add('bg-zinc-700');
@@ -1637,32 +1796,32 @@ function renderForecastError(message = 'Forecast calculation error', subtext = '
 }
 
 async function handleSimCapToggle(e) {
-  if (e) {
-    if (typeof e.preventDefault === 'function') e.preventDefault();
-    if (typeof e.stopPropagation === 'function') e.stopPropagation();
-  }
-
   // Preserve scroll position to eliminate any jump on click or reflow
   const savedScrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0;
 
   const isConnected = AppState.connected || AppState.mode === 'seeded';
   if (!isConnected) {
-    renderForecastInsufficientData('Awaiting device connection');
     if (el.simCapToggle) {
+      el.simCapToggle.checked = false;
       el.simCapToggle.setAttribute('aria-checked', 'false');
-      el.simCapToggle.classList.remove('bg-indigo-600');
-      el.simCapToggle.classList.add('bg-zinc-700');
-      el.simCapKnob?.classList.remove('translate-x-5');
-      el.simCapKnob?.classList.add('translate-x-0');
     }
+    state.is80CapSimulated = false;
+    renderForecastInsufficientData('Awaiting device connection');
     if (typeof window.scrollTo === 'function') {
       window.scrollTo({ top: savedScrollY, behavior: 'instant' });
     }
     return;
   }
 
-  // Toggle state
-  state.is80CapSimulated = !state.is80CapSimulated;
+  // Toggle state: sync with checkbox checked status or toggle if programmatically invoked
+  if (el.simCapToggle && typeof el.simCapToggle.checked === 'boolean' && e) {
+    state.is80CapSimulated = el.simCapToggle.checked;
+  } else {
+    state.is80CapSimulated = !state.is80CapSimulated;
+    if (el.simCapToggle) {
+      el.simCapToggle.checked = state.is80CapSimulated;
+    }
+  }
   const isCapped = state.is80CapSimulated;
 
   if (!isCapped) {
@@ -1670,11 +1829,8 @@ async function handleSimCapToggle(e) {
     forecastRequestId++;
     if (el.simCapResult) el.simCapResult.classList.add('hidden');
     if (el.simCapToggle) {
+      el.simCapToggle.checked = false;
       el.simCapToggle.setAttribute('aria-checked', 'false');
-      el.simCapToggle.classList.remove('bg-indigo-600');
-      el.simCapToggle.classList.add('bg-zinc-700');
-      el.simCapKnob?.classList.remove('translate-x-5');
-      el.simCapKnob?.classList.add('translate-x-0');
     }
     if (state.normalForecast) {
       renderForecast(state.normalForecast);
@@ -1687,11 +1843,8 @@ async function handleSimCapToggle(e) {
 
   // Toggle ON: update toggle button and show simulation side-by-side
   if (el.simCapToggle) {
+    el.simCapToggle.checked = true;
     el.simCapToggle.setAttribute('aria-checked', 'true');
-    el.simCapToggle.classList.remove('bg-zinc-700');
-    el.simCapToggle.classList.add('bg-indigo-600');
-    el.simCapKnob?.classList.add('translate-x-5');
-    el.simCapKnob?.classList.remove('translate-x-0');
   }
 
   // Unhide simulation drawer
@@ -1879,9 +2032,11 @@ function renderHistoryAndChart() {
 
   // 1. Chart.js (EURA Heart Report Aesthetic: Clean White Curve)
   if (el.chartCanvas) {
+    const emptyStateEl = el.chartEmptyState || document.getElementById('chart-empty-state');
     if (!chartIsVisible) {
       chartNeedsUpdate = true;
     } else if (readings.length > 0) {
+      if (emptyStateEl) emptyStateEl.classList.add('hidden');
       const labels = readings.map(r => {
         const d = new Date(r.timestamp);
         return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${d.getMinutes().toString().padStart(2, '0')}`;
@@ -1955,7 +2110,7 @@ function renderHistoryAndChart() {
                 align: 'end',
                 labels: {
                   color: '#A1A1AA',
-                  font: { family: '-apple-system, sans-serif', size: 11 },
+                  font: { size: 11 },
                   boxWidth: 10,
                   boxHeight: 10,
                   usePointStyle: true,
@@ -2032,6 +2187,15 @@ function renderHistoryAndChart() {
           },
         });
       }
+    } else {
+      // readings.length === 0: show clean empty state
+      if (emptyStateEl) emptyStateEl.classList.remove('hidden');
+      if (state.chartInstance) {
+        state.chartInstance.data.labels = [];
+        state.chartInstance.data.datasets[0].data = [];
+        state.chartInstance.data.datasets[1].data = [];
+        state.chartInstance.update('none');
+      }
     }
 
     // Fix 3: Stale chart sync check
@@ -2107,7 +2271,7 @@ function updateVirtualHistoryView() {
     el.historyTableBody.innerHTML = `
       <tr>
         <td colspan="7" class="py-8 text-center text-zinc-500 text-xs">
-          No historical readings recorded yet. Connect your device or click "Seed 30D" to preview.
+          No history yet. Connect a device or toggle Demo data to preview.
         </td>
       </tr>
     `;
@@ -2383,12 +2547,16 @@ async function handleSeedToggle() {
 }
 
 async function handleUnseed() {
-  if (!el.seedBtn) return;
   try {
-    el.seedBtn.disabled = true;
-    const span = el.seedBtn.querySelector('span');
-    if (span) updateTextIfChanged(span, 'Unseeding...');
-    else updateTextIfChanged(el.seedBtn, 'Unseeding...');
+    if (components.demoToggle) {
+      components.demoToggle.setDisabled(true, 'Clearing demo data...');
+    }
+    if (el.seedBtn) {
+      el.seedBtn.disabled = true;
+      const span = el.seedBtn.querySelector('span');
+      if (span) updateTextIfChanged(span, 'Unseeding...');
+      else updateTextIfChanged(el.seedBtn, 'Unseeding...');
+    }
 
     const res = await fetch('/api/unseed-mock', {
       method: 'POST',
@@ -2403,24 +2571,38 @@ async function handleUnseed() {
       await fetchHistory(state.selectedDays);
       await fetchInsights();
       await fetchAppDrain();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to clear demo data');
     }
   } catch (err) {
+    console.error('Failed to clear demo data:', err);
+    if (components.demoToggle) {
+      components.demoToggle.setChecked(true, { silent: true });
+    }
     alert('Failed to clear demo data: ' + err.message);
   } finally {
+    if (components.demoToggle) {
+      components.demoToggle.setDisabled(false);
+    }
     if (el.seedBtn) {
       el.seedBtn.disabled = false;
-      updateSeedBtnState(AppState.mode === 'seeded');
     }
+    updateSeedBtnState(AppState.mode === 'seeded');
   }
 }
 
 async function handleSeed() {
-  if (!el.seedBtn) return;
   try {
-    el.seedBtn.disabled = true;
-    const span = el.seedBtn.querySelector('span');
-    if (span) updateTextIfChanged(span, 'Seeding...');
-    else updateTextIfChanged(el.seedBtn, 'Seeding...');
+    if (components.demoToggle) {
+      components.demoToggle.setDisabled(true, 'Seeding demo data...');
+    }
+    if (el.seedBtn) {
+      el.seedBtn.disabled = true;
+      const span = el.seedBtn.querySelector('span');
+      if (span) updateTextIfChanged(span, 'Seeding...');
+      else updateTextIfChanged(el.seedBtn, 'Seeding...');
+    }
 
     const res = await fetch('/api/seed-mock', {
       method: 'POST',
@@ -2429,35 +2611,87 @@ async function handleSeed() {
     });
 
     if (res.ok) {
-      const isConn = state.systemStatus?.active_device_count > 0;
-      if (!isConn) {
-        state.selectedSerial = 'mock-phone-2a';
-        const snapRes = await fetch('/api/snapshot?serial=mock-phone-2a');
-        const snapData = snapRes.ok ? await snapRes.json() : null;
-        await fetchHistory(state.selectedDays, 'mock-phone-2a');
-        await fetchInsights('mock-phone-2a');
-        AppState.setSeededMode('mock-phone-2a', snapData);
-      } else {
-        const activeDev = state.systemStatus?.connected_devices?.find(d => d.state === 'device');
-        const realSerial = activeDev ? activeDev.serial : state.selectedSerial;
-        if (realSerial) {
-          state.selectedSerial = realSerial;
-          await fetchHistory(state.selectedDays, realSerial);
-          await fetchInsights(realSerial);
-        }
-      }
+      state.selectedSerial = 'mock-phone-2a';
+      const snapRes = await fetch('/api/snapshot?serial=mock-phone-2a&include_demo=true');
+      const snapData = snapRes.ok ? await snapRes.json() : null;
+      await fetchHistory(state.selectedDays, 'mock-phone-2a');
+      await fetchInsights('mock-phone-2a');
+      AppState.setSeededMode('mock-phone-2a', snapData);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to seed demo data');
     }
   } catch (err) {
+    console.error('Failed to seed demo data:', err);
+    if (components.demoToggle) {
+      components.demoToggle.setChecked(false, { silent: true });
+    }
     alert('Failed to seed demo data: ' + err.message);
   } finally {
+    if (components.demoToggle) {
+      components.demoToggle.setDisabled(false);
+    }
     if (el.seedBtn) {
       el.seedBtn.disabled = false;
-      updateSeedBtnState(AppState.mode === 'seeded');
     }
+    updateSeedBtnState(AppState.mode === 'seeded');
   }
 }
 
 // Disconnected Polish Helper Functions (Fix 3 & Fix 5)
+
+function getFormattedLastReadingTime() {
+  const ts = AppState.lastTelemetryTimestamp || state.snapshot?.timestamp;
+  if (!ts) return 'Recently';
+  return formatSyncedTimestamp(ts);
+}
+
+function updateLiveTelemetryPausedUI() {
+  if (!AppState.connected) return;
+  const timeStr = getFormattedLastReadingTime();
+
+  // 1. Hero Eyebrow
+  if (el.heroEyebrow) {
+    if (AppState.liveTelemetryPaused) {
+      el.heroEyebrow.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>Paused · Last reading: ${timeStr}`;
+      el.heroEyebrow.className = 'eyebrow-label text-amber-300 flex items-center gap-2';
+    } else {
+      el.heroEyebrow.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"></span>Live Biometric Evaluation';
+      el.heroEyebrow.className = 'eyebrow-label text-indigo-400 flex items-center gap-2';
+    }
+  }
+
+  // 2. Chart Last Synced Label
+  if (el.chartLastSyncedLabel) {
+    if (AppState.liveTelemetryPaused) {
+      el.chartLastSyncedLabel.textContent = `Paused · Last reading: ${timeStr}`;
+      el.chartLastSyncedLabel.classList.remove('hidden');
+    } else {
+      el.chartLastSyncedLabel.textContent = '';
+      el.chartLastSyncedLabel.classList.add('hidden');
+    }
+  }
+
+  // 3. Live Device Feed Bar Preview & Badge
+  const previewEl = el.statusFeedLatestPreview || document.getElementById('status-feed-latest-preview');
+  const badgeEl = el.statusFeedCountBadge || document.getElementById('status-feed-count-badge');
+  const pingEl = el.statusFeedPing || document.getElementById('status-feed-ping');
+
+  if (AppState.liveTelemetryPaused) {
+    if (previewEl) {
+      previewEl.textContent = `Telemetry paused · Last reading: ${timeStr}`;
+      previewEl.removeAttribute('title');
+      previewEl.setAttribute('data-tooltip', `Live polling paused. Last reading received at ${timeStr}`);
+    }
+    if (badgeEl) {
+      badgeEl.textContent = 'Paused';
+      badgeEl.className = 'glass-chip glass-chip-amber text-amber-300';
+    }
+    if (pingEl) pingEl.classList.add('hidden');
+  } else {
+    renderDeviceStatus();
+  }
+}
 
 function formatSyncedTimestamp(isoString) {
   try {
@@ -2465,7 +2699,7 @@ function formatSyncedTimestamp(isoString) {
     if (isNaN(d.getTime())) return 'Recently';
     const now = new Date();
     const isToday = d.toDateString() === now.toDateString();
-    const timeStr = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    const timeStr = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
     if (isToday) {
       return `Today, ${timeStr}`;
     }
@@ -2836,6 +3070,10 @@ function initAuroraBg() {
 
 // Boot
 function init() {
+  if (typeof IonPreloader !== 'undefined' && IonPreloader.step) {
+    IonPreloader.step('Starting local engine', 0.25);
+  }
+
   // Initialize approved Aurora background
   initAuroraBg();
 
@@ -2859,6 +3097,9 @@ function init() {
     document.fonts.ready.then(() => {
       const curr = document.querySelector('.capsule-segment.active');
       if (curr) updateCapsuleBlob(curr);
+      if (state.chartInstance) {
+        state.chartInstance.update('none');
+      }
     });
   }
 
@@ -2891,11 +3132,7 @@ function init() {
   }
 
   // Calibration & Prediction actions
-  el.simCapToggle?.addEventListener('click', (e) => {
-    if (e) {
-      if (typeof e.preventDefault === 'function') e.preventDefault();
-      if (typeof e.stopPropagation === 'function') e.stopPropagation();
-    }
+  el.simCapToggle?.addEventListener('change', (e) => {
     handleSimCapToggle(e);
   });
   el.calStartBtn?.addEventListener('click', () => startCalibration(false));
@@ -2958,6 +3195,9 @@ function init() {
   // Ensure default window pill active styling (24H) is explicitly applied on boot
   updateAppDrainWindowPills(state.appDrain?.window || '24h');
 
+  // Initialize Sparkle Toggles
+  initSparkleToggles();
+
   // Register subscribers to AppState (Single Source of Truth)
   AppState.subscribe(subscribeTopBar);
   AppState.subscribe(subscribeGuidanceBanner);
@@ -2968,12 +3208,36 @@ function init() {
   // Initialize Chart.js IntersectionObserver for offscreen pause
   initChartObserver();
 
-  // Initial queries
-  fetchStatus();
-  fetchSnapshot();
-  fetchHistory(state.selectedDays);
-  fetchInsights();
-  fetchAppDrain();
+  // Initial queries with progress telemetry
+  async function runInitialBootSequence() {
+    try {
+      if (typeof IonPreloader !== 'undefined' && IonPreloader.step) {
+        IonPreloader.step('Opening history database', 0.6);
+      }
+      await Promise.allSettled([
+        fetchHistory(state.selectedDays),
+        fetchInsights(),
+        fetchAppDrain()
+      ]);
+
+      if (typeof IonPreloader !== 'undefined' && IonPreloader.step) {
+        IonPreloader.step('Checking ADB', 0.85);
+      }
+      await Promise.allSettled([
+        fetchStatus(),
+        fetchSnapshot(),
+        fetchDeviceStatus()
+      ]);
+    } catch (err) {
+      console.warn('Initial boot sequence warning:', err);
+    } finally {
+      if (typeof IonPreloader !== 'undefined' && IonPreloader.finish) {
+        IonPreloader.finish();
+      }
+    }
+  }
+
+  runInitialBootSequence();
 
   // Test Verification URL query parameter hook
   try {
@@ -3005,14 +3269,17 @@ function init() {
   // Background polling loop (1s for real-time connect/disconnect detection)
   state.pollTimer = setInterval(() => {
     fetchStatus();
-    fetchSnapshot();
 
-    const isConn = state.systemStatus?.active_device_count > 0;
-    const now = Date.now();
-    if (isConn && (now - (state.lastHistoryLivePoll || 0) >= 10000)) {
-      state.lastHistoryLivePoll = now;
-      fetchHistory(state.selectedDays);
-      fetchAppDrain();
+    if (AppState.connected && !AppState.liveTelemetryPaused) {
+      fetchSnapshot();
+
+      const isConn = state.systemStatus?.active_device_count > 0;
+      const now = Date.now();
+      if (isConn && (now - (state.lastHistoryLivePoll || 0) >= 10000)) {
+        state.lastHistoryLivePoll = now;
+        fetchHistory(state.selectedDays);
+        fetchAppDrain();
+      }
     }
   }, 1000);
 
@@ -3035,13 +3302,25 @@ function init() {
 
   const statusToggle = el.deviceStatusToggle || document.getElementById('device-status-toggle');
   if (statusToggle) {
-    statusToggle.addEventListener('click', () => {
+    statusToggle.addEventListener('click', (e) => {
+      if (e.target.closest('#live-telemetry-container')) return;
       toggleDeviceStatusFeed();
+    });
+    statusToggle.addEventListener('keydown', (e) => {
+      if (e.target.closest('#live-telemetry-container')) return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        toggleDeviceStatusFeed();
+      }
     });
   }
 
   fetchDeviceStatus();
-  setInterval(fetchDeviceStatus, 2500);
+  setInterval(() => {
+    if (AppState.connected && !AppState.liveTelemetryPaused) {
+      fetchDeviceStatus();
+    }
+  }, 2500);
 
   // Initialize Global Boundary-Aware Tooltip System
   initSharedTooltips();
@@ -3051,6 +3330,52 @@ function init() {
 
 // initCursorTrackingGlow removed (Change B): all mousemove/pointermove listeners
 // and --mouse-x/--mouse-y CSS variable writes deleted. No hover light remains.
+
+function initSparkleToggles() {
+  if (typeof createSparkleToggle !== 'function') {
+    console.warn('createSparkleToggle helper not loaded.');
+    return;
+  }
+
+  // 1. Live Telemetry Toggle in Live Device Feed bar
+  const liveSlot = el.liveTelemetrySlot || document.getElementById('live-telemetry-slot');
+  if (liveSlot && !components.liveToggle) {
+    components.liveToggle = createSparkleToggle({
+      id: 'toggle-live-telemetry',
+      label: 'Live telemetry polling',
+      checked: AppState.liveTelemetryEnabled,
+      disabled: !AppState.connected,
+      size: 'sm',
+      onChange: (checked) => {
+        AppState.setLiveTelemetry(checked);
+      }
+    });
+    liveSlot.appendChild(components.liveToggle.element);
+    if (!AppState.connected) {
+      components.liveToggle.setDisabled(true, 'Connect a device to use live telemetry');
+    }
+  }
+
+  // 2. Demo Data Toggle in Header Status Cluster
+  const demoSlot = el.demoDataSlot || document.getElementById('demo-data-slot');
+  if (demoSlot && !components.demoToggle) {
+    components.demoToggle = createSparkleToggle({
+      id: 'toggle-demo-data',
+      label: 'Demo data simulation',
+      checked: false, // Always starts OFF
+      disabled: false,
+      size: 'sm',
+      onChange: async (checked) => {
+        if (checked) {
+          await handleSeed();
+        } else {
+          await handleUnseed();
+        }
+      }
+    });
+    demoSlot.appendChild(components.demoToggle.element);
+  }
+}
 
 
 // ==========================================================================

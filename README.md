@@ -55,6 +55,40 @@
 
 ---
 
+## Parameter Discovery & 4-Tier AI Fallback Architecture
+
+Ion+ prioritizes **local USB debugging data scraping as the primary, authoritative mechanism** for reading battery telemetry. However, if OEM firmware obscures critical battery registers (such as `charge_full_design` or `cycle_count`), Ion+ automatically engages an intelligent 4-tier model fallback cascade to resolve missing parameters:
+
+```mermaid
+flowchart TD
+    A["USB Debugging Scraping (Primary)"] -->|Missing Parameters| B["Tier 1: OpenRouter (nvidia/nemotron-3-ultra-550b-a55b:free)"]
+    A -->|All Parameters Resolved| F["Store in SQLite & Feed Live Calculations"]
+    B -->|Success| V["ADB Hardware Verification"]
+    B -->|Fails / Rate Limited| C["Tier 2: OpenRouter (nvidia/nemotron-3.5-lightning:free)"]
+    C -->|Success| V
+    C -->|Fails / Rate Limited| D["Tier 3: Hugging Face (deepseek-ai/DeepSeek-V4-Flash-0731)"]
+    D -->|Success| V
+    D -->|Fails / Rate Limited| E["Tier 4: Hugging Face (Qwen/Qwen3-32B)"]
+    E -->|Success| V
+    E -->|All Tiers Exhausted| G["Trend / Calibration Fallback Engine"]
+    V -->|Validated by Kernel| F
+    V -->|Verification Failed| H["Reject Path / Attempt Next Model"]
+```
+
+### Discovery Tiers:
+1. **Primary USB Debugging Scraping (Authoritative)**:
+   - Exhaustively probes hardware power supply nodes (`battery`, `mtk_gauge`, `google,battery`, `qcom,battery`, `oplus_chg`, `sec-battery`, `smb1351`, etc.).
+   - Directly extracts OEM-calculated State of Health registers (`battery_soh`, `batt_soh`, `soh`, `mSavedBatteryUsage`).
+2. **Tier 1 (OpenRouter Primary)**: `nvidia/nemotron-3-ultra-550b-a55b:free`
+3. **Tier 2 (OpenRouter Fallback)**: `nvidia/nemotron-3.5-lightning:free`
+4. **Tier 3 (Hugging Face Primary)**: `deepseek-ai/DeepSeek-V4-Flash-0731`
+5. **Tier 4 (Hugging Face Fallback)**: `Qwen/Qwen3-32B`
+
+### Hardware Anti-Hallucination Guard:
+Every candidate sysfs path returned by an AI model is dynamically verified on the connected phone via ADB (`cat <path>`). If the register does not exist on the device, the suggestion is immediately rejected before storing to SQLite.
+
+---
+
 ## Project Structure
 
 ```
@@ -78,6 +112,7 @@ Ion-Battery-Health-Analyser/
 │       ├── js/chart.min.js  # Offline-ready Chart.js bundle
 │       └── assets/          # Brand logos, dark/light banners, and favicon
 ├── tests/
+│   ├── test_ai_cascade.py      # 4-tier cascade & fallback validation tests
 │   ├── test_health.py          # Health calculation tests
 │   ├── test_db.py              # Database CRUD & aggregation tests
 │   ├── test_parser.py          # Dumpsys & sysfs parsing tests
@@ -159,5 +194,6 @@ To run a quick hardware probe from your command line and inspect what sysfs fiel
 ## Running Automated Tests
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest tests/ -v
+$env:PYTHONPATH="."; .\.venv\Scripts\python.exe -m pytest tests/ -v
 ```
+All 108 automated unit and integration tests passing.

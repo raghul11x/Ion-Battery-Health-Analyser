@@ -75,7 +75,10 @@ def reconnect_adb() -> Dict[str, Any]:
 
 
 @router.get("/snapshot")
-def get_snapshot(serial: Optional[str] = None) -> Dict[str, Any]:
+def get_snapshot(
+    serial: Optional[str] = None,
+    include_demo: Optional[bool] = Query(default=None),
+) -> Dict[str, Any]:
     """
     Returns current snapshot. If phone is connected, returns live hardware reading.
     Otherwise returns latest recorded reading from SQLite.
@@ -191,13 +194,45 @@ def get_snapshot(serial: Optional[str] = None) -> Dict[str, Any]:
             charge_full_uah = summary.get("charge_full_uah")
             charge_full_design_uah = summary.get("charge_full_design_uah")
 
-            # Check cached profile for OEM SoH and data sources
+            # Check cached profile for OEM SoH, discovered parameters and data sources
             profile = db.get_device_profile(target_serial)
-            oem_soh = profile.get("oem_reported_soh") if profile else None
+            profile_fields = profile.get("fields", {}) if profile else {}
+            oem_soh = profile.get("oem_reported_soh") if profile else summary.get("oem_reported_soh")
             history_days = db.get_history_duration_days(target_serial)
+
+            # If design capacity missing from live probe, check discovered profile
+            if charge_full_design_uah is None and profile_fields:
+                cfd_field = profile_fields.get("charge_full_design", {})
+                if cfd_field.get("value"):
+                    charge_full_design_uah = cfd_field["value"]
+                elif cfd_field.get("path") and str(cfd_field.get("path")).startswith("/"):
+                    out, _, code = adb.run_shell(target_serial, f"cat {cfd_field['path']}")
+                    if code == 0 and out.strip().isdigit():
+                        charge_full_design_uah = int(out.strip())
+
+            # If full capacity missing from live probe, check discovered profile
+            if charge_full_uah is None and profile_fields:
+                cf_field = profile_fields.get("charge_full", {})
+                if cf_field.get("value"):
+                    charge_full_uah = cf_field["value"]
+                elif cf_field.get("path") and str(cf_field.get("path")).startswith("/"):
+                    out, _, code = adb.run_shell(target_serial, f"cat {cf_field['path']}")
+                    if code == 0 and out.strip().isdigit():
+                        charge_full_uah = int(out.strip())
 
             # NOTE: Cycle count MUST be resolved before data_sources dictionary is constructed!
             hw_cycle_count = summary.get("cycle_count")
+            if hw_cycle_count is None and profile_fields:
+                cy_field = profile_fields.get("cycle_count", {})
+                if cy_field.get("value") is not None and isinstance(cy_field["value"], int) and 0 <= cy_field["value"] < 20000:
+                    hw_cycle_count = cy_field["value"]
+                elif cy_field.get("path") and str(cy_field.get("path")).startswith("/"):
+                    out, _, code = adb.run_shell(target_serial, f"cat {cy_field['path']}")
+                    if code == 0 and out.strip().isdigit():
+                        c_val = int(out.strip())
+                        if 0 <= c_val < 20000:
+                            hw_cycle_count = c_val
+
             if hw_cycle_count is not None and hw_cycle_count >= 0:
                 cycle_count = hw_cycle_count
                 cycle_count_type = "hardware"
@@ -295,7 +330,7 @@ def get_snapshot(serial: Optional[str] = None) -> Dict[str, Any]:
             logger.error(f"Error generating live hardware snapshot for {target_serial}: {e}", exc_info=True)
 
     # 2. LATEST RECORDED FROM DATABASE (DISCONNECTED STATE)
-    latest = db.get_latest_reading(target_serial)
+    latest = db.get_latest_reading(target_serial, include_demo=include_demo)
     if latest:
         eff_cap = latest.get("effective_capacity_uah")
         if eff_cap is None:
@@ -418,9 +453,10 @@ def get_history(
     serial: Optional[str] = None,
     limit: int = Query(default=500, ge=10, le=1000),
     days: Optional[int] = Query(default=None, ge=1, le=365),
+    include_demo: Optional[bool] = Query(default=None),
 ) -> Dict[str, Any]:
     """Returns chronological reading entries for trend graphing."""
-    readings = db.get_history(device_serial=serial, limit=limit, days=days)
+    readings = db.get_history(device_serial=serial, limit=limit, days=days, include_demo=include_demo)
     return {
         "count": len(readings),
         "device_serial": serial,
@@ -429,9 +465,12 @@ def get_history(
 
 
 @router.get("/insights")
-def get_insights(serial: Optional[str] = None) -> Dict[str, Any]:
+def get_insights(
+    serial: Optional[str] = None,
+    include_demo: Optional[bool] = Query(default=None),
+) -> Dict[str, Any]:
     """Returns charging habit metrics, thermal events, and wear indicators."""
-    return db.get_insights(device_serial=serial)
+    return db.get_insights(device_serial=serial, include_demo=include_demo)
 
 
 @router.get("/probe")
@@ -497,9 +536,9 @@ def unseed_mock_data(payload: Optional[SeedRequest] = None) -> Dict[str, Any]:
 
 
 @router.get("/devices")
-def list_devices() -> List[Dict[str, Any]]:
+def list_devices(include_demo: Optional[bool] = Query(default=None)) -> List[Dict[str, Any]]:
     """Returns all devices seen in database history, merged with any currently connected USB device."""
-    db_devs = db.get_devices()
+    db_devs = db.get_devices(include_demo=include_demo if include_demo is not None else False)
     known_serials = {d["serial"] for d in db_devs}
 
     if adb.is_available():
