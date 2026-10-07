@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Ion+ — Battery Health & Longevity</title>
+  <!-- Isolated Ion+ In-App Preloader (Shadow DOM) -->
+  <script src="/static/js/ion-preloader.js" data-target="#brand-logo"></script>
   <link rel="icon" type="image/x-icon" href="/static/assets/favicon.ico">
   <link rel="icon" type="image/png" href="/static/assets/icon-1024.png">
   <link rel="apple-touch-icon" href="/static/assets/icon-1024.png">
@@ -70,7 +72,7 @@
     
     <!-- Left: Brand / Title -->
     <div class="relative z-10 flex items-center gap-3">
-      <img src="/static/assets/icon-1024.png" alt="Ion+" class="w-9 h-9 rounded-xl shadow-lg border border-white/10">
+      <img id="brand-logo" src="/static/assets/icon-1024.png" alt="Ion+" class="w-9 h-9 rounded-xl shadow-lg border border-white/10">
       <div>
         <div class="eyebrow-label text-cyan-400 text-[10px] tracking-wider uppercase font-bold">INTELLIGENCE AT THE CORE</div>
         <div class="text-base font-black tracking-tight text-white flex items-center gap-0.5">

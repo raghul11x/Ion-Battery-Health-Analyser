@@ -3070,6 +3070,10 @@ function initAuroraBg() {
 
 // Boot
 function init() {
+  if (typeof IonPreloader !== 'undefined' && IonPreloader.step) {
+    IonPreloader.step('Starting local engine', 0.25);
+  }
+
   // Initialize approved Aurora background
   initAuroraBg();
 
@@ -3204,12 +3208,36 @@ function init() {
   // Initialize Chart.js IntersectionObserver for offscreen pause
   initChartObserver();
 
-  // Initial queries
-  fetchStatus();
-  fetchSnapshot();
-  fetchHistory(state.selectedDays);
-  fetchInsights();
-  fetchAppDrain();
+  // Initial queries with progress telemetry
+  async function runInitialBootSequence() {
+    try {
+      if (typeof IonPreloader !== 'undefined' && IonPreloader.step) {
+        IonPreloader.step('Opening history database', 0.6);
+      }
+      await Promise.allSettled([
+        fetchHistory(state.selectedDays),
+        fetchInsights(),
+        fetchAppDrain()
+      ]);
+
+      if (typeof IonPreloader !== 'undefined' && IonPreloader.step) {
+        IonPreloader.step('Checking ADB', 0.85);
+      }
+      await Promise.allSettled([
+        fetchStatus(),
+        fetchSnapshot(),
+        fetchDeviceStatus()
+      ]);
+    } catch (err) {
+      console.warn('Initial boot sequence warning:', err);
+    } finally {
+      if (typeof IonPreloader !== 'undefined' && IonPreloader.finish) {
+        IonPreloader.finish();
+      }
+    }
+  }
+
+  runInitialBootSequence();
 
   // Test Verification URL query parameter hook
   try {
