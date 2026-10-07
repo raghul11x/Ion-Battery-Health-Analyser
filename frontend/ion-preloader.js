@@ -17,11 +17,11 @@
   if (typeof window === 'undefined' || window.IonPreloader) return;
 
   var script = document.currentScript;
-  // minMs / maxMs = total time on screen, including the exit animation (override with data-min / data-max)
+  // minMs / maxMs: loads for at least minMs before beginning ignite/handoff (default 5000ms, override via data-min/data-max)
   var cfg = {
     target: (script && script.dataset.target) || '',
-    minMs: Number(script && script.dataset.min) || 3000,
-    maxMs: Number(script && script.dataset.max) || 5000
+    minMs: Number(script && script.dataset.min) || 5000,
+    maxMs: Number(script && script.dataset.max) || 8000
   };
   var EXIT = 1700; // ignite (750ms) + handoff (950ms)
   var calm = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -121,7 +121,7 @@
   function finish() {
     if (!root || finished) return;
     finished = true;
-    setTimeout(ignite, Math.max(0, (cfg.minMs - EXIT) * k - (Date.now() - t0))); // floor: never gone before minMs
+    setTimeout(ignite, Math.max(0, cfg.minMs * k - (Date.now() - t0))); // floor: load for at least 5 seconds before ignite
   }
 
   function ignite() {
