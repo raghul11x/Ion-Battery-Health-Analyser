@@ -3294,6 +3294,9 @@ function init() {
       await yieldToMain();
     } catch (err) {
       console.warn('Initial boot sequence warning:', err);
+      if (typeof IonPreloader !== 'undefined' && IonPreloader.finish) {
+        IonPreloader.finish(err);
+      }
     } finally {
       if (typeof IonPreloader !== 'undefined' && IonPreloader.finish) {
         IonPreloader.finish();
