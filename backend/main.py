@@ -65,6 +65,7 @@ app.add_middleware(
         "http://localhost",
         "app://pywebview",
     ],
+    allow_origin_regex=r"^https?://(127\.0\.0\.1|localhost)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

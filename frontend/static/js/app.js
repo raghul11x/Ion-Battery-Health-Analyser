@@ -21,6 +21,15 @@ function updateTextIfChanged(node, val) {
   }
 }
 
+function parseUtcDate(isoStr) {
+  if (!isoStr) return null;
+  if (isoStr instanceof Date) return isoStr;
+  const str = String(isoStr).trim();
+  const normalized = (!str.endsWith('Z') && !/[+-]\d{2}:?\d{2}$/.test(str)) ? `${str}Z` : str;
+  const d = new Date(normalized);
+  return isNaN(d.getTime()) ? new Date(str) : d;
+}
+
 let lastScrollTimestamp = 0;
 let pendingScrollFlush = false;
 let renderPassScheduled = false;
@@ -466,7 +475,8 @@ function formatCapacity(uah) {
 function formatDate(isoStr) {
   if (!isoStr) return '—';
   try {
-    const d = new Date(isoStr);
+    const d = parseUtcDate(isoStr);
+    if (!d || isNaN(d.getTime())) return isoStr;
     return d.toLocaleString(undefined, {
       month: 'short',
       day: 'numeric',
@@ -1579,8 +1589,17 @@ let forecastRequestId = 0;
 function formatTargetMonthYear(dateStr) {
   if (!dateStr || dateStr === '—') return '—';
   try {
-    const d = new Date(dateStr);
-    if (!isNaN(d.getTime())) {
+    const parts = String(dateStr).split('-');
+    if (parts.length >= 2) {
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const d = new Date(Date.UTC(year, month, 1));
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleDateString(undefined, { month: 'short', year: 'numeric', timeZone: 'UTC' });
+      }
+    }
+    const d = parseUtcDate(dateStr);
+    if (d && !isNaN(d.getTime())) {
       return d.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
     }
   } catch (_) {}
@@ -2018,8 +2037,8 @@ function renderHistoryAndChart() {
   const readings = state.history || [];
   if (el.historyCountBadge) {
     if (readings.length > 0) {
-      const firstTs = new Date(readings[0].timestamp).getTime();
-      const lastTs = new Date(readings[readings.length - 1].timestamp).getTime();
+      const firstTs = parseUtcDate(readings[0].timestamp).getTime();
+      const lastTs = parseUtcDate(readings[readings.length - 1].timestamp).getTime();
       const spanDays = Math.max(1, Math.round((lastTs - firstTs) / (1000 * 60 * 60 * 24)));
       const filterDays = state.selectedDays || 30;
       const countText = spanDays < filterDays
@@ -2039,7 +2058,7 @@ function renderHistoryAndChart() {
     } else if (readings.length > 0) {
       if (emptyStateEl) emptyStateEl.classList.add('hidden');
       const labels = readings.map(r => {
-        const d = new Date(r.timestamp);
+        const d = parseUtcDate(r.timestamp);
         return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${d.getMinutes().toString().padStart(2, '0')}`;
       });
 
@@ -2696,8 +2715,8 @@ function updateLiveTelemetryPausedUI() {
 
 function formatSyncedTimestamp(isoString) {
   try {
-    const d = new Date(isoString);
-    if (isNaN(d.getTime())) return 'Recently';
+    const d = parseUtcDate(isoString);
+    if (!d || isNaN(d.getTime())) return 'Recently';
     const now = new Date();
     const isToday = d.toDateString() === now.toDateString();
     const timeStr = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
@@ -2727,7 +2746,7 @@ function updateChartLastSyncedLabel() {
   if (state.history && state.history.length > 0) {
     for (const r of state.history) {
       if (r.timestamp) {
-        if (!latestTimestamp || new Date(r.timestamp) > new Date(latestTimestamp)) {
+        if (!latestTimestamp || (parseUtcDate(r.timestamp) > parseUtcDate(latestTimestamp))) {
           latestTimestamp = r.timestamp;
         }
       }
@@ -2748,10 +2767,11 @@ function updateChartLastSyncedLabel() {
 
 function formatRelativeTime(isoString) {
   if (!isoString) return null;
-  const d = new Date(isoString);
+  const d = parseUtcDate(isoString);
+  if (!d || isNaN(d.getTime())) return null;
   const now = new Date();
   const diffSec = Math.floor((now - d) / 1000);
-  if (diffSec < 0 || isNaN(diffSec)) return null;
+  if (diffSec < 0 || isNaN(diffSec)) return 'just now';
   if (diffSec < 45) return 'just now';
   const diffMin = Math.floor(diffSec / 60);
   if (diffMin < 60) return `${diffMin} min ago`;
@@ -2804,7 +2824,7 @@ async function updateLastSeenDeviceLabel() {
     return;
   }
 
-  valid.sort((a, b) => new Date(b.last_seen) - new Date(a.last_seen));
+  valid.sort((a, b) => parseUtcDate(b.last_seen) - parseUtcDate(a.last_seen));
   const mostRecent = valid[0];
   const relTime = formatRelativeTime(mostRecent.last_seen);
   if (!relTime) {
