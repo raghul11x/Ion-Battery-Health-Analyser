@@ -2497,9 +2497,9 @@ function updateCapsuleBlob(activeBtn) {
   const left = target.offsetLeft;
   const w    = target.offsetWidth;
   // Set width directly (CSS transition handles the animation) and
-  // use translateX for the horizontal position (compositor-friendly).
+  // use translate3d for the horizontal position (compositor-friendly GPU execution).
   blob.style.width     = w + 'px';
-  blob.style.transform = `translateX(${left}px)`;
+  blob.style.transform = `translate3d(${left}px, 0, 0)`;
 }
 
 // Navigation Tab Switching
@@ -2521,12 +2521,19 @@ function switchTab(tabId) {
     updateCapsuleBlob(activeSeg);
   }
 
-  // Toggle views
+  // Toggle views with optical flow smooth entrance
   Object.keys(el.views).forEach(key => {
+    const viewEl = el.views[key];
+    if (!viewEl) return;
     if (key === tabId) {
-      el.views[key].classList.remove('hidden');
+      viewEl.classList.remove('hidden');
+      viewEl.classList.remove('view-pane-active');
+      // trigger reflow so re-adding the animation restarts cleanly
+      void viewEl.offsetWidth;
+      viewEl.classList.add('view-pane-active');
     } else {
-      el.views[key].classList.add('hidden');
+      viewEl.classList.add('hidden');
+      viewEl.classList.remove('view-pane-active');
     }
   });
 

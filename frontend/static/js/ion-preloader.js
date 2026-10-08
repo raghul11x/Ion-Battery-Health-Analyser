@@ -32,18 +32,18 @@
   radial-gradient(40% 40% at 62% 56%,rgba(34,211,238,.18),transparent 70%),
   #050b1f}
 .out .bg{opacity:0}
-.atom{position:relative;width:180px;height:180px;display:grid;place-items:center}
+.atom{position:relative;width:180px;height:180px;display:grid;place-items:center;will-change:transform;transform:translateZ(0);backface-visibility:hidden}
 .ring{position:absolute;inset:0;border:1px solid rgba(34,211,238,.34);border-radius:50%;
   transform:rotate(var(--a)) scaleY(.38);animation:fade .9s ease backwards;animation-delay:calc(var(--n)*.18s);
-  transition:transform .55s cubic-bezier(.6,0,.9,.4),opacity .4s}
-.ring i{position:absolute;inset:0;animation:orbit 1.8s linear infinite}
+  transition:transform .55s cubic-bezier(.6,0,.9,.4),opacity .4s;will-change:transform;backface-visibility:hidden}
+.ring i{position:absolute;inset:0;animation:orbit 1.8s linear infinite;will-change:transform;backface-visibility:hidden}
 .ring:nth-child(2) i{animation-duration:2.3s}
 .ring:nth-child(3) i{animation-duration:2.9s}
 .ring i::after{content:"";position:absolute;top:-4px;left:50%;margin-left:-4px;width:8px;height:8px;border-radius:50%;
-  background:var(--teal);box-shadow:0 0 12px 2px var(--cyan)}
+  background:var(--teal);box-shadow:0 0 12px 2px var(--cyan);will-change:transform;backface-visibility:hidden}
 .tile{position:relative;z-index:2;width:80px;height:80px;border-radius:22px;display:grid;place-items:center;
   background:linear-gradient(145deg,#fff,#cfe3ff);box-shadow:0 0 40px rgba(34,211,238,.45);
-  transition:transform .85s cubic-bezier(.7,0,.2,1),opacity .25s ease}
+  transition:transform .85s cubic-bezier(.16,1,.3,1),opacity .25s ease;will-change:transform,opacity;transform:translateZ(0);backface-visibility:hidden}
 .tile svg{width:60%;height:60%}
 .pulse{position:absolute;width:80px;height:80px;border-radius:50%;border:2px solid var(--cyan);opacity:0}
 .ignite .ring{transform:rotate(var(--a)) scaleY(.38) scale(.15);opacity:0}
@@ -155,11 +155,13 @@
     var s = tgt && tgt.getBoundingClientRect();
     if (s && s.width) {
       var t = tile.getBoundingClientRect();
-      tile.style.transform = 'translate(' + (s.left + s.width / 2 - t.left - t.width / 2) + 'px,' +
-        (s.top + s.height / 2 - t.top - t.height / 2) + 'px) scale(' + s.width / t.width + ')';
+      var dx = Math.round(s.left + s.width / 2 - t.left - t.width / 2);
+      var dy = Math.round(s.top + s.height / 2 - t.top - t.height / 2);
+      var sc = (s.width / t.width).toFixed(4);
+      tile.style.transform = 'translate3d(' + dx + 'px,' + dy + 'px, 0) scale(' + sc + ')';
       setTimeout(function () { tile.style.opacity = '0'; }, 650 * k); // real logo underneath
     } else {
-      tile.style.transform = 'scale(1.15)';
+      tile.style.transform = 'translate3d(0, 0, 0) scale(1.15)';
       tile.style.opacity = '0';
     }
     root.classList.add('out');

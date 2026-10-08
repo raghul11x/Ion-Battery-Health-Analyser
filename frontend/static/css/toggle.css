@@ -99,6 +99,9 @@
   border-radius: 50%;
   isolation: isolate;
   transition: transform 0.5s cubic-bezier(0.34, 1.45, 0.64, 1);
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 .toggle-cont .cont-icon::before {
   content: "";
@@ -123,6 +126,8 @@
   fill: #ffffff;
   filter: drop-shadow(0 0 3px color-mix(in srgb, var(--accent) 90%, transparent));
   transition: transform 0.6s cubic-bezier(0.34, 1.45, 0.64, 1);
+  will-change: transform;
+  backface-visibility: hidden;
 }
 
 /* ---------- Sparkles (only drift while ON) ---------- */

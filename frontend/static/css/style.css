@@ -82,7 +82,8 @@
   border: 1px solid var(--glass-edge-dim);
   box-shadow: var(--glass-shadow), var(--glass-highlight);
   border-radius: var(--radius-card);
-  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.12s ease;
+  transition: background-color 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+  backface-visibility: hidden;
 }
 
 .glass-pill {
@@ -92,7 +93,8 @@
   border: 1px solid var(--glass-edge-dim);
   box-shadow: var(--glass-shadow), var(--glass-highlight);
   border-radius: var(--radius-pill);
-  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.12s ease;
+  transition: background-color 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+  backface-visibility: hidden;
 }
 
 .glass-active {
@@ -223,6 +225,9 @@ body.tier-low #app-tooltip {
   filter: var(--bg-filter);
   mask-image: radial-gradient(ellipse at 100% 0%, black 40%, transparent 70%);
   -webkit-mask-image: radial-gradient(ellipse at 100% 0%, black 40%, transparent 70%);
+  transform: translateZ(0);
+  will-change: transform;
+  backface-visibility: hidden;
 }
 .aurora-bg__lights::after {
   content: "";
@@ -232,6 +237,9 @@ body.tier-low #app-tooltip {
   background-size: 200%, 100%;
   animation: aurora-drift 60s linear infinite;
   mix-blend-mode: difference;
+  transform: translateZ(0);
+  will-change: background-position;
+  backface-visibility: hidden;
 }
 .aurora-bg.is-paused .aurora-bg__lights::after,
 .aurora-bg.is-scrolling .aurora-bg__lights::after {
@@ -283,6 +291,10 @@ body {
   overflow-x: hidden;
   letter-spacing: -0.015em;
   user-select: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  scroll-behavior: smooth;
 }
 
 /* Ensure view containers and main are completely transparent */
@@ -296,6 +308,30 @@ section,
 #device-status-feed {
   background: transparent !important;
   background-color: transparent !important;
+}
+
+/* Optical Flow View Transitions */
+@keyframes view-optical-in {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0) scale(0.996);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+.view-pane-active {
+  animation: view-optical-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .view-pane-active {
+    animation: none !important;
+  }
 }
 
 .font-mono {
@@ -337,7 +373,10 @@ section,
   -webkit-backdrop-filter: none !important;
   border: 1px solid rgba(255, 255, 255, 0.10);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.12);
-  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.35s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+  backface-visibility: hidden;
+  transform: translateZ(0);
   position: relative;
   overflow: hidden;
 }
@@ -400,7 +439,9 @@ section,
   border: 1px solid var(--glass-edge-dim);
   border-radius: var(--radius-card);
   box-shadow: var(--glass-shadow), var(--glass-highlight);
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.28s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  backface-visibility: hidden;
+  transform: translateZ(0);
   position: relative;
   overflow: hidden;
 }
@@ -417,7 +458,9 @@ section,
   border: 1px solid var(--glass-edge-dim);
   border-radius: var(--radius-card);
   box-shadow: var(--glass-shadow), var(--glass-highlight);
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.28s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  backface-visibility: hidden;
+  transform: translateZ(0);
   position: relative;
   overflow: hidden;
 }
@@ -457,9 +500,11 @@ section,
               inset 0 -1px 0 rgba(255, 255, 255, 0.08),
               0 4px 16px rgba(0, 0, 0, 0.25);
   transform-origin: left center;
-  transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1),
-              width    300ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 320ms cubic-bezier(0.2, 0.8, 0.2, 1),
+              width    320ms cubic-bezier(0.2, 0.8, 0.2, 1);
   will-change: transform, width;
+  transform: translateZ(0);
+  backface-visibility: hidden;
   pointer-events: none;
   z-index: 1;
 }
@@ -553,7 +598,8 @@ section,
   justify-content: center;
   box-sizing: border-box;
   white-space: nowrap;
-  transition: all 0.2s ease;
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
+  backface-visibility: hidden;
 }
 
 /* ==========================================================================
@@ -593,7 +639,8 @@ section,
   border: 1px solid transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), background 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s ease, box-shadow 0.2s ease;
+  backface-visibility: hidden;
 }
 
 .chart-metric-pill:hover,
@@ -643,6 +690,8 @@ section,
   box-shadow: 0 0 16px rgba(120, 190, 255, 0.8), 0 3px 8px rgba(0, 0, 0, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.9);
   transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
   will-change: transform;
+  backface-visibility: hidden;
+  transform-style: preserve-3d;
 }
 
 .range-dial-pin.hidden {
@@ -675,7 +724,8 @@ section,
   font-family: var(--font-sans);
   font-variant-numeric: tabular-nums;
   font-weight: 500;
-  transition: all 0.2s ease;
+  transition: transform 0.16s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  backface-visibility: hidden;
 }
 
 .glass-chip-success {
@@ -1255,6 +1305,9 @@ header {
   aspect-ratio: 1;
   animation: ion-shine-slide var(--speed, 1.2s) ease-in-out infinite alternate;
   overflow: visible;
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 .ion-shine span::before {
@@ -1268,6 +1321,8 @@ header {
     transparent 90deg
   );
   animation: ion-shine-spin calc(var(--speed, 1.2s) * 2) infinite linear;
+  will-change: transform;
+  backface-visibility: hidden;
 }
 
 @keyframes ion-shine-spin {
