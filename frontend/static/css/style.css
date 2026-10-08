@@ -227,13 +227,11 @@ body.tier-low #app-tooltip {
 .aurora-bg__lights::after {
   content: "";
   position: absolute;
-  inset: -20px -80px;
+  inset: 0;
   background-image: var(--stripes), var(--rainbow);
   background-size: 200%, 100%;
-  background-position: 50% 50%, 50% 50%;
-  animation: aurora-drift 75s ease-in-out infinite;
+  animation: aurora-drift 60s linear infinite;
   mix-blend-mode: difference;
-  will-change: transform;
 }
 .aurora-bg.is-paused .aurora-bg__lights::after,
 .aurora-bg.is-scrolling .aurora-bg__lights::after {
@@ -241,30 +239,12 @@ body.tier-low #app-tooltip {
 }
 @media (prefers-reduced-motion: reduce) {
   .aurora-bg__lights::after {
-    animation: none !important;
+    animation: none;
   }
 }
 @keyframes aurora-drift {
-  0% {
-    transform: translate3d(0, 0, 0);
-  }
-  50% {
-    transform: translate3d(-60px, 0, 0);
-  }
-  100% {
-    transform: translate3d(0, 0, 0);
-  }
-}
-@keyframes aurora-loop {
-  0% {
-    transform: translate3d(0, 0, 0);
-  }
-  50% {
-    transform: translate3d(-60px, 0, 0);
-  }
-  100% {
-    transform: translate3d(0, 0, 0);
-  }
+  from { background-position: 50% 50%, 50% 50%; }
+  to   { background-position: 350% 50%, 350% 50%; }
 }
 .aurora-bg__glass {
   position: absolute;

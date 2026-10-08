@@ -3242,36 +3242,13 @@ function init() {
     return new Promise(resolve => setTimeout(resolve, 0));
   };
 
-  function waitForBannerEntry() {
-    return new Promise((resolve) => {
-      const banner = document.getElementById('init-startup-banner');
-      let resolved = false;
-      const done = () => {
-        if (resolved) return;
-        resolved = true;
-        requestAnimationFrame(() => {
-          requestAnimationFrame(resolve);
-        });
-      };
-      if (!banner || banner.classList.contains('settled')) {
-        done();
-      } else {
-        banner.addEventListener('animationend', (e) => {
-          if (e.animationName && e.animationName.includes('initBannerEnter')) {
-            done();
-          }
-        }, { once: true });
-        setTimeout(done, 420);
-      }
-    });
-  }
-
   // Initial queries with progress telemetry
   async function runInitialBootSequence() {
     try {
-      // Defer heavy network and rendering until banner entry settles + 2 rAF ticks
-      await waitForBannerEntry();
-      await yieldToMain();
+      const stageDelay = (ms) => new Promise(r => setTimeout(r, ms));
+
+      // Let initial "Starting local engine" stage render cleanly
+      await stageDelay(1200);
 
       // Hydrate secondary cards and chart observer in yielded chunks
       AppState.subscribe(masterDashboardSubscriber);
@@ -3287,7 +3264,8 @@ function init() {
       await Promise.allSettled([
         fetchHistory(state.selectedDays),
         fetchInsights(),
-        fetchAppDrain()
+        fetchAppDrain(),
+        stageDelay(1500)
       ]);
 
       await yieldToMain();
@@ -3298,15 +3276,13 @@ function init() {
       await Promise.allSettled([
         fetchStatus(),
         fetchSnapshot(),
-        fetchDeviceStatus()
+        fetchDeviceStatus(),
+        stageDelay(1500)
       ]);
 
       await yieldToMain();
     } catch (err) {
       console.warn('Initial boot sequence warning:', err);
-      if (typeof IonPreloader !== 'undefined' && IonPreloader.finish) {
-        IonPreloader.finish(err);
-      }
     } finally {
       if (typeof IonPreloader !== 'undefined' && IonPreloader.finish) {
         IonPreloader.finish();

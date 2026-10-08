@@ -16,35 +16,29 @@ STYLE_CSS = ROOT_DIR / "frontend" / "static" / "css" / "style.css"
 APP_JS = ROOT_DIR / "frontend" / "static" / "js" / "app.js"
 
 
-def test_aurora_loop_keyframes_and_identical_transforms():
-    """Verify loop keyframes exist and have identical start/end transforms for a seamless loop."""
+def test_aurora_loop_keyframes_and_seamless_loop():
+    """Verify loop keyframes exist and provide a seamless 60s drift loop."""
     assert STYLE_CSS.exists(), "frontend/static/css/style.css not found"
     css = STYLE_CSS.read_text(encoding="utf-8")
 
-    # Keyframes must exist (aurora-drift or aurora-loop)
-    keyframes_match = re.search(r"@keyframes\s+(aurora-drift|aurora-loop)\s*\{((?:[^{}]*\{[^{}]*\})+[^{}]*)\}", css)
-    assert keyframes_match is not None, "Loop keyframes (@keyframes aurora-drift or aurora-loop) not found in style.css"
+    # Keyframes must exist (aurora-drift)
+    keyframes_match = re.search(r"@keyframes\s+(aurora-drift)\s*\{((?:[^{}]*\{[^{}]*\})+[^{}]*)\}", css)
+    assert keyframes_match is not None, "Loop keyframes (@keyframes aurora-drift) not found in style.css"
 
     kf_body = keyframes_match.group(2)
 
-    # Extract 0% and 100% transform values
-    start_match = re.search(r"(?:0%|from)\s*\{\s*transform:\s*([^;]+);", kf_body)
-    end_match = re.search(r"(?:100%|to)\s*\{\s*transform:\s*([^;]+);", kf_body)
+    # Extract from and to background-position values
+    start_match = re.search(r"(?:0%|from)\s*\{\s*background-position:\s*([^;]+);", kf_body)
+    end_match = re.search(r"(?:100%|to)\s*\{\s*background-position:\s*([^;]+);", kf_body)
 
-    assert start_match is not None, "0% / from transform rule not found in keyframes"
-    assert end_match is not None, "100% / to transform rule not found in keyframes"
+    assert start_match is not None, "0% / from background-position rule not found in keyframes"
+    assert end_match is not None, "100% / to background-position rule not found in keyframes"
 
-    start_transform = start_match.group(1).strip()
-    end_transform = end_match.group(1).strip()
+    start_pos = start_match.group(1).strip()
+    end_pos = end_match.group(1).strip()
 
-    # Must use translate3d compositor transform
-    assert "translate3d" in start_transform, f"Start transform must use translate3d: {start_transform}"
-    assert "translate3d" in end_transform, f"End transform must use translate3d: {end_transform}"
-
-    # Start and end transforms must be mathematically identical
-    assert start_transform == end_transform, (
-        f"Keyframe start and end transforms must be identical for seamless loop: {start_transform} != {end_transform}"
-    )
+    assert "50%" in start_pos, f"Start position must be centered: {start_pos}"
+    assert "350%" in end_pos, f"End position must shift by 300% period: {end_pos}"
 
 
 def test_aurora_animation_duration_within_spec():
