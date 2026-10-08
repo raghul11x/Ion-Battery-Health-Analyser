@@ -227,11 +227,44 @@ body.tier-low #app-tooltip {
 .aurora-bg__lights::after {
   content: "";
   position: absolute;
-  inset: 0;
+  inset: -20px -80px;
   background-image: var(--stripes), var(--rainbow);
   background-size: 200%, 100%;
   background-position: 50% 50%, 50% 50%;
+  animation: aurora-drift 75s ease-in-out infinite;
   mix-blend-mode: difference;
+  will-change: transform;
+}
+.aurora-bg.is-paused .aurora-bg__lights::after,
+.aurora-bg.is-scrolling .aurora-bg__lights::after {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .aurora-bg__lights::after {
+    animation: none !important;
+  }
+}
+@keyframes aurora-drift {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(-60px, 0, 0);
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+}
+@keyframes aurora-loop {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(-60px, 0, 0);
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
 }
 .aurora-bg__glass {
   position: absolute;

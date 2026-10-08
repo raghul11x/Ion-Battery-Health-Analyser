@@ -3087,6 +3087,16 @@ function initAuroraBg() {
   document.addEventListener('visibilitychange', () => (document.hidden ? pause() : resume()));
   window.addEventListener('blur', () => pause());
   window.addEventListener('focus', () => { if (!document.hidden) resume(); });
+
+  // Passive scroll listener: pause loop during active scroll and resume on scroll-end
+  let scrollTimeout = null;
+  window.addEventListener('scroll', () => {
+    root.classList.add('is-scrolling');
+    if (scrollTimeout) clearTimeout(scrollTimeout);
+    scrollTimeout = setTimeout(() => {
+      root.classList.remove('is-scrolling');
+    }, 150);
+  }, { passive: true });
 }
 
 // Boot
