@@ -231,10 +231,11 @@ def main():
         if splash:
             splash.update_progress(35, "Connecting to active Ion+ background instance...")
 
-    # 3. Poll for server readiness while animating splash
+    # 3. Poll for server readiness with backoff while animating splash
     start_wait = time.time()
     ready = False
     step = 0
+    poll_delay = 0.05
     statuses = [
         (35, "Connecting local SQLite telemetry archive..."),
         (55, "Scanning ADB USB hardware interfaces..."),
@@ -250,7 +251,8 @@ def main():
             pct, msg = statuses[step]
             splash.update_progress(pct, msg)
             step += 1
-        time.sleep(0.18)
+        time.sleep(poll_delay)
+        poll_delay = min(poll_delay * 1.25, 0.25)
 
     if not ready:
         if splash:
@@ -286,7 +288,16 @@ def main():
             text_select=False,
             maximized=True,
             focus=True,
+            hidden=True,
         )
+
+        def on_window_loaded():
+            try:
+                window.show()
+            except Exception:
+                pass
+
+        window.events.loaded += on_window_loaded
 
         def on_window_minimized():
             try:

@@ -54,7 +54,11 @@
     return renderer;
   }
 
-  window.IonPerf.gpuRenderer = detectGpu();
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(() => { window.IonPerf.gpuRenderer = detectGpu(); });
+  } else {
+    setTimeout(() => { window.IonPerf.gpuRenderer = detectGpu(); }, 1200);
+  }
 
   // 1. Refresh Rate Detection
   function sampleRefreshRate(callback) {

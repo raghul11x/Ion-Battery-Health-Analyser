@@ -3219,23 +3219,57 @@ function init() {
   // Initialize Sparkle Toggles
   initSparkleToggles();
 
-  // Register subscribers to AppState (Single Source of Truth)
+  // Register critical lightweight subscribers (state, nav, status)
   AppState.subscribe(subscribeTopBar);
   AppState.subscribe(subscribeGuidanceBanner);
   AppState.subscribe(subscribeHeroHeadline);
-  AppState.subscribe(masterDashboardSubscriber);
-  AppState.subscribe(subscribeTopBatteryDrainers);
 
-  // Initialize Chart.js IntersectionObserver for offscreen pause
-  initChartObserver();
+  // Yield utility for chunking tasks
+  const yieldToMain = () => {
+    if (typeof scheduler !== 'undefined' && scheduler.yield) {
+      return scheduler.yield();
+    }
+    return new Promise(resolve => setTimeout(resolve, 0));
+  };
+
+  function waitForBannerEntry() {
+    return new Promise((resolve) => {
+      const banner = document.getElementById('init-startup-banner');
+      let resolved = false;
+      const done = () => {
+        if (resolved) return;
+        resolved = true;
+        requestAnimationFrame(() => {
+          requestAnimationFrame(resolve);
+        });
+      };
+      if (!banner || banner.classList.contains('settled')) {
+        done();
+      } else {
+        banner.addEventListener('animationend', (e) => {
+          if (e.animationName && e.animationName.includes('initBannerEnter')) {
+            done();
+          }
+        }, { once: true });
+        setTimeout(done, 420);
+      }
+    });
+  }
 
   // Initial queries with progress telemetry
   async function runInitialBootSequence() {
     try {
-      const stageDelay = (ms) => new Promise(r => setTimeout(r, ms));
+      // Defer heavy network and rendering until banner entry settles + 2 rAF ticks
+      await waitForBannerEntry();
+      await yieldToMain();
 
-      // Let initial "Starting local engine" stage render cleanly
-      await stageDelay(1200);
+      // Hydrate secondary cards and chart observer in yielded chunks
+      AppState.subscribe(masterDashboardSubscriber);
+      await yieldToMain();
+      AppState.subscribe(subscribeTopBatteryDrainers);
+      await yieldToMain();
+      initChartObserver();
+      await yieldToMain();
 
       if (typeof IonPreloader !== 'undefined' && IonPreloader.step) {
         IonPreloader.step('Opening history database', 0.6);
@@ -3243,9 +3277,10 @@ function init() {
       await Promise.allSettled([
         fetchHistory(state.selectedDays),
         fetchInsights(),
-        fetchAppDrain(),
-        stageDelay(1500)
+        fetchAppDrain()
       ]);
+
+      await yieldToMain();
 
       if (typeof IonPreloader !== 'undefined' && IonPreloader.step) {
         IonPreloader.step('Checking ADB', 0.85);
@@ -3253,9 +3288,10 @@ function init() {
       await Promise.allSettled([
         fetchStatus(),
         fetchSnapshot(),
-        fetchDeviceStatus(),
-        stageDelay(1500)
+        fetchDeviceStatus()
       ]);
+
+      await yieldToMain();
     } catch (err) {
       console.warn('Initial boot sequence warning:', err);
     } finally {
