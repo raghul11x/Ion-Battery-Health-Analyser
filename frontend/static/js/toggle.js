@@ -11,7 +11,7 @@ function createSparkleToggle(options = {}) {
     label = 'Toggle switch',
     checked = false,
     disabled = false,
-    size = 'default', // 'default' or 'sm'
+    size = 'default', // 'default', 'sm', or 'xs'
     onChange = null,
   } = options;
 
@@ -19,7 +19,8 @@ function createSparkleToggle(options = {}) {
 
   // 1. Root container
   const container = document.createElement('div');
-  container.className = `toggle-cont${size === 'sm' ? ' toggle-cont--sm' : ''}`;
+  const sizeClass = size === 'sm' ? ' toggle-cont--sm' : (size === 'xs' ? ' toggle-cont--xs' : '');
+  container.className = `toggle-cont${sizeClass}`;
 
   // 2. Focusable Visually-Hidden Checkbox Input
   const input = document.createElement('input');

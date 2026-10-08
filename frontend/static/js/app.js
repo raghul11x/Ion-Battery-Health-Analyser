@@ -3353,7 +3353,7 @@ function initSparkleToggles() {
       label: 'Live telemetry polling',
       checked: AppState.connected ? AppState.liveTelemetryEnabled : false,
       disabled: !AppState.connected,
-      size: 'sm',
+      size: 'xs',
       onChange: (checked) => {
         AppState.setLiveTelemetry(checked);
       }
