@@ -209,6 +209,8 @@ body.tier-low #app-tooltip {
   pointer-events: none;
   background: var(--stripe-color);
   contain: paint;
+  transform: translateZ(0);
+  will-change: transform;
 }
 .aurora-bg__lights {
   position: absolute;
@@ -228,17 +230,8 @@ body.tier-low #app-tooltip {
   inset: 0;
   background-image: var(--stripes), var(--rainbow);
   background-size: 200%, 100%;
-  animation: aurora-drift 60s linear infinite;
-  background-attachment: fixed;
+  background-position: 50% 50%, 50% 50%;
   mix-blend-mode: difference;
-}
-.aurora-bg.is-paused .aurora-bg__lights::after {
-  animation-play-state: paused;
-}
-@media (prefers-reduced-motion: reduce) {
-  .aurora-bg__lights::after {
-    animation: none;
-  }
 }
 .aurora-bg__glass {
   position: absolute;
@@ -252,11 +245,7 @@ body.tier-low #app-tooltip {
   position: absolute;
   inset: 0;
   mix-blend-mode: lighten;
-  background: radial-gradient(ellipse at 100% 0%, var(--aurora-sky-top, #092a60) 0%, var(--aurora-sky-mid, #061b40) 40%, var(--aurora-sky-deep, #040f26) 70%, var(--aurora-sky-edge, #020710) 100%);
-}
-@keyframes aurora-drift {
-  from { background-position: 50% 50%, 50% 50%; }
-  to   { background-position: 350% 50%, 350% 50%; }
+  background: radial-gradient(ellipse at 85% 0%, var(--aurora-sky-top, #092a60) 0%, var(--aurora-sky-mid, #061b40) 40%, var(--aurora-sky-deep, #040f26) 75%, var(--aurora-sky-edge, #020710) 100%);
 }
 
 html,
