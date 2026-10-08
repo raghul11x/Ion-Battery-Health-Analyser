@@ -1083,6 +1083,12 @@ section,
    Compositor Containment & Off-Screen Work Optimization (Phase 2)
    ========================================================================== */
 
+header {
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+.cinematic-backdrop,
 .hero-card,
 .eura-dark-card,
 .eura-indigo-card {

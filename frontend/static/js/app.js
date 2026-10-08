@@ -3635,18 +3635,25 @@ function initSharedTooltips() {
   }, { passive: true });
 
   let scrollPauseTimer = null;
+  let scrollTicking = false;
   window.addEventListener('scroll', () => {
     lastScrollTimestamp = performance.now();
     if (activeTooltipTarget) {
       hideSharedTooltip();
     }
-    clearTimeout(scrollPauseTimer);
-    scrollPauseTimer = setTimeout(() => {
-      if (pendingScrollFlush) {
-        pendingScrollFlush = false;
-        runIdle(() => flushPendingRenders());
-      }
-    }, 120);
+    if (!scrollTicking) {
+      scrollTicking = true;
+      requestAnimationFrame(() => {
+        scrollTicking = false;
+      });
+      clearTimeout(scrollPauseTimer);
+      scrollPauseTimer = setTimeout(() => {
+        if (pendingScrollFlush) {
+          pendingScrollFlush = false;
+          runIdle(() => flushPendingRenders());
+        }
+      }, 120);
+    }
   }, { passive: true });
 }
 
