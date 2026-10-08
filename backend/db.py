@@ -341,25 +341,34 @@ class Database:
 
                 if row.charge_full_uah and row.charge_full_design_uah:
                     ratio = (row.charge_full_uah / float(row.charge_full_design_uah)) * 100.0
-                    row.raw_capacity_ratio = round(ratio, 2)
-                    row.recalibrated = 1 if ratio > 100.0 else 0
+                    rounded_ratio = round(ratio, 2)
+                    if row.raw_capacity_ratio != rounded_ratio:
+                        row.raw_capacity_ratio = rounded_ratio
+                        modified = True
+                    expected_recal = 1 if ratio > 100.0 else 0
+                    if row.recalibrated != expected_recal:
+                        row.recalibrated = expected_recal
+                        modified = True
 
                     # 2. Static uncalibrated OEM register repair:
                     # If device has 50+ cycles and reported >= 98.5% capacity, calibrate using Apple standard
                     if row.cycle_count and row.cycle_count >= 50 and ratio >= 98.5:
-                        apple_res = calculate_apple_standard_health(
-                            cycle_count=row.cycle_count,
-                            charge_full_design_uah=row.charge_full_design_uah,
-                            temperature_c=row.temperature_c,
-                            voltage_mv=row.voltage_mv,
-                        )
-                        row.health_pct = apple_res["apple_health_pct"]
-                        row.health_method = "apple_standard_calibrated"
-                        row.effective_capacity_uah = apple_res["effective_capacity_uah"]
-                        modified = True
+                        if row.health_method != "apple_standard_calibrated":
+                            apple_res = calculate_apple_standard_health(
+                                cycle_count=row.cycle_count,
+                                charge_full_design_uah=row.charge_full_design_uah,
+                                temperature_c=row.temperature_c,
+                                voltage_mv=row.voltage_mv,
+                            )
+                            row.health_pct = apple_res["apple_health_pct"]
+                            row.health_method = "apple_standard_calibrated"
+                            row.effective_capacity_uah = apple_res["effective_capacity_uah"]
+                            modified = True
                     elif row.health_pct > 100.0:
-                        row.health_pct = min(100.0, round(ratio, 1))
-                        modified = True
+                        new_h = min(100.0, round(ratio, 1))
+                        if row.health_pct != new_h:
+                            row.health_pct = new_h
+                            modified = True
 
                 # 3. Ensure effective_capacity_uah is populated
                 if row.effective_capacity_uah is None:

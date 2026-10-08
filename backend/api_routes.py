@@ -290,7 +290,7 @@ def get_snapshot(
             return {
                 "live": True,
                 "connected": True,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "device_serial": target_serial,
                 "device_model": model_name,
                 "level_pct": level_pct,
@@ -539,8 +539,18 @@ def unseed_mock_data(payload: Optional[SeedRequest] = None) -> Dict[str, Any]:
 def list_devices(include_demo: Optional[bool] = Query(default=None)) -> List[Dict[str, Any]]:
     """Returns all devices seen in database history, merged with any currently connected USB device."""
     db_devs = db.get_devices(include_demo=include_demo if include_demo is not None else False)
-    known_serials = {d["serial"] for d in db_devs}
+    
+    active_serials = set()
+    if adb.is_available():
+        for dev in adb.get_devices():
+            if dev.get("state") == "device":
+                active_serials.add(dev["serial"])
 
+    # Accurately reflect active connection status for recorded devices
+    for d in db_devs:
+        d["active"] = d.get("serial") in active_serials
+
+    known_serials = {d["serial"] for d in db_devs}
     if adb.is_available():
         for dev in adb.get_devices():
             if dev.get("state") == "device" and dev["serial"] not in known_serials:
@@ -552,7 +562,7 @@ def list_devices(include_demo: Optional[bool] = Query(default=None)) -> List[Dic
                     "serial": dev["serial"],
                     "model": model_name,
                     "readings_count": 0,
-                    "last_seen": datetime.utcnow().isoformat(),
+                    "last_seen": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
                     "active": True,
                 })
                 known_serials.add(dev["serial"])

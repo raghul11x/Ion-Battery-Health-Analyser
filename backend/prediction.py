@@ -10,7 +10,7 @@ Provides deterministic subsystem forecasts from historical readings:
 """
 
 from __future__ import annotations
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import math
 from typing import Any, Dict, List, Optional
 
@@ -183,11 +183,15 @@ def _linear_regression(xs: List[float], ys: List[float]):
 
 
 def _parse_ts(ts_str: str) -> Optional[datetime]:
-    """Parses ISO 8601 timestamp string from db.get_history() rows."""
+    """Parses ISO 8601 timestamp string from db.get_history() rows into naive UTC datetime."""
     if not ts_str:
         return None
     try:
-        return datetime.fromisoformat(ts_str)
+        clean = ts_str.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(clean)
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+        return dt
     except Exception:
         return None
 

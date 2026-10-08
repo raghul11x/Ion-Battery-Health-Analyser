@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Ion+ — Battery Health & Longevity</title>
+  <!-- Preload Geist Variable Font for Offline Standalone UI -->
+  <link rel="preload" href="/static/fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
   <!-- Isolated Ion+ In-App Preloader (Shadow DOM) -->
   <script src="/static/js/ion-preloader.js" data-target="#brand-logo" data-min="5000" data-max="8000"></script>
   <link rel="icon" type="image/x-icon" href="/static/assets/favicon.ico">
@@ -13,8 +15,6 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Local Offline-Ready Chart.js -->
   <script src="/static/js/chart.min.js"></script>
-  <!-- Preload Geist Variable Font for Offline Standalone UI -->
-  <link rel="preload" href="/static/fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
   <!-- EURA Health Style Theme -->
   <link rel="stylesheet" href="/static/css/style.css">
   <!-- Sparkle Toggle Theme -->
@@ -71,7 +71,7 @@
   <header class="sticky top-0 z-40 w-full px-6 py-4 flex items-center justify-between">
     
     <!-- Left: Brand / Title -->
-    <div class="relative z-10 flex items-center gap-3">
+    <div class="relative z-10 flex items-center gap-3 header-brand">
       <img id="brand-logo" src="/static/assets/icon-1024.png" alt="Ion+" class="w-9 h-9 rounded-xl shadow-lg border border-white/10">
       <div class="flex flex-col justify-center">
         <div class="brand-lockup-eyebrow">INTELLIGENCE AT THE CORE</div>
@@ -91,7 +91,7 @@
     </nav>
 
     <!-- Right: Connection Glass Pill & Actions -->
-    <div class="relative z-10 flex items-center gap-2.5">
+    <div class="relative z-10 flex items-center gap-2.5 header-actions">
       <!-- Status Pill with Additive Last-Seen Subtext -->
       <div id="connection-pill" class="glass-pill h-[38px] px-4 text-xs flex items-center gap-2.5 whitespace-nowrap shadow-inner">
         <div id="conn-dot" class="dot-idle-gray"></div>
@@ -538,7 +538,7 @@
                   </div>
                 </div>
                 <!-- Toggle Button -->
-                <div class="toggle-cont toggle-compact shrink-0">
+                <div class="toggle-cont shrink-0">
                   <input class="toggle-input" id="sim-cap-toggle" name="sim-cap-toggle" type="checkbox" />
                   <label class="toggle-label" for="sim-cap-toggle">
                     <div class="cont-icon">

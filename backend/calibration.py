@@ -244,11 +244,17 @@ class ActiveCalibrationManager:
                 level_pct = self.current_level_pct or 50
 
                 try:
-                    probe = adb.probe_device(self.device_serial)
-                    summary = probe.get("summary", {})
-                    level_pct = summary.get("level_pct") or level_pct
-                    voltage_mv = summary.get("voltage_mv") or voltage_mv
-                    temp_c = summary.get("temperature_c") or temp_c
+                    dumpsys = adb.probe_dumpsys_battery(self.device_serial)
+                    if dumpsys and "error" not in dumpsys:
+                        level_pct = dumpsys.get("level") or level_pct
+                        voltage_mv = dumpsys.get("voltage") or voltage_mv
+                        temp_c = dumpsys.get("temperature_c") or temp_c
+                    else:
+                        probe = adb.probe_device(self.device_serial)
+                        summary = probe.get("summary", {})
+                        level_pct = summary.get("level_pct") or level_pct
+                        voltage_mv = summary.get("voltage_mv") or voltage_mv
+                        temp_c = summary.get("temperature_c") or temp_c
 
                     # Try reading sysfs current_now
                     out, _, code = adb.run_shell(self.device_serial, "cat /sys/class/power_supply/battery/current_now")

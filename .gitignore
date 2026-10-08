@@ -46,3 +46,4 @@ push_to_github.bat
 
 # Project documentation (design docs, specs, notes — never pushed)
 Artifacts/
+_backup_*/

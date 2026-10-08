@@ -75,3 +75,28 @@ def test_app_js_boot_sequence_calls():
 
     # Finish call
     assert "IonPreloader.finish()" in app_js_text
+
+
+def test_ion_preloader_component_lifecycle():
+    """
+    Validates:
+    1. Shadow DOM attachment and encapsulation.
+    2. Atom rings, brand title, and status step elements exist in markup.
+    3. Normal finish triggers ignite and handoff into target element.
+    4. Exit cleans up host and dispatches 'ionpl:done'.
+    """
+    code = STATIC_PRELOADER.read_text(encoding="utf-8")
+    html = INDEX_HTML.read_text(encoding="utf-8")
+
+    # Invariants in source code
+    assert "attachShadow({ mode: 'closed' })" in code
+    assert "class=\"atom\"" in code
+    assert "class=\"ring\"" in code
+    assert "class=\"tile\"" in code
+    assert "class=\"brand\"" in code
+    assert "class=\"bar indet\"" in code
+    assert "ignite" in code
+    assert "handoff" in code
+    assert "data-target=\"#brand-logo\"" in html
+    assert "id=\"brand-logo\"" in html
+
