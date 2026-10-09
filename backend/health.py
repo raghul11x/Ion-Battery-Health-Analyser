@@ -210,187 +210,209 @@ def build_breakdown(
     }
 
 
-def calculate_health(
+def _enrich_oem_divergence(
+    details: Dict[str, Any],
+    displayed_health: Optional[float],
+    oem_reported_soh: Optional[float],
+) -> None:
+    """Enriches details dictionary with OEM State-of-Health divergence metrics if applicable."""
+    if oem_reported_soh is not None:
+        details["oem_reported_soh"] = oem_reported_soh
+        if displayed_health is not None:
+            divergence = abs(displayed_health - oem_reported_soh)
+            details["soh_divergence_flag"] = divergence > 10.0
+            details["soh_divergence_delta"] = round(divergence, 1)
+
+
+def _build_insufficient_data_tuple(
+    history_days: float,
+    breakdown: Dict[str, Any],
+    source: str,
+    raw_ratio: Optional[float] = None,
+    charge_full_raw: Optional[int] = None,
+    charge_full_design_raw: Optional[int] = None,
+    charge_full_uah: Optional[int] = None,
+    charge_full_design_uah: Optional[int] = None,
+) -> Tuple[None, Optional[float], bool, str, Dict[str, Any]]:
+    """Builds the standardized zero-hallucination insufficient_data result 5-tuple."""
+    details: Dict[str, Any] = {
+        "method": "insufficient_data",
+        "health_status": "insufficient_data",
+        "displayed_health": None,
+    }
+    if charge_full_raw is not None:
+        details["charge_full_raw"] = charge_full_raw
+    if charge_full_design_raw is not None:
+        details["charge_full_design_raw"] = charge_full_design_raw
+    if charge_full_uah is not None:
+        details["charge_full_uah"] = charge_full_uah
+    if charge_full_design_uah is not None:
+        details["charge_full_design_uah"] = charge_full_design_uah
+    if raw_ratio is not None:
+        details["raw_capacity_ratio"] = round(raw_ratio, 2)
+
+    details.update({
+        "capacity_retention_pct": breakdown["capacity_retention_pct"],
+        "capacity_fade_pct": breakdown["capacity_fade_pct"],
+        "breakdown": breakdown,
+        "history_days": round(history_days, 1),
+        "days_required": 7.0,
+        "days_remaining": max(0.0, round(7.0 - history_days, 1)),
+        "reason": "Cycle count not exposed by OEM firmware and insufficient history (<7 days) to estimate health.",
+        "note": "Cycle count isn't exposed by this device's firmware — building an estimate from usage history, check back in a few days",
+        "suggestion": "Keep app connected across 3–5 charge cycles to estimate health from charge accumulation",
+        "source": source,
+    })
+    return None, (round(raw_ratio, 2) if raw_ratio is not None else None), False, "insufficient_data", details
+
+
+def _calculate_capacity_ratio_method(
+    norm_full: int,
+    norm_design: int,
     charge_full_uah: Optional[int],
     charge_full_design_uah: Optional[int],
-    charge_counter_uah: Optional[int] = None,
-    level_pct: Optional[int] = None,
-    baseline_record: Optional[Dict[str, Any]] = None,
-    cycle_count: Optional[int] = None,
-    voltage_mv: Optional[int] = None,
-    temperature_c: Optional[float] = None,
-    device_age_days: Optional[float] = None,
-    history_days: Optional[float] = None,
-    oem_reported_soh: Optional[float] = None,
-    data_sources: Optional[Dict[str, str]] = None,
-) -> Tuple[Optional[float], Optional[float], bool, str, Dict[str, Any]]:
-    """
-    Computes battery health % with:
-    1. Unit scale mismatch detection & normalization.
-    2. Strict mathematical cap: displayed health_pct NEVER exceeds 100.0%.
-    3. Storage of uncapped raw_capacity_ratio (e.g. 100.16%).
-    4. Flagging recalibrated = True when raw_capacity_ratio > 100.0%.
-    5. Apple-Standard Electrochemical Calibration when static uncalibrated OEM registers are detected.
-    6. Zero-hallucination insufficient_data state when cycle_count is missing and history < 7 days.
-    7. Automatic transition to trend_estimate_no_cycle_data once 7+ days of history accumulate.
-    8. Divergence flagging if OEM-reported SoH differs from calculated health by > 10%.
-    9. Core capacity metrics: maximum_battery_capacity (design), maximum_chargeable_capacity_now,
-       capacity_retention_pct, capacity_fade_pct, and full provenance breakdown.
-
-    Returns:
-       (displayed_health_pct, raw_capacity_ratio, recalibrated, health_method, details_dict)
-    """
+    charge_counter_uah: Optional[int],
+    cycle_count: Optional[int],
+    voltage_mv: Optional[int],
+    temperature_c: Optional[float],
+    device_age_days: Optional[float],
+    history_days: Optional[float],
+    oem_reported_soh: Optional[float],
+    data_sources: Optional[Dict[str, str]],
+    unit_note: str,
+) -> Optional[Tuple[Optional[float], Optional[float], bool, str, Dict[str, Any]]]:
+    """Primary health method: Capacity ratio with static register and Apple calibration handling."""
     is_cycle_unresolved = (cycle_count is None or cycle_count <= 0)
+    raw_ratio = (norm_full / float(norm_design)) * 100.0
+    recalibrated = raw_ratio > 100.0
 
-    # Normalize units at top-level
-    norm_full = charge_full_uah
-    norm_design = charge_full_design_uah
-    unit_note = "Raw capacity readings"
-    if (
-        charge_full_uah is not None
-        and charge_full_design_uah is not None
-        and charge_full_uah > 0
-        and charge_full_design_uah > 0
-    ):
-        norm_full, norm_design, raw_ratio_unconverted, unit_note = normalize_capacity_units(
-            charge_full_uah, charge_full_design_uah
+    apple_model = None
+    if cycle_count is not None and cycle_count > 0:
+        apple_model = calculate_apple_standard_health(
+            cycle_count=cycle_count,
+            charge_full_design_uah=norm_design,
+            device_age_days=device_age_days,
+            temperature_c=temperature_c,
+            voltage_mv=voltage_mv,
         )
 
-    # 1. PRIMARY METHOD: Capacity Ratio
-    if (
-        norm_full is not None
-        and norm_design is not None
-        and norm_full > 0
-        and norm_design > 0
-    ):
-        raw_ratio = (norm_full / float(norm_design)) * 100.0
-        recalibrated = raw_ratio > 100.0
+    # Detection of uncalibrated static OEM factory register:
+    # If the phone has logged significant usage (cycle_count >= 50 or device_age_days >= 60)
+    # but the raw capacity ratio reports >= 98.5%, this register is statically hardcoded by the OEM kernel driver.
+    has_significant_wear = (
+        (cycle_count is not None and cycle_count >= 50)
+        or (device_age_days is not None and device_age_days >= 60)
+    )
+    is_uncalibrated_static = (
+        has_significant_wear
+        and raw_ratio >= 98.5
+        and apple_model is not None
+    )
 
-        apple_model = None
-        if cycle_count is not None and cycle_count > 0:
-            apple_model = calculate_apple_standard_health(
-                cycle_count=cycle_count,
-                charge_full_design_uah=norm_design,
-                device_age_days=device_age_days,
-                temperature_c=temperature_c,
-                voltage_mv=voltage_mv,
-            )
-
-        # Detection of uncalibrated static OEM factory register:
-        # If the phone has logged significant usage (cycle_count >= 50 or device_age_days >= 60)
-        # but the raw capacity ratio reports >= 98.5%, this register is statically hardcoded by the OEM kernel driver.
-        has_significant_wear = (
-            (cycle_count is not None and cycle_count >= 50)
-            or (device_age_days is not None and device_age_days >= 60)
-        )
-        is_uncalibrated_static = (
-            has_significant_wear
-            and raw_ratio >= 98.5
-            and apple_model is not None
-        )
-
-        # ZERO-HALLUCINATION INSUFFICIENT DATA CHECK:
-        # If capacity register is static (~100%) and cycle_count is unresolved:
-        # Check OEM SoH, otherwise check history duration.
-        if is_cycle_unresolved and raw_ratio >= 98.5:
-            if oem_reported_soh is not None:
-                displayed_health = oem_reported_soh
-                effective_capacity_uah = int(round(norm_design * (oem_reported_soh / 100.0)))
-                health_method = "oem_reported_soh"
-                source = "OEM proprietary hardware register (verified by AI consensus)"
-            elif history_days is not None and history_days < 7.0:
-                breakdown = build_breakdown(
-                    maximum_battery_capacity=norm_design,
-                    maximum_chargeable_capacity_now=norm_full,
-                    displayed_health_pct=None,
-                    apple_model=apple_model,
-                    cycle_count=cycle_count,
-                    temperature_c=temperature_c,
-                    charge_counter_uah=charge_counter_uah,
-                    data_sources=data_sources,
-                )
-                details = {
-                    "method": "insufficient_data",
-                    "health_status": "insufficient_data",
-                    "displayed_health": None,
-                    "charge_full_raw": charge_full_uah,
-                    "charge_full_design_raw": charge_full_design_uah,
-                    "charge_full_uah": norm_full,
-                    "charge_full_design_uah": norm_design,
-                    "raw_capacity_ratio": round(raw_ratio, 2),
-                    "capacity_retention_pct": breakdown["capacity_retention_pct"],
-                    "capacity_fade_pct": breakdown["capacity_fade_pct"],
-                    "breakdown": breakdown,
-                    "history_days": round(history_days, 1),
-                    "days_required": 7.0,
-                    "days_remaining": max(0.0, round(7.0 - history_days, 1)),
-                    "reason": "Cycle count not exposed by OEM firmware and insufficient history (<7 days) to estimate health.",
-                    "note": "Cycle count isn't exposed by this device's firmware — building an estimate from usage history, check back in a few days",
-                    "suggestion": "Keep app connected across 3–5 charge cycles to estimate health from charge accumulation",
-                    "source": "sysfs static register (cycle count unexposed)",
-                }
-                return None, round(raw_ratio, 2), False, "insufficient_data", details
-            elif history_days is not None and history_days >= 7.0:
-                # Fall through to trend estimate with label 'trend_estimate_no_cycle_data'
-                pass
-            else:
-                displayed_health = min(100.0, max(0.0, round(raw_ratio, 1)))
-                effective_capacity_uah = norm_full
-                health_method = "capacity_ratio"
-                source = "sysfs hardware capacity registers"
-        elif is_uncalibrated_static and apple_model:
-            displayed_health = apple_model["apple_health_pct"]
-            effective_capacity_uah = apple_model["effective_capacity_uah"]
-            health_method = "apple_standard_calibrated"
-            source = "Apple-standard electrochemical degradation model (IEC 61960)"
-        else:
-            displayed_health = min(100.0, max(0.0, round(raw_ratio, 1)))
-            effective_capacity_uah = norm_full
-            health_method = "capacity_ratio"
-            source = "sysfs hardware capacity registers"
-
-        if not (is_cycle_unresolved and raw_ratio >= 98.5 and history_days is not None and history_days >= 7.0):
-            chargeable_now = effective_capacity_uah if effective_capacity_uah is not None else norm_full
+    # ZERO-HALLUCINATION INSUFFICIENT DATA CHECK:
+    # If capacity register is static (~100%) and cycle_count is unresolved:
+    # Check OEM SoH, otherwise check history duration.
+    if is_cycle_unresolved and raw_ratio >= 98.5:
+        if oem_reported_soh is not None:
+            displayed_health = oem_reported_soh
+            effective_capacity_uah = int(round(norm_design * (oem_reported_soh / 100.0)))
+            health_method = "oem_reported_soh"
+            source = "OEM proprietary hardware register (verified by AI consensus)"
+        elif history_days is not None and history_days < 7.0:
             breakdown = build_breakdown(
                 maximum_battery_capacity=norm_design,
-                maximum_chargeable_capacity_now=chargeable_now,
-                displayed_health_pct=displayed_health,
+                maximum_chargeable_capacity_now=norm_full,
+                displayed_health_pct=None,
                 apple_model=apple_model,
                 cycle_count=cycle_count,
                 temperature_c=temperature_c,
                 charge_counter_uah=charge_counter_uah,
                 data_sources=data_sources,
             )
-            details = {
-                "method": health_method,
-                "displayed_health": displayed_health,
-                "health_status": "insufficient_data" if displayed_health is None else "evaluated",
-                "charge_full_raw": charge_full_uah,
-                "charge_full_design_raw": charge_full_design_uah,
-                "charge_full_uah": norm_full,
-                "charge_full_design_uah": norm_design,
-                "effective_capacity_uah": effective_capacity_uah,
-                "raw_capacity_ratio": round(raw_ratio, 2),
-                "capacity_retention_pct": breakdown["capacity_retention_pct"],
-                "capacity_fade_pct": breakdown["capacity_fade_pct"],
-                "breakdown": breakdown,
-                "recalibrated": recalibrated,
-                "is_uncalibrated_static_register": is_uncalibrated_static,
-                "unit_note": unit_note,
-                "source": source,
-            }
-            if apple_model:
-                details["apple_standard"] = apple_model
-            if oem_reported_soh is not None:
-                details["oem_reported_soh"] = oem_reported_soh
-                if displayed_health is not None:
-                    divergence = abs(displayed_health - oem_reported_soh)
-                    details["soh_divergence_flag"] = divergence > 10.0
-                    details["soh_divergence_delta"] = round(divergence, 1)
+            return _build_insufficient_data_tuple(
+                history_days=history_days,
+                breakdown=breakdown,
+                source="sysfs static register (cycle count unexposed)",
+                raw_ratio=raw_ratio,
+                charge_full_raw=charge_full_uah,
+                charge_full_design_raw=charge_full_design_uah,
+                charge_full_uah=norm_full,
+                charge_full_design_uah=norm_design,
+            )
+        elif history_days is not None and history_days >= 7.0:
+            # Fall through to trend estimate with label 'trend_estimate_no_cycle_data'
+            return None
+        else:
+            displayed_health = min(100.0, max(0.0, round(raw_ratio, 1)))
+            effective_capacity_uah = norm_full
+            health_method = "capacity_ratio"
+            source = "sysfs hardware capacity registers"
+    elif is_uncalibrated_static and apple_model:
+        displayed_health = apple_model["apple_health_pct"]
+        effective_capacity_uah = apple_model["effective_capacity_uah"]
+        health_method = "apple_standard_calibrated"
+        source = "Apple-standard electrochemical degradation model (IEC 61960)"
+    else:
+        displayed_health = min(100.0, max(0.0, round(raw_ratio, 1)))
+        effective_capacity_uah = norm_full
+        health_method = "capacity_ratio"
+        source = "sysfs hardware capacity registers"
 
-            return displayed_health, round(raw_ratio, 2), recalibrated, health_method, details
+    chargeable_now = effective_capacity_uah if effective_capacity_uah is not None else norm_full
+    breakdown = build_breakdown(
+        maximum_battery_capacity=norm_design,
+        maximum_chargeable_capacity_now=chargeable_now,
+        displayed_health_pct=displayed_health,
+        apple_model=apple_model,
+        cycle_count=cycle_count,
+        temperature_c=temperature_c,
+        charge_counter_uah=charge_counter_uah,
+        data_sources=data_sources,
+    )
+    details = {
+        "method": health_method,
+        "displayed_health": displayed_health,
+        "health_status": "insufficient_data" if displayed_health is None else "evaluated",
+        "charge_full_raw": charge_full_uah,
+        "charge_full_design_raw": charge_full_design_uah,
+        "charge_full_uah": norm_full,
+        "charge_full_design_uah": norm_design,
+        "effective_capacity_uah": effective_capacity_uah,
+        "raw_capacity_ratio": round(raw_ratio, 2),
+        "capacity_retention_pct": breakdown["capacity_retention_pct"],
+        "capacity_fade_pct": breakdown["capacity_fade_pct"],
+        "breakdown": breakdown,
+        "recalibrated": recalibrated,
+        "is_uncalibrated_static_register": is_uncalibrated_static,
+        "unit_note": unit_note,
+        "source": source,
+    }
+    if apple_model:
+        details["apple_standard"] = apple_model
 
-    # 2. FALLBACK METHOD: Trend Estimate
+    _enrich_oem_divergence(details, displayed_health, oem_reported_soh)
+
+    return displayed_health, round(raw_ratio, 2), recalibrated, health_method, details
+
+
+def _calculate_trend_baseline_method(
+    norm_full: Optional[int],
+    norm_design: Optional[int],
+    charge_full_uah: Optional[int],
+    charge_full_design_uah: Optional[int],
+    charge_counter_uah: Optional[int],
+    level_pct: Optional[int],
+    baseline_record: Optional[Dict[str, Any]],
+    cycle_count: Optional[int],
+    voltage_mv: Optional[int],
+    temperature_c: Optional[float],
+    device_age_days: Optional[float],
+    history_days: Optional[float],
+    oem_reported_soh: Optional[float],
+    data_sources: Optional[Dict[str, str]],
+) -> Tuple[Optional[float], Optional[float], bool, str, Dict[str, Any]]:
+    """Fallback health method: Trend estimation and baseline comparison."""
+    is_cycle_unresolved = (cycle_count is None or cycle_count <= 0)
     current_capacity_est: Optional[float] = None
 
     if is_cycle_unresolved and charge_counter_uah is not None and level_pct is not None and level_pct > 15:
@@ -436,22 +458,11 @@ def calculate_health(
                 charge_counter_uah=charge_counter_uah,
                 data_sources=data_sources,
             )
-            details = {
-                "method": "insufficient_data",
-                "health_status": "insufficient_data",
-                "displayed_health": None,
-                "capacity_retention_pct": breakdown["capacity_retention_pct"],
-                "capacity_fade_pct": breakdown["capacity_fade_pct"],
-                "breakdown": breakdown,
-                "history_days": round(history_days, 1),
-                "days_required": 7.0,
-                "days_remaining": max(0.0, round(7.0 - history_days, 1)),
-                "reason": "Cycle count not exposed by OEM firmware and insufficient history (<7 days) to estimate health.",
-                "note": "Cycle count isn't exposed by this device's firmware — building an estimate from usage history, check back in a few days",
-                "suggestion": "Keep app connected across 3–5 charge cycles to estimate health from charge accumulation",
-                "source": "usage history (cycle count unexposed)",
-            }
-            return None, None, False, "insufficient_data", details
+            return _build_insufficient_data_tuple(
+                history_days=history_days,
+                breakdown=breakdown,
+                source="usage history (cycle count unexposed)",
+            )
 
     apple_model = None
     if cycle_count is not None and cycle_count > 0:
@@ -509,11 +520,8 @@ def calculate_health(
             }
             if apple_model:
                 details["apple_standard"] = apple_model
-            if oem_reported_soh is not None:
-                details["oem_reported_soh"] = oem_reported_soh
-                divergence = abs(displayed_health - oem_reported_soh)
-                details["soh_divergence_flag"] = divergence > 10.0
-                details["soh_divergence_delta"] = round(divergence, 1)
+
+            _enrich_oem_divergence(details, displayed_health, oem_reported_soh)
 
             return displayed_health, round(trend_ratio, 2), recalibrated, method_name, details
 
@@ -555,13 +563,98 @@ def calculate_health(
     }
     if apple_model:
         details["apple_standard"] = apple_model
-    if oem_reported_soh is not None:
-        details["oem_reported_soh"] = oem_reported_soh
-        divergence = abs(displayed_health - oem_reported_soh)
-        details["soh_divergence_flag"] = divergence > 10.0
-        details["soh_divergence_delta"] = round(divergence, 1)
+
+    _enrich_oem_divergence(details, displayed_health, oem_reported_soh)
 
     return displayed_health, 100.0, False, health_method, details
+
+
+def calculate_health(
+    charge_full_uah: Optional[int],
+    charge_full_design_uah: Optional[int],
+    charge_counter_uah: Optional[int] = None,
+    level_pct: Optional[int] = None,
+    baseline_record: Optional[Dict[str, Any]] = None,
+    cycle_count: Optional[int] = None,
+    voltage_mv: Optional[int] = None,
+    temperature_c: Optional[float] = None,
+    device_age_days: Optional[float] = None,
+    history_days: Optional[float] = None,
+    oem_reported_soh: Optional[float] = None,
+    data_sources: Optional[Dict[str, str]] = None,
+) -> Tuple[Optional[float], Optional[float], bool, str, Dict[str, Any]]:
+    """
+    Computes battery health % with:
+    1. Unit scale mismatch detection & normalization.
+    2. Strict mathematical cap: displayed health_pct NEVER exceeds 100.0%.
+    3. Storage of uncapped raw_capacity_ratio (e.g. 100.16%).
+    4. Flagging recalibrated = True when raw_capacity_ratio > 100.0%.
+    5. Apple-Standard Electrochemical Calibration when static uncalibrated OEM registers are detected.
+    6. Zero-hallucination insufficient_data state when cycle_count is missing and history < 7 days.
+    7. Automatic transition to trend_estimate_no_cycle_data once 7+ days of history accumulate.
+    8. Divergence flagging if OEM-reported SoH differs from calculated health by > 10%.
+    9. Core capacity metrics: maximum_battery_capacity (design), maximum_chargeable_capacity_now,
+       capacity_retention_pct, capacity_fade_pct, and full provenance breakdown.
+
+    Returns:
+       (displayed_health_pct, raw_capacity_ratio, recalibrated, health_method, details_dict)
+    """
+    # Normalize units at top-level
+    norm_full = charge_full_uah
+    norm_design = charge_full_design_uah
+    unit_note = "Raw capacity readings"
+    if (
+        charge_full_uah is not None
+        and charge_full_design_uah is not None
+        and charge_full_uah > 0
+        and charge_full_design_uah > 0
+    ):
+        norm_full, norm_design, raw_ratio_unconverted, unit_note = normalize_capacity_units(
+            charge_full_uah, charge_full_design_uah
+        )
+
+    # 1. PRIMARY METHOD: Capacity Ratio
+    if (
+        norm_full is not None
+        and norm_design is not None
+        and norm_full > 0
+        and norm_design > 0
+    ):
+        primary_result = _calculate_capacity_ratio_method(
+            norm_full=norm_full,
+            norm_design=norm_design,
+            charge_full_uah=charge_full_uah,
+            charge_full_design_uah=charge_full_design_uah,
+            charge_counter_uah=charge_counter_uah,
+            cycle_count=cycle_count,
+            voltage_mv=voltage_mv,
+            temperature_c=temperature_c,
+            device_age_days=device_age_days,
+            history_days=history_days,
+            oem_reported_soh=oem_reported_soh,
+            data_sources=data_sources,
+            unit_note=unit_note,
+        )
+        if primary_result is not None:
+            return primary_result
+
+    # 2. FALLBACK METHOD: Trend Estimate & Baseline
+    return _calculate_trend_baseline_method(
+        norm_full=norm_full,
+        norm_design=norm_design,
+        charge_full_uah=charge_full_uah,
+        charge_full_design_uah=charge_full_design_uah,
+        charge_counter_uah=charge_counter_uah,
+        level_pct=level_pct,
+        baseline_record=baseline_record,
+        cycle_count=cycle_count,
+        voltage_mv=voltage_mv,
+        temperature_c=temperature_c,
+        device_age_days=device_age_days,
+        history_days=history_days,
+        oem_reported_soh=oem_reported_soh,
+        data_sources=data_sources,
+    )
 
 
 def get_health_band(health_pct: Optional[float]) -> Dict[str, str]:
