@@ -6,12 +6,14 @@ Provides data endpoints for the frontend dashboard and PyWebview shell.
 from __future__ import annotations
 from datetime import datetime
 import logging
+import shlex
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from backend.adb_client import ADBClient
 from backend.calibration import calibration_manager
 from backend.db import db
+from backend.device_profiler import is_safe_sysfs_path
 from backend.health import calculate_health, get_health_band, get_temperature_band
 from backend.prediction import calculate_replacement_forecast
 from backend.status_bus import get_recent_status
@@ -205,8 +207,9 @@ def get_snapshot(
                 cfd_field = profile_fields.get("charge_full_design", {})
                 if cfd_field.get("value"):
                     charge_full_design_uah = cfd_field["value"]
-                elif cfd_field.get("path") and str(cfd_field.get("path")).startswith("/"):
-                    out, _, code = adb.run_shell(target_serial, f"cat {cfd_field['path']}")
+                elif cfd_field.get("path") and is_safe_sysfs_path(str(cfd_field.get("path"))):
+                    safe_path = str(cfd_field["path"]).strip()
+                    out, _, code = adb.run_shell(target_serial, f"cat {shlex.quote(safe_path)}")
                     if code == 0 and out.strip().isdigit():
                         charge_full_design_uah = int(out.strip())
 
@@ -215,8 +218,9 @@ def get_snapshot(
                 cf_field = profile_fields.get("charge_full", {})
                 if cf_field.get("value"):
                     charge_full_uah = cf_field["value"]
-                elif cf_field.get("path") and str(cf_field.get("path")).startswith("/"):
-                    out, _, code = adb.run_shell(target_serial, f"cat {cf_field['path']}")
+                elif cf_field.get("path") and is_safe_sysfs_path(str(cf_field.get("path"))):
+                    safe_path = str(cf_field["path"]).strip()
+                    out, _, code = adb.run_shell(target_serial, f"cat {shlex.quote(safe_path)}")
                     if code == 0 and out.strip().isdigit():
                         charge_full_uah = int(out.strip())
 
@@ -226,8 +230,9 @@ def get_snapshot(
                 cy_field = profile_fields.get("cycle_count", {})
                 if cy_field.get("value") is not None and isinstance(cy_field["value"], int) and 0 <= cy_field["value"] < 20000:
                     hw_cycle_count = cy_field["value"]
-                elif cy_field.get("path") and str(cy_field.get("path")).startswith("/"):
-                    out, _, code = adb.run_shell(target_serial, f"cat {cy_field['path']}")
+                elif cy_field.get("path") and is_safe_sysfs_path(str(cy_field.get("path"))):
+                    safe_path = str(cy_field["path"]).strip()
+                    out, _, code = adb.run_shell(target_serial, f"cat {shlex.quote(safe_path)}")
                     if code == 0 and out.strip().isdigit():
                         c_val = int(out.strip())
                         if 0 <= c_val < 20000:
@@ -486,7 +491,7 @@ def get_probe_report(serial: Optional[str] = None) -> Dict[str, Any]:
     if not target_serial:
         raise HTTPException(status_code=404, detail="No authorized Android device connected over USB.")
 
-    return adb.probe_device(target_serial)
+    return adb.probe_device(target_serial, force=True)
 
 
 @router.post("/log-reading")

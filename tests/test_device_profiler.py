@@ -11,10 +11,12 @@ Verifies:
 import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
+import httpx
 from backend.db import Database
 from backend.device_profiler import (
     DeviceProfiler,
     clean_json_response,
+    is_safe_sysfs_path,
 )
 
 
@@ -266,3 +268,100 @@ def test_database_profile_storage_and_no_overwrite():
     # 3. Unresolved field was updated with AI consensus
     assert saved_2["fields"]["charge_full_design"]["path"] == "/sys/bms/charge_full_design"
     assert saved_2["fields"]["charge_full_design"]["source"] == "ai_consensus"
+
+
+def test_is_safe_sysfs_path():
+    """Verifies that is_safe_sysfs_path allows valid paths and blocks malicious or malformed inputs."""
+    # Valid canonical paths
+    assert is_safe_sysfs_path("/sys/class/power_supply/battery/charge_full_design") is True
+    assert is_safe_sysfs_path("/sys/class/power_supply/google,battery/charge_full_design") is True
+    assert is_safe_sysfs_path("/efs/FactoryApp/batt_discharge_level") is True
+    assert is_safe_sysfs_path("/sys/devices/platform/soc:qcom,pmic/power_supply/battery/capacity") is True
+
+    # Shell injection and command chaining payloads
+    assert is_safe_sysfs_path("/sys/class/power_supply/battery/capacity; rm -rf /sdcard") is False
+    assert is_safe_sysfs_path("/sys/class/power_supply/battery/capacity | cat") is False
+    assert is_safe_sysfs_path("/sys/class/power_supply/battery/capacity$(id)") is False
+    assert is_safe_sysfs_path("/sys/class/power_supply/battery/capacity`id`") is False
+    assert is_safe_sysfs_path("/sys/class/power_supply/battery/capacity && echo 1") is False
+    assert is_safe_sysfs_path("/sys/class/power_supply/battery/capacity\nreboot") is False
+    assert is_safe_sysfs_path("/sys/class/power_supply/battery/capacity > /data/tmp") is False
+
+    # Directory traversal attempts
+    assert is_safe_sysfs_path("/sys/../data/local/tmp") is False
+    assert is_safe_sysfs_path("/sys/class/power_supply/../../system/bin/sh") is False
+    assert is_safe_sysfs_path("/sys/./class/..") is False
+
+    # Non-sysfs and malformed inputs
+    assert is_safe_sysfs_path("/etc/passwd") is False
+    assert is_safe_sysfs_path("OEM Design Spec (5000 mAh)") is False
+    assert is_safe_sysfs_path("") is False
+    assert is_safe_sysfs_path(None) is False
+    assert is_safe_sysfs_path(12345) is False
+
+
+def test_query_ai_cascade_blocks_command_injection():
+    """Verifies that malicious paths suggested by AI models are rejected before shell execution."""
+    async def _test():
+        mock_adb = MagicMock()
+        profiler = DeviceProfiler(adb_client=mock_adb)
+        # AI returns an injected command string
+        profiler.call_openrouter = AsyncMock(return_value={
+            "charge_full_design": "/sys/class/power_supply/battery/charge_full_design; reboot",
+        })
+        profiler.call_huggingface = AsyncMock()
+
+        with patch("backend.device_profiler.OPENROUTER_API_KEY", "test-key"), \
+             patch("backend.device_profiler.HF_API_KEY", "test-key"):
+            results, audit = await profiler.query_ai_cascade(
+                serial="test-phone",
+                unresolved_fields=["charge_full_design"],
+                context_block="dummy context",
+            )
+
+        # ADB run_shell was NEVER called with the injected path
+        assert mock_adb.run_shell.call_count == 0
+        # Field was NOT marked as verified, and path was rejected
+        assert results["charge_full_design"]["source"] == "unresolved_no_consensus"
+        assert results["charge_full_design"]["path"] is None
+
+    asyncio.run(_test())
+
+
+def test_call_huggingface_httpx_timeout_handling():
+    """Verifies that httpx.TimeoutException is caught and handled cleanly in call_huggingface."""
+    async def _test():
+        profiler = DeviceProfiler()
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
+            # Simulate httpx.ReadTimeout during request
+            mock_client.post.side_effect = httpx.ReadTimeout("Read timed out")
+
+            with patch("backend.device_profiler.HF_API_KEY", "dummy-key"):
+                res = await profiler.call_huggingface("test-model", ["charge_full_design"], "context", timeout=5.0)
+
+            # Timeout handled cleanly without crashing; returns None
+            assert res is None
+
+    asyncio.run(_test())
+
+
+def test_call_openrouter_httpx_timeout_handling():
+    """Verifies that httpx.TimeoutException is caught and handled cleanly in call_openrouter."""
+    async def _test():
+        profiler = DeviceProfiler()
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
+            # Simulate httpx.ConnectTimeout
+            mock_client.post.side_effect = httpx.ConnectTimeout("Connection timed out")
+
+            with patch("backend.device_profiler.OPENROUTER_API_KEY", "dummy-key"):
+                res = await profiler.call_openrouter("test-model", ["charge_full_design"], "context", timeout=5.0)
+
+            # Timeout handled cleanly and logged; returns None
+            assert res is None
+
+    asyncio.run(_test())
+
