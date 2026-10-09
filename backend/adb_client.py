@@ -11,6 +11,8 @@ import os
 import re
 import shutil
 import subprocess
+import threading
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -92,6 +94,18 @@ class ADBClient:
         7: "Cold",
     }
 
+    # Class-level synchronization: serializes subprocess access to adb.exe & TCP port 5037
+    _cmd_lock: threading.RLock = threading.RLock()
+
+    # Class-level probe coalescing cache and lock to eliminate concurrent duplicate sysfs sweeps
+    _probe_cache: Dict[str, Dict[str, Any]] = {}
+    _probe_ts: Dict[str, float] = {}
+    _probe_lock: threading.Lock = threading.Lock()
+
+    # Class-level device list cache to coalesce rapid back-to-back get_devices() calls (TTL: 0.5s)
+    _devices_cache: Optional[List[Dict[str, str]]] = None
+    _devices_ts: float = 0.0
+
     def __init__(self, adb_path: Optional[str] = None):
         self.adb_path = adb_path or find_adb_path()
         # In-memory deep-scan cache — stores result per serial with timestamp.
@@ -127,70 +141,81 @@ class ADBClient:
             return "", "ADB executable not found", -1
 
         cmd = [self.adb_path] + args
-        try:
-            startupinfo = None
-            creationflags = 0
-            if os.name == "nt":
-                creationflags = subprocess.CREATE_NO_WINDOW
-                startupinfo = subprocess.STARTUPINFO()
-                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                startupinfo.wShowWindow = subprocess.SW_HIDE
+        with self._cmd_lock:
+            try:
+                startupinfo = None
+                creationflags = 0
+                if os.name == "nt":
+                    creationflags = subprocess.CREATE_NO_WINDOW
+                    startupinfo = subprocess.STARTUPINFO()
+                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                    startupinfo.wShowWindow = subprocess.SW_HIDE
 
-            res = subprocess.run(
-                cmd,
-                capture_output=True,
-                stdin=subprocess.DEVNULL,
-                text=True,
-                timeout=timeout,
-                creationflags=creationflags,
-                startupinfo=startupinfo,
-            )
-            return res.stdout.strip(), res.stderr.strip(), res.returncode
-        except subprocess.TimeoutExpired:
-            return "", f"Command timed out after {timeout}s", -2
-        except Exception as ex:
-            return "", str(ex), -3
+                res = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    stdin=subprocess.DEVNULL,
+                    text=True,
+                    timeout=timeout,
+                    creationflags=creationflags,
+                    startupinfo=startupinfo,
+                )
+                return res.stdout.strip(), res.stderr.strip(), res.returncode
+            except subprocess.TimeoutExpired:
+                return "", f"Command timed out after {timeout}s", -2
+            except Exception as ex:
+                return "", str(ex), -3
 
-    def get_devices(self) -> List[Dict[str, str]]:
+    def get_devices(self, max_age_seconds: float = 0.5) -> List[Dict[str, str]]:
         """
         Lists all connected devices and their authorization status.
         Parses `adb devices -l` accurately, skipping any daemon start banners or headers.
+        Coalesces calls within max_age_seconds (default: 0.5s) to eliminate duplicate subprocess calls.
         """
-        stdout, _, code = self.run_cmd(["devices", "-l"])
-        if code != 0 or not stdout:
-            return []
+        now = time.monotonic()
+        with self._cmd_lock:
+            if ADBClient._devices_cache is not None and (now - ADBClient._devices_ts) < max_age_seconds:
+                return ADBClient._devices_cache
 
-        devices = []
-        header_seen = False
-        for line in stdout.splitlines():
-            line = line.strip()
-            if not line:
-                continue
+            stdout, _, code = self.run_cmd(["devices", "-l"])
+            if code != 0 or not stdout:
+                ADBClient._devices_cache = []
+                ADBClient._devices_ts = now
+                return []
 
-            if "List of devices attached" in line:
-                header_seen = True
-                continue
+            devices = []
+            header_seen = False
+            for line in stdout.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
 
-            # Skip until we have passed the header, and skip daemon log lines
-            if not header_seen or line.startswith("*"):
-                continue
+                if "List of devices attached" in line:
+                    header_seen = True
+                    continue
 
-            parts = line.split()
-            if len(parts) < 2:
-                continue
+                # Skip until we have passed the header, and skip daemon log lines
+                if not header_seen or line.startswith("*"):
+                    continue
 
-            serial = parts[0]
-            state = parts[1]
-            extra_dict: Dict[str, str] = {"serial": serial, "state": state}
+                parts = line.split()
+                if len(parts) < 2:
+                    continue
 
-            for item in parts[2:]:
-                if ":" in item:
-                    k, v = item.split(":", 1)
-                    extra_dict[k] = v
+                serial = parts[0]
+                state = parts[1]
+                extra_dict: Dict[str, str] = {"serial": serial, "state": state}
 
-            devices.append(extra_dict)
+                for item in parts[2:]:
+                    if ":" in item:
+                        k, v = item.split(":", 1)
+                        extra_dict[k] = v
 
-        return devices
+                devices.append(extra_dict)
+
+            ADBClient._devices_cache = devices
+            ADBClient._devices_ts = now
+            return devices
 
     def get_device_props(self, serial: str) -> Dict[str, str]:
         """Retrieves hardware model, manufacturer, and Android version."""
@@ -562,11 +587,17 @@ class ADBClient:
         return result
 
     def invalidate_deep_scan_cache(self, serial: str) -> None:
-        """Clears the cached deep_scan result and package name cache for a given serial (call on disconnect)."""
+        """Clears cached deep_scan result, probe result, and package name cache for a given serial (call on disconnect)."""
         self._deep_scan_cache.pop(serial, None)
         self._deep_scan_ts.pop(serial, None)
         self._uid_package_cache.pop(serial, None)
-        logger.debug(f"[ADB CACHE] Deep-scan and package caches invalidated for {serial}")
+        with ADBClient._probe_lock:
+            ADBClient._probe_cache.pop(serial, None)
+            ADBClient._probe_ts.pop(serial, None)
+        with ADBClient._cmd_lock:
+            ADBClient._devices_cache = None
+            ADBClient._devices_ts = 0.0
+        logger.debug(f"[ADB CACHE] Deep-scan and probe caches invalidated for {serial}")
 
     KNOWN_SYSTEM_UIDS: Dict[int, str] = {
         0: "root",
@@ -649,15 +680,32 @@ class ADBClient:
 
         return resolved
 
-    def probe_device(self, serial: str) -> Dict[str, Any]:
+    def probe_device(self, serial: str, force: bool = False, max_age_seconds: float = 1.2) -> Dict[str, Any]:
         """
         Executes a complete battery and hardware probe for a given device:
         1. Queries dumpsys battery.
         2. Scans all /sys/class/power_supply nodes.
         3. Identifies charge_full, charge_full_design, charge_counter, cycle_count with exact file paths.
         4. Normalizes units and generates the raw diagnostic dump.
-        """
 
+        Includes thread-safe probe coalescing (TTL: 1.2s) to prevent concurrent polling contention
+        between DeviceWatcher and frontend /api/snapshot requests.
+        """
+        now = time.monotonic()
+        with ADBClient._probe_lock:
+            cached_at = ADBClient._probe_ts.get(serial)
+            if not force and cached_at is not None and (now - cached_at) < max_age_seconds:
+                cached = ADBClient._probe_cache.get(serial)
+                if cached is not None:
+                    return cached
+
+            result = self._execute_probe_device(serial)
+            ADBClient._probe_cache[serial] = result
+            ADBClient._probe_ts[serial] = time.monotonic()
+            return result
+
+    def _execute_probe_device(self, serial: str) -> Dict[str, Any]:
+        """Internal uncached execution of probe_device."""
         props = self.get_device_props(serial)
         dumpsys = self.probe_dumpsys_battery(serial)
         power_tree = self.scan_all_power_supplies(serial)

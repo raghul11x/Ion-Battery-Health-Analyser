@@ -20,7 +20,9 @@ from datetime import datetime
 import json
 import logging
 import os
+import posixpath
 import re
+import shlex
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -97,6 +99,34 @@ CORE_BATTERY_FIELDS = [
 ]
 
 OEM_SOH_REGEX = re.compile(r"(?:^|_)soh(?:$|_)|state_of_health|battery_health|health_pct", re.I)
+
+_SAFE_SYSFS_PATH_PATTERN = re.compile(r"^/(sys|efs)/[a-zA-Z0-9_\-.,:@/]+$")
+
+
+def is_safe_sysfs_path(path: Any) -> bool:
+    """
+    Validates that a path is a safe, strictly canonical sysfs or efs path on Android.
+    Guards against shell injection, command chaining, and directory traversal.
+    """
+    if not isinstance(path, str):
+        return False
+    clean_p = path.strip()
+    if not clean_p or len(clean_p) > 256:
+        return False
+    # Reject newlines, carriage returns, null bytes, tabs
+    if any(c in clean_p for c in ("\n", "\r", "\x00", "\t")):
+        return False
+    # Whitelist character set and root prefix (/sys/ or /efs/)
+    if not _SAFE_SYSFS_PATH_PATTERN.match(clean_p):
+        return False
+    # Prevent directory traversal
+    norm = posixpath.normpath(clean_p)
+    if not (norm.startswith("/sys/") or norm.startswith("/efs/")):
+        return False
+    segments = [s for s in clean_p.split("/") if s]
+    if any(s in ("..", ".") for s in segments):
+        return False
+    return True
 
 
 def clean_oem_soh_response(raw_text: str) -> Optional[Dict[str, Any]]:
@@ -371,7 +401,7 @@ class DeviceProfiler:
                         return parsed
                 else:
                     logger.warning(f"[PROFILER] OpenRouter ({model_name}) returned HTTP {res.status_code}: {res.text[:200]}")
-        except asyncio.TimeoutError:
+        except (asyncio.TimeoutError, httpx.TimeoutException):
             logger.warning(f"[PROFILER] OpenRouter ({model_name}) timed out after {timeout}s.")
         except Exception as e:
             logger.warning(f"[PROFILER] OpenRouter ({model_name}) error: {e}")
@@ -437,7 +467,7 @@ class DeviceProfiler:
                 except Exception:
                     js = None
                 return r.status_code, r.text, js
-            except asyncio.TimeoutError:
+            except (asyncio.TimeoutError, httpx.TimeoutException):
                 return 408, "Timeout", None
             except Exception as ex:
                 return 500, str(ex), None
@@ -522,7 +552,7 @@ class DeviceProfiler:
                 for candidate_val, model_list in votes.items():
                     if len(model_list) >= 2:
                         majority_found = True
-                        if candidate_val.lower() != "not_found":
+                        if candidate_val.lower() != "not_found" and is_safe_sysfs_path(candidate_val):
                             chosen_path = candidate_val
                             chosen_source = "ai_consensus"
                             agreeing_models = model_list
@@ -538,7 +568,7 @@ class DeviceProfiler:
                 # Both must agree exactly
                 if len(votes) == 1:
                     candidate_val, model_list = next(iter(votes.items()))
-                    if candidate_val.lower() != "not_found":
+                    if candidate_val.lower() != "not_found" and is_safe_sysfs_path(candidate_val):
                         chosen_path = candidate_val
                         chosen_source = "ai_consensus"
                         agreeing_models = model_list
@@ -746,6 +776,8 @@ class DeviceProfiler:
                     data = res.json()
                     content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
                     return clean_oem_soh_response(content)
+        except (asyncio.TimeoutError, httpx.TimeoutException):
+            logger.warning(f"OpenRouter OEM SoH timeout ({model_name})")
         except Exception as ex:
             logger.warning(f"OpenRouter OEM SoH error ({model_name}): {ex}")
         return None
@@ -779,6 +811,8 @@ class DeviceProfiler:
                     data = res.json()
                     content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
                     return clean_oem_soh_response(content)
+        except (asyncio.TimeoutError, httpx.TimeoutException):
+            logger.warning(f"HF OEM SoH timeout ({model_name})")
         except Exception as ex:
             logger.warning(f"HF OEM SoH error ({model_name}): {ex}")
         return None
@@ -994,8 +1028,8 @@ class DeviceProfiler:
                         # Hardware verification via ADB: test if path exists and is readable
                         is_valid = False
                         read_val = None
-                        if cand_path.startswith("/"):
-                            out, _, code = self.adb.run_shell(serial, f"cat {cand_path}")
+                        if cand_path.startswith("/") and is_safe_sysfs_path(cand_path):
+                            out, _, code = self.adb.run_shell(serial, f"cat {shlex.quote(cand_path)}")
                             if code == 0 and out.strip():
                                 val_str = out.strip()
                                 if val_str.isdigit() or (val_str.startswith("-") and val_str[1:].isdigit()):
@@ -1016,7 +1050,7 @@ class DeviceProfiler:
                             resolved_in_stage.append(f)
                             remaining_fields.remove(f)
                             logger.info(f"[PROFILER CASCADE] {f} verified on phone via {cand_path} (val={read_val}) by {model}")
-                        elif cand_path.startswith("/sys/") and cand_path in context_block:
+                        elif cand_path.startswith("/sys/") and is_safe_sysfs_path(cand_path) and cand_path in context_block:
                             results[f] = {
                                 "path": cand_path,
                                 "source": "ai_consensus",

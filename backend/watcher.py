@@ -6,11 +6,13 @@ Periodically polls for ADB device connections and auto-logs battery readings in 
 from __future__ import annotations
 from datetime import datetime, timedelta
 import logging
+import shlex
 import threading
 from typing import Any, Dict, Optional, Set
 from apscheduler.schedulers.background import BackgroundScheduler
 from backend.adb_client import ADBClient
 from backend.db import db
+from backend.device_profiler import is_safe_sysfs_path
 from backend.health import calculate_health
 from backend.status_bus import emit_status
 
@@ -280,8 +282,9 @@ class DeviceWatcher:
             cfd_field = profile_fields.get("charge_full_design", {})
             if cfd_field.get("value"):
                 charge_full_design_uah = cfd_field["value"]
-            elif cfd_field.get("path") and str(cfd_field.get("path")).startswith("/"):
-                out, _, code = self.adb.run_shell(serial, f"cat {cfd_field['path']}")
+            elif cfd_field.get("path") and is_safe_sysfs_path(str(cfd_field.get("path"))):
+                safe_path = str(cfd_field["path"]).strip()
+                out, _, code = self.adb.run_shell(serial, f"cat {shlex.quote(safe_path)}")
                 if code == 0 and out.strip().isdigit():
                     charge_full_design_uah = int(out.strip())
 
@@ -290,8 +293,9 @@ class DeviceWatcher:
             cf_field = profile_fields.get("charge_full", {})
             if cf_field.get("value"):
                 charge_full_uah = cf_field["value"]
-            elif cf_field.get("path") and str(cf_field.get("path")).startswith("/"):
-                out, _, code = self.adb.run_shell(serial, f"cat {cf_field['path']}")
+            elif cf_field.get("path") and is_safe_sysfs_path(str(cf_field.get("path"))):
+                safe_path = str(cf_field["path"]).strip()
+                out, _, code = self.adb.run_shell(serial, f"cat {shlex.quote(safe_path)}")
                 if code == 0 and out.strip().isdigit():
                     charge_full_uah = int(out.strip())
 
@@ -301,8 +305,9 @@ class DeviceWatcher:
             cy_field = profile_fields.get("cycle_count", {})
             if cy_field.get("value") is not None and isinstance(cy_field["value"], int) and 0 <= cy_field["value"] < 20000:
                 hw_cycle_count = cy_field["value"]
-            elif cy_field.get("path") and str(cy_field.get("path")).startswith("/"):
-                out, _, code = self.adb.run_shell(serial, f"cat {cy_field['path']}")
+            elif cy_field.get("path") and is_safe_sysfs_path(str(cy_field.get("path"))):
+                safe_path = str(cy_field["path"]).strip()
+                out, _, code = self.adb.run_shell(serial, f"cat {shlex.quote(safe_path)}")
                 if code == 0 and out.strip().isdigit():
                     c_val = int(out.strip())
                     if 0 <= c_val < 20000:
