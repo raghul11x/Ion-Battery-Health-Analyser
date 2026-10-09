@@ -16,6 +16,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     Float,
+    Index,
     Integer,
     String,
     Text,
@@ -38,6 +39,9 @@ else:
 class BatteryReading(Base):
     """Stores a single battery probe snapshot."""
     __tablename__ = "battery_readings"
+    __table_args__ = (
+        Index("ix_battery_readings_device_serial_timestamp", "device_serial", "timestamp"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
@@ -204,6 +208,9 @@ class CalibrationRecord(Base):
 class AppPowerReading(Base):
     """Stores per-application battery drain attribution metrics from dumpsys batterystats."""
     __tablename__ = "app_power_readings"
+    __table_args__ = (
+        Index("ix_app_power_readings_device_serial_timestamp", "device_serial", "timestamp"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     device_serial = Column(String(64), index=True, nullable=False)
@@ -312,6 +319,20 @@ class Database:
                         if col_name not in existing_apr_cols:
                             logger.info(f"Migrating database: adding {col_name} to app_power_readings...")
                             conn.execute(text(f"ALTER TABLE app_power_readings ADD COLUMN {col_name} {col_type}"))
+
+                # Composite indexes for high-frequency telemetry & app drain queries
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_battery_readings_device_serial_timestamp "
+                        "ON battery_readings (device_serial, timestamp);"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_app_power_readings_device_serial_timestamp "
+                        "ON app_power_readings (device_serial, timestamp);"
+                    )
+                )
 
                 conn.commit()
         except Exception as e:

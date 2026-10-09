@@ -92,6 +92,8 @@ const state = {
   selectedDays: 30,
   chartInstance: null,
   pollTimer: null,
+  deviceStatusTimer: null,
+  throttledPollTimer: null,
   isRefreshing: false,
   is80CapSimulated: false,
   forecastData: null,
@@ -498,8 +500,18 @@ function escapeHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
+// In-Flight Request Tracking (Prevents Overlapping Polling & Backend Socket Contention)
+let isFetchingStatus = false;
+let isFetchingSnapshot = false;
+let isFetchingHistory = false;
+let isFetchingInsights = false;
+let isFetchingProbe = false;
+let isFetchingDeviceStatus = false;
+
 // API Calls
 async function fetchStatus() {
+  if (isFetchingStatus) return;
+  isFetchingStatus = true;
   try {
     const res = await fetch('/api/status');
     if (res.ok) {
@@ -508,10 +520,14 @@ async function fetchStatus() {
     }
   } catch (err) {
     console.warn('Failed to fetch status:', err);
+  } finally {
+    isFetchingStatus = false;
   }
 }
 
 async function fetchSnapshot(serial = null) {
+  if (isFetchingSnapshot) return;
+  isFetchingSnapshot = true;
   try {
     const isSeeded = AppState.mode === 'seeded';
     // Only query a specific serial if connected or in seeded mode; otherwise fetch clean idle snapshot
@@ -527,10 +543,14 @@ async function fetchSnapshot(serial = null) {
     }
   } catch (err) {
     console.warn('Failed to fetch snapshot:', err);
+  } finally {
+    isFetchingSnapshot = false;
   }
 }
 
 async function fetchHistory(days = 30, serial = null) {
+  if (isFetchingHistory) return;
+  isFetchingHistory = true;
   try {
     const isSeeded = AppState.mode === 'seeded';
     const targetSerial = serial || state.selectedSerial;
@@ -544,10 +564,14 @@ async function fetchHistory(days = 30, serial = null) {
     }
   } catch (err) {
     console.warn('Failed to fetch history:', err);
+  } finally {
+    isFetchingHistory = false;
   }
 }
 
 async function fetchInsights(serial = null) {
+  if (isFetchingInsights) return;
+  isFetchingInsights = true;
   try {
     const isSeeded = AppState.mode === 'seeded';
     const targetSerial = serial || state.selectedSerial;
@@ -560,10 +584,14 @@ async function fetchInsights(serial = null) {
     }
   } catch (err) {
     console.warn('Failed to fetch insights:', err);
+  } finally {
+    isFetchingInsights = false;
   }
 }
 
 async function fetchProbe() {
+  if (isFetchingProbe) return;
+  isFetchingProbe = true;
   try {
     const res = await fetch('/api/probe');
     if (res.ok) {
@@ -576,10 +604,14 @@ async function fetchProbe() {
   } catch (err) {
     state.probeReport = { error: 'Request to probe failed' };
     renderProbe();
+  } finally {
+    isFetchingProbe = false;
   }
 }
 
 async function fetchDeviceStatus() {
+  if (isFetchingDeviceStatus) return;
+  isFetchingDeviceStatus = true;
   try {
     const res = await fetch('/api/device-status?limit=25');
     if (res.ok) {
@@ -593,6 +625,8 @@ async function fetchDeviceStatus() {
     }
   } catch (err) {
     console.warn('Failed to fetch device status feed:', err);
+  } finally {
+    isFetchingDeviceStatus = false;
   }
 }
 
@@ -3326,8 +3360,8 @@ function init() {
     }
   } catch (_) {}
 
-  // Background polling loop (1s for real-time connect/disconnect detection)
-  state.pollTimer = setInterval(() => {
+  // Background Polling Lifecycle (Active vs Visibility-Throttled)
+  function pollTick() {
     fetchStatus();
 
     if (AppState.connected && !AppState.liveTelemetryPaused) {
@@ -3341,7 +3375,69 @@ function init() {
         fetchAppDrain();
       }
     }
-  }, 1000);
+  }
+
+  function deviceStatusTick() {
+    if (AppState.connected && !AppState.liveTelemetryPaused) {
+      fetchDeviceStatus();
+    }
+  }
+
+  function startActivePolling() {
+    if (state.throttledPollTimer) {
+      clearInterval(state.throttledPollTimer);
+      state.throttledPollTimer = null;
+    }
+    // Prevent duplicate timers on repeated visibility/focus events
+    if (state.pollTimer) return;
+
+    // Immediate in-flight-safe catch-up refresh upon window restore
+    fetchStatus();
+    if (AppState.connected && !AppState.liveTelemetryPaused) {
+      fetchSnapshot();
+      fetchDeviceStatus();
+    }
+
+    state.pollTimer = setInterval(pollTick, 1000);
+
+    if (!state.deviceStatusTimer) {
+      state.deviceStatusTimer = setInterval(deviceStatusTick, 2500);
+    }
+  }
+
+  function pauseActivePolling() {
+    if (state.pollTimer) {
+      clearInterval(state.pollTimer);
+      state.pollTimer = null;
+    }
+    if (state.deviceStatusTimer) {
+      clearInterval(state.deviceStatusTimer);
+      state.deviceStatusTimer = null;
+    }
+    // While minimized or hidden, throttle connection-sensing to 5000ms and halt all high-frequency telemetry
+    if (!state.throttledPollTimer) {
+      state.throttledPollTimer = setInterval(() => {
+        if (document.hidden) {
+          fetchStatus();
+        }
+      }, 5000);
+    }
+  }
+
+  // Visibility & Focus Listeners (Pauses heavy polling while minimized, immediately restores on focus)
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      pauseActivePolling();
+    } else {
+      startActivePolling();
+    }
+  });
+
+  window.addEventListener('focus', () => {
+    if (!document.hidden) {
+      startActivePolling();
+    }
+  });
 
   // Initialize Toast Notification Close Button
   const toastCloseBtn = el.toastCloseBtn || document.getElementById('toast-close-btn');
@@ -3375,12 +3471,8 @@ function init() {
     });
   }
 
-  fetchDeviceStatus();
-  setInterval(() => {
-    if (AppState.connected && !AppState.liveTelemetryPaused) {
-      fetchDeviceStatus();
-    }
-  }, 2500);
+  // Engage initial active polling loop
+  startActivePolling();
 
   // Initialize Global Boundary-Aware Tooltip System
   initSharedTooltips();
