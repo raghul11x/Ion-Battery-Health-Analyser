@@ -101,7 +101,7 @@ const state = {
   calibrationPollTimer: null,
   // cachedDevices and lastDevicesFetchTime moved to /static/js/last-seen.js
   deviceStatusEvents: [],
-  statusFeedExpanded: false,
+  statusFeedExpanded: false, // Managed by /static/js/device-status.js
   selectedSerial: null,
   lastHistoryLivePoll: 0,
   appDrain: {
@@ -799,149 +799,11 @@ function masterDashboardSubscriber({ connected, mode, snapshot }) {
   }
 }
 
-function toggleDeviceStatusFeed(forceState = null) {
-  const content = el.deviceStatusContent || document.getElementById('device-status-content');
-  const chevron = el.statusFeedChevron || document.getElementById('status-feed-chevron');
-  const toggleBtn = el.deviceStatusToggle || document.getElementById('device-status-toggle');
-  if (!content) return;
-
-  const willExpand = forceState !== null ? forceState : content.classList.contains('hidden');
-  if (willExpand) {
-    content.classList.remove('hidden');
-    if (chevron) chevron.classList.add('rotate-180');
-    if (toggleBtn) toggleBtn.setAttribute('aria-expanded', 'true');
-    state.statusFeedExpanded = true;
-    try { sessionStorage.setItem('ion_status_feed_expanded', 'true'); } catch (_) {}
-  } else {
-    content.classList.add('hidden');
-    if (chevron) chevron.classList.remove('rotate-180');
-    if (toggleBtn) toggleBtn.setAttribute('aria-expanded', 'false');
-    state.statusFeedExpanded = false;
-    try { sessionStorage.setItem('ion_status_feed_expanded', 'false'); } catch (_) {}
-  }
-}
-
-function renderDeviceStatus() {
-  const panel = el.deviceStatusPanel || document.getElementById('device-status-panel');
-  if (!panel) return;
-
-  const isConnected = AppState.connected;
-  const isSeeded = AppState.mode === 'seeded';
-  const isPaused = AppState.liveTelemetryPaused;
-  const events = isConnected ? (state.deviceStatusEvents || []) : [];
-
-  panel.classList.remove('hidden');
-
-  const previewEl = el.statusFeedLatestPreview || document.getElementById('status-feed-latest-preview');
-  const badgeEl = el.statusFeedCountBadge || document.getElementById('status-feed-count-badge');
-  const listEl = el.deviceStatusList || document.getElementById('device-status-list');
-  const pingEl = el.statusFeedPing || document.getElementById('status-feed-ping');
-
-  if (isConnected && isPaused) {
-    const timeStr = getFormattedLastReadingTime();
-    if (previewEl) {
-      previewEl.textContent = `Telemetry paused · Last reading: ${timeStr}`;
-      previewEl.removeAttribute('title');
-      previewEl.setAttribute('data-tooltip', `Live polling paused. Last reading received at ${timeStr}`);
-    }
-    if (badgeEl) {
-      badgeEl.textContent = 'Paused';
-      badgeEl.className = 'glass-chip glass-chip-amber text-amber-300';
-    }
-    if (pingEl) pingEl.classList.add('hidden');
-    if (listEl && events.length > 0) {
-      listEl.innerHTML = events.map((ev, index) => {
-        const isLatest = index === 0;
-        let badgeClass = 'status-badge-default';
-        const cat = (ev.category || '').toLowerCase();
-        if (cat === 'connection') badgeClass = 'status-badge-connection';
-        else if (cat === 'probe') badgeClass = 'status-badge-probe';
-        else if (cat === 'consensus') badgeClass = 'status-badge-consensus';
-        else if (cat === 'health') badgeClass = 'status-badge-health';
-        else if (cat === 'calibration') badgeClass = 'status-badge-calibration';
-
-        const time = escapeHtml(ev.time_display || '—');
-        const categoryText = escapeHtml((ev.category || 'INFO').toUpperCase());
-        const msg = escapeHtml(ev.message || '');
-        const itemClass = isLatest ? 'status-item status-item-latest py-1 flex items-start gap-2.5' : 'status-item py-1 flex items-start gap-2.5 opacity-85 hover:opacity-100';
-        const textClass = isLatest ? 'text-zinc-100 font-medium' : 'text-zinc-400';
-
-        return `
-          <div class="${itemClass}">
-            <span class="text-zinc-500 shrink-0 font-mono text-[11px] pt-0.5">${time}</span>
-            <span class="status-badge ${badgeClass}">${categoryText}</span>
-            <span class="${textClass} flex-1 break-words leading-relaxed">${msg}</span>
-          </div>
-        `;
-      }).join('');
-    }
-  } else if (isConnected && events.length > 0) {
-    const latest = events[0];
-    if (previewEl) {
-      previewEl.textContent = latest.message;
-      previewEl.removeAttribute('title');
-      previewEl.setAttribute('data-tooltip', `${latest.time_display} · ${latest.message}`);
-    }
-    if (badgeEl) {
-      badgeEl.textContent = `${events.length} event${events.length === 1 ? '' : 's'}`;
-      badgeEl.className = 'glass-chip glass-chip-cyan';
-    }
-    if (pingEl) pingEl.classList.remove('hidden');
-    if (listEl) {
-      listEl.innerHTML = events.map((ev, index) => {
-        const isLatest = index === 0;
-        let badgeClass = 'status-badge-default';
-        const cat = (ev.category || '').toLowerCase();
-        if (cat === 'connection') badgeClass = 'status-badge-connection';
-        else if (cat === 'probe') badgeClass = 'status-badge-probe';
-        else if (cat === 'consensus') badgeClass = 'status-badge-consensus';
-        else if (cat === 'health') badgeClass = 'status-badge-health';
-        else if (cat === 'calibration') badgeClass = 'status-badge-calibration';
-
-        const time = escapeHtml(ev.time_display || '—');
-        const categoryText = escapeHtml((ev.category || 'INFO').toUpperCase());
-        const msg = escapeHtml(ev.message || '');
-        const itemClass = isLatest ? 'status-item status-item-latest py-1 flex items-start gap-2.5' : 'status-item py-1 flex items-start gap-2.5 opacity-85 hover:opacity-100';
-        const textClass = isLatest ? 'text-zinc-100 font-medium' : 'text-zinc-400';
-
-        return `
-          <div class="${itemClass}">
-            <span class="text-zinc-500 shrink-0 font-mono text-[11px] pt-0.5">${time}</span>
-            <span class="status-badge ${badgeClass}">${categoryText}</span>
-            <span class="${textClass} flex-1 break-words leading-relaxed">${msg}</span>
-          </div>
-        `;
-      }).join('');
-    }
-  } else if (isSeeded) {
-    if (previewEl) {
-      previewEl.textContent = 'Demo data active (mock-phone-2a)';
-      previewEl.removeAttribute('data-tooltip');
-    }
-    if (badgeEl) {
-      badgeEl.textContent = 'Demo Data';
-      badgeEl.className = 'glass-chip glass-chip-amber text-amber-300';
-    }
-    if (pingEl) pingEl.classList.add('hidden');
-    if (listEl) {
-      listEl.innerHTML = '<div class="text-zinc-500 py-2 italic text-center">Demo data session active. Connect phone for live telemetry.</div>';
-    }
-  } else {
-    // Neutral Idle / Standby mode
-    if (previewEl) {
-      previewEl.textContent = 'No active session — connect device to view live telemetry';
-      previewEl.removeAttribute('data-tooltip');
-    }
-    if (badgeEl) {
-      badgeEl.textContent = 'Standby';
-      badgeEl.className = 'glass-chip glass-chip-cyan';
-    }
-    if (pingEl) pingEl.classList.add('hidden');
-    if (listEl) {
-      listEl.innerHTML = '<div class="text-zinc-500 py-2 italic text-center">No active device session. Plug in to start logging events.</div>';
-    }
-  }
-}
+// ==========================================
+// LIVE DEVICE STATUS FEED SUB-SYSTEM
+// Extracted to /static/js/device-status.js
+// Provides toggleDeviceStatusFeed and renderDeviceStatus
+// ==========================================
 
 // Hardware-accelerated range dial positioner (compositor-only transform)
 let cachedTrackWidth = 0;
