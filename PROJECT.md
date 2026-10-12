@@ -85,8 +85,6 @@ Battery analyser/
 │           ├── ion-preloader.js    # Shadow-DOM isolated atom preloader component
 │           ├── perf.js             # Performance diagnostics HUD & adaptive quality tier
 │           └── toggle.js           # Reusable sparkle toggle generator
-├── reference/                      # UI design references
-│   └── RadialGlowButton.tsx        # Reference implementation for radial button shine
 ├── scripts/                        # Utility & automation scripts
 │   └── record_perf.py              # Automated 10-second continuous scroll test harness
 ├── tests/                          # Automated Pytest test suite
