@@ -9,7 +9,7 @@ import os
 import sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.api_routes import router as api_router
@@ -90,12 +90,8 @@ def read_root():
 
 @app.get("/history")
 def read_history():
-    """Serves the dedicated history view."""
-    history_file = os.path.join(FRONTEND_DIR, "history.html")
-    if os.path.isfile(history_file):
-        return FileResponse(history_file)
-    index_file = os.path.join(FRONTEND_DIR, "index.html")
-    return FileResponse(index_file)
+    """Redirects legacy history route to the in-page dashboard History/Trends view."""
+    return RedirectResponse(url="/#history", status_code=307)
 
 
 @app.get("/ion-preloader.js")

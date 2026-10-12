@@ -102,10 +102,9 @@ Ion-Battery-Health-Analyser/
 │   ├── prediction.py        # Degradation curve modeling & cycle extrapolation
 │   ├── watcher.py           # Background connection watcher (APScheduler)
 │   ├── api_routes.py        # FastAPI REST endpoints
-│   └── main.py              # Application entrypoint & static file serving
+│   └── main.py              # Application entrypoint, static file serving, & /history server redirect
 ├── frontend/
 │   ├── index.html           # Desktop dashboard shell
-│   ├── history.html         # History view redirect
 │   └── static/
 │       ├── css/style.css    # Dark glassmorphism, glows & animations
 │       ├── js/app.js        # State, live polling, & Chart.js logic

@@ -49,6 +49,23 @@ def test_api_seed_and_history():
     assert "insights_list" in ins
 
 
+def test_legacy_history_redirect_endpoint():
+    """
+    Verifies that GET /history issues an HTTP redirect (307) to /#history
+    and does not interfere with the JSON REST endpoint GET /api/history.
+    """
+    # 1. Non-following request to /history should return redirect response
+    res = client.get("/history", follow_redirects=False)
+    assert res.status_code in (302, 307)
+    assert res.headers["location"] == "/#history"
+
+    # 2. Existing /api/history endpoint continues serving JSON history undisturbed
+    res_api = client.get("/api/history?days=7&limit=10")
+    assert res_api.status_code == 200
+    data = res_api.json()
+    assert "readings" in data
+
+
 def test_api_unseed_mock():
     # 1. Seed mock data
     res_seed = client.post("/api/seed-mock", json={"days": 30, "serial": "mock-phone-2a", "model": "Nothing Phone 2a"})

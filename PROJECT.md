@@ -68,7 +68,6 @@ Battery analyser/
 ├── docs/                           # Documentation assets and JSON perf metrics
 │   └── perf-after.json             # Post-optimization performance telemetry output
 ├── frontend/                       # Static UI assets and templates
-│   ├── history.html                # Dedicated historical reading log view
 │   ├── index.html                  # Primary EURA obsidian dashboard template
 │   ├── ion-preloader.js            # Standalone root preloader script
 │   └── static/                     # Assets served via /static mount
@@ -232,9 +231,10 @@ Ion+ follows a local-first client-server desktop architecture running entirely o
 ## 6. Frontend
 
 - **Framework:** Vanilla ES6+ JavaScript, HTML5, CSS3. No Node.js build pipeline or bundling tools required at runtime.
-- **Entry Points:**
+- **Entry Points & Routing:**
   - `frontend/index.html`: Primary single-page application dashboard.
-  - `frontend/history.html`: Dedicated historical reading log view.
+  - `GET /history`: Legacy server route (`backend/main.py`) issuing an HTTP 307 redirect to `/#history`.
+  - `GET /api/history`: REST API returning JSON reading history records.
   - `frontend/static/js/ion-preloader.js`: Initial boot preloader component.
 - **Pages & Views (Tab Navigation within index.html):**
   1. `#view-dashboard`: Main EURA health hero card, status badges, heart report chart, quick metrics.
