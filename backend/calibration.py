@@ -5,7 +5,7 @@ to empirically measure absorbed milliamp-hours and validate mathematical capacit
 """
 
 from __future__ import annotations
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 import threading
 import time
@@ -60,7 +60,7 @@ class ActiveCalibrationManager:
 
             elapsed_seconds = 0
             if self.start_time and self.is_running:
-                elapsed_seconds = int((datetime.utcnow() - self.start_time).total_seconds())
+                elapsed_seconds = int((datetime.now(timezone.utc) - self.start_time).total_seconds())
 
             confidence_metrics = calculate_coulomb_confidence(
                 delta_level_pct=delta_level,
@@ -108,7 +108,7 @@ class ActiveCalibrationManager:
             self.is_running = True
             self.is_simulated = simulate
             self.status = "recording"
-            self.start_time = datetime.utcnow()
+            self.start_time = datetime.now(timezone.utc)
             self.start_level_pct = initial_level_pct
             self.current_level_pct = initial_level_pct
             self.design_capacity_mah = design_capacity_mah
@@ -207,7 +207,7 @@ class ActiveCalibrationManager:
 
                 sample = {
                     "step": step,
-                    "timestamp": datetime.utcnow().strftime("%H:%M:%S"),
+                    "timestamp": datetime.now(timezone.utc).strftime("%H:%M:%S"),
                     "current_ma": round(current_ma, 1),
                     "voltage_mv": voltage_mv,
                     "temperature_c": temp_c,
@@ -275,7 +275,7 @@ class ActiveCalibrationManager:
                 self.accumulated_mah += delta_mah
 
                 sample = {
-                    "timestamp": datetime.utcnow().strftime("%H:%M:%S"),
+                    "timestamp": datetime.now(timezone.utc).strftime("%H:%M:%S"),
                     "current_ma": round(current_ma, 1),
                     "voltage_mv": voltage_mv,
                     "temperature_c": temp_c,

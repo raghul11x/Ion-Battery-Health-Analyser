@@ -4,7 +4,7 @@ Implements primary capacity ratio, unit scale normalization, and fallback trend 
 """
 
 from __future__ import annotations
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 from typing import Any, Dict, Optional, Tuple
 
@@ -189,7 +189,7 @@ def build_breakdown(
         "temperature": sources.get("temperature", "local" if temperature_c is not None else "insufficient_data"),
     }
 
-    today_str = datetime.utcnow().strftime("%Y-%m-%d")
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     provenance_note = (
         f"Computed from confirmed real capacity + cycle + calendar data on {today_str}"
         if displayed_health_pct is not None

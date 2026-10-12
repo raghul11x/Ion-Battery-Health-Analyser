@@ -4,7 +4,7 @@ Provides data endpoints for the frontend dashboard and PyWebview shell.
 """
 
 from __future__ import annotations
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 import shlex
 from typing import Any, Dict, List, Optional
@@ -298,7 +298,7 @@ def _build_live_snapshot(target_serial: str) -> Optional[Dict[str, Any]]:
         return {
             "live": True,
             "connected": True,
-            "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "device_serial": target_serial,
             "device_model": model_name,
             "level_pct": level_pct,
@@ -615,7 +615,7 @@ def list_devices(include_demo: Optional[bool] = Query(default=None)) -> List[Dic
                     "serial": dev["serial"],
                     "model": model_name,
                     "readings_count": 0,
-                    "last_seen": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "last_seen": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                     "active": True,
                 })
                 known_serials.add(dev["serial"])
