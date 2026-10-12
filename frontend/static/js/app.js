@@ -1190,26 +1190,7 @@ function renderIdleState() {
   }
 
   // 7. Coulomb Calibration Card (Reset on idle)
-  if (state.calibrationPollTimer) {
-    clearInterval(state.calibrationPollTimer);
-    state.calibrationPollTimer = null;
-  }
-  if (el.calStatusBadge) {
-    el.calStatusBadge.textContent = 'Idle';
-    el.calStatusBadge.className = 'px-3 py-0.5 rounded-full text-xs font-semibold bg-zinc-800 text-zinc-400 border border-white/10 font-mono';
-  }
-  if (el.calCurrentText) el.calCurrentText.textContent = '0 mA';
-  if (el.calAccumulatedText) el.calAccumulatedText.textContent = '0 mAh';
-  if (el.calVerdictBox) el.calVerdictBox.classList.add('hidden');
-  if (el.calExtrapolatedText) el.calExtrapolatedText.textContent = '— mAh';
-  if (el.calHealthPctText) el.calHealthPctText.textContent = '—% SoH';
-  if (el.calComparisonSubtext) el.calComparisonSubtext.textContent = 'Validated against OEM design specification.';
-  if (el.calStopBtn) el.calStopBtn.classList.add('hidden');
-  if (el.calStartBtn) {
-    el.calStartBtn.disabled = true;
-    el.calStartBtn.setAttribute('data-tooltip', 'Connect phone to calibrate');
-  }
-  if (el.calSimBtn) el.calSimBtn.disabled = false;
+  resetCalibrationUI();
 
   // 8. Mathematical Degradation Breakdown Card (Reset on idle)
   if (el.bdFadeText) el.bdFadeText.textContent = '—';
@@ -1932,89 +1913,12 @@ async function handleSimCapToggle(e) {
   }
 }
 
-// Active Coulomb Calibration
-async function startCalibration(simulate = false) {
-  if (!AppState.connected && !simulate) {
-    alert('Please connect an Android phone over USB-C to run empirical Coulomb calibration.');
-    return;
-  }
-  try {
-    if (el.calStartBtn) el.calStartBtn.disabled = true;
-    if (el.calSimBtn) el.calSimBtn.disabled = true;
-
-    const res = await fetch('/api/calibration/start', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ simulate }),
-    });
-
-    if (res.ok) {
-      el.calStopBtn?.classList.remove('hidden');
-      if (el.calStatusBadge) {
-        el.calStatusBadge.textContent = simulate ? 'Simulating...' : 'Sampling...';
-        el.calStatusBadge.className = 'px-3 py-0.5 rounded-full text-xs font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-mono animate-pulse';
-      }
-
-      if (state.calibrationPollTimer) clearInterval(state.calibrationPollTimer);
-      state.calibrationPollTimer = setInterval(pollCalibrationStatus, 600);
-    }
-  } catch (err) {
-    console.warn('Failed to start calibration:', err);
-  }
-}
-
-async function pollCalibrationStatus() {
-  try {
-    const res = await fetch('/api/calibration/status');
-    if (res.ok) {
-      const data = await res.json();
-      if (el.calCurrentText) el.calCurrentText.textContent = `+${Math.round(data.current_ma || 0)} mA`;
-      if (el.calAccumulatedText) el.calAccumulatedText.textContent = `${Math.round(data.accumulated_mah || 0)} mAh`;
-
-      if (data.extrapolated_capacity_mah > 0) {
-        if (el.calVerdictBox) el.calVerdictBox.classList.remove('hidden');
-        if (el.calExtrapolatedText) el.calExtrapolatedText.textContent = `${Math.round(data.extrapolated_capacity_mah)} mAh`;
-        if (el.calHealthPctText) el.calHealthPctText.textContent = `${data.calibrated_health_pct}% SoH`;
-        if (el.calComparisonSubtext) {
-          el.calComparisonSubtext.textContent = `Measured over Δ${data.delta_level_pct}% charge (${Math.round(data.accumulated_mah)} mAh integrated).`;
-        }
-      }
-
-      if (!data.is_running && data.status === 'completed') {
-        clearInterval(state.calibrationPollTimer);
-        state.calibrationPollTimer = null;
-        if (el.calStopBtn) el.calStopBtn.classList.add('hidden');
-        if (el.calStartBtn) el.calStartBtn.disabled = false;
-        if (el.calSimBtn) el.calSimBtn.disabled = false;
-        if (el.calStatusBadge) {
-          el.calStatusBadge.textContent = 'Completed';
-          el.calStatusBadge.className = 'px-3 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono';
-        }
-      }
-    }
-  } catch (err) {
-    console.warn('Calibration poll error:', err);
-  }
-}
-
-async function stopCalibration() {
-  try {
-    if (state.calibrationPollTimer) {
-      clearInterval(state.calibrationPollTimer);
-      state.calibrationPollTimer = null;
-    }
-    const res = await fetch('/api/calibration/stop', { method: 'POST' });
-    if (res.ok) {
-      await pollCalibrationStatus();
-    }
-  } catch (err) {
-    console.warn('Failed to stop calibration:', err);
-  } finally {
-    if (el.calStopBtn) el.calStopBtn.classList.add('hidden');
-    if (el.calStartBtn) el.calStartBtn.disabled = false;
-    if (el.calSimBtn) el.calSimBtn.disabled = false;
-  }
-}
+// ==========================================
+// ACTIVE COULOMB CALIBRATION SUB-SYSTEM
+// Extracted to /static/js/calibration.js
+// Provides startCalibration, pollCalibrationStatus, stopCalibration,
+// resetCalibrationUI, and initCalibrationListeners
+// ==========================================
 
 let chartObserver = null;
 let chartIsVisible = true;
@@ -2963,9 +2867,8 @@ function init() {
   el.simCapToggle?.addEventListener('change', (e) => {
     handleSimCapToggle(e);
   });
-  el.calStartBtn?.addEventListener('click', () => startCalibration(false));
-  el.calSimBtn?.addEventListener('click', () => startCalibration(true));
-  el.calStopBtn?.addEventListener('click', stopCalibration);
+  // Initialize Active Coulomb Calibration Listeners (from /static/js/calibration.js)
+  initCalibrationListeners();
 
   // Time Filter Buttons
   document.querySelectorAll('.time-filter-pill').forEach(btn => {
