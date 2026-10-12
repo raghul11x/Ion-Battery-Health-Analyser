@@ -600,101 +600,12 @@ async function fetchDeviceStatus() {
   }
 }
 
-// Device Connected Toast State & Management (Design Doc v2 §5.2)
-const toastState = {
-  wasConnected: false,
-  lastSerial: null,
-  holdTimer: null,
-  exitTimer: null,
-  lastDismissedAt: 0,
-};
-
-function formatConnectedDeviceSubtitle(activeDev) {
-  const model = activeDev?.model ? activeDev.model.replace(/_/g, ' ') : (state.snapshot?.device_model || '');
-  const serial = activeDev?.serial || state.snapshot?.device_serial || '';
-
-  if (model && serial) {
-    if (model.toLowerCase().includes(serial.toLowerCase())) {
-      return model;
-    }
-    const displaySerial = serial.length > 10 ? `${serial.slice(0, 8)}...` : serial;
-    return `${model} · ${displaySerial}`;
-  }
-  if (model) return model;
-  if (serial) return `Android Device · ${serial.length > 10 ? serial.slice(0, 8) + '...' : serial}`;
-  return 'Android Device';
-}
-
-function showDeviceConnectedToast(deviceName) {
-  const toastEl = el.connectToast || document.getElementById('device-connect-toast');
-  const nameEl = el.toastDeviceName || document.getElementById('toast-device-name');
-  const progressEl = el.toastProgress || document.getElementById('toast-progress');
-  if (!toastEl || !nameEl) return;
-
-  nameEl.textContent = deviceName;
-
-  // Clear any existing dismissal timers
-  if (toastState.holdTimer) {
-    clearTimeout(toastState.holdTimer);
-    toastState.holdTimer = null;
-  }
-  if (toastState.exitTimer) {
-    clearTimeout(toastState.exitTimer);
-    toastState.exitTimer = null;
-  }
-
-  // Remove exiting state if currently transitioning out
-  toastEl.classList.remove('toast-exiting');
-
-  // Reset progress bar drain animation asynchronously
-  if (progressEl) {
-    progressEl.style.animation = 'none';
-    requestAnimationFrame(() => {
-      progressEl.style.animation = '';
-    });
-  }
-
-  // Ensure visible with entrance animation
-  if (!toastEl.classList.contains('toast-visible')) {
-    requestAnimationFrame(() => {
-      toastEl.classList.add('toast-visible');
-    });
-  }
-
-  // 3-second hold timer
-  toastState.holdTimer = setTimeout(() => {
-    dismissDeviceConnectedToast();
-  }, 3000);
-}
-
-function dismissDeviceConnectedToast(immediate = false) {
-  const toastEl = el.connectToast || document.getElementById('device-connect-toast');
-  if (!toastEl || (!toastEl.classList.contains('toast-visible') && !toastEl.classList.contains('toast-exiting'))) return;
-
-  if (toastState.holdTimer) {
-    clearTimeout(toastState.holdTimer);
-    toastState.holdTimer = null;
-  }
-  if (toastState.exitTimer) {
-    clearTimeout(toastState.exitTimer);
-    toastState.exitTimer = null;
-  }
-
-  toastState.lastDismissedAt = Date.now();
-
-  const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (immediate || prefersReduced) {
-    toastEl.classList.remove('toast-visible', 'toast-exiting');
-  } else {
-    toastEl.classList.remove('toast-visible');
-    toastEl.classList.add('toast-exiting');
-
-    toastState.exitTimer = setTimeout(() => {
-      toastEl.classList.remove('toast-exiting');
-      toastState.exitTimer = null;
-    }, 220);
-  }
-}
+// ==========================================
+// DEVICE CONNECTED TOAST SUB-SYSTEM
+// Extracted to /static/js/toast.js
+// Provides toastState, formatConnectedDeviceSubtitle,
+// showDeviceConnectedToast, and dismissDeviceConnectedToast
+// ==========================================
 
 function updateHeroHeadline(isConnected) {
   const headlineEl = el.heroHeadline || document.getElementById('hero-headline');
