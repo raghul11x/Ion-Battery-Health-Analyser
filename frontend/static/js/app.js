@@ -1920,26 +1920,12 @@ async function handleSimCapToggle(e) {
 // resetCalibrationUI, and initCalibrationListeners
 // ==========================================
 
-let chartObserver = null;
-let chartIsVisible = true;
-let chartNeedsUpdate = false;
-
-function initChartObserver() {
-  const container = document.getElementById('chart-canvas-container') || document.getElementById('chart-container');
-  if (!container || typeof IntersectionObserver === 'undefined') return;
-
-  chartObserver = new IntersectionObserver((entries) => {
-    for (const entry of entries) {
-      chartIsVisible = entry.isIntersecting;
-      if (chartIsVisible && chartNeedsUpdate) {
-        chartNeedsUpdate = false;
-        renderHistoryAndChart();
-      }
-    }
-  }, { threshold: 0.05 });
-
-  chartObserver.observe(container);
-}
+// ==========================================
+// TELEMETRY CHART SUB-SYSTEM
+// Extracted to /static/js/telemetry-chart.js
+// Provides initChartObserver, renderTelemetryChart, formatSyncedTimestamp,
+// updateChartLastSyncedLabel, initChartListeners, destroyTelemetryChart
+// ==========================================
 
 function renderHistoryAndChart() {
   const readings = state.history || [];
@@ -1959,190 +1945,7 @@ function renderHistoryAndChart() {
   }
 
   // 1. Chart.js (EURA Heart Report Aesthetic: Clean White Curve)
-  if (el.chartCanvas) {
-    const emptyStateEl = el.chartEmptyState || document.getElementById('chart-empty-state');
-    if (!chartIsVisible) {
-      chartNeedsUpdate = true;
-    } else if (readings.length > 0) {
-      if (emptyStateEl) emptyStateEl.classList.add('hidden');
-      const labels = readings.map(r => {
-        const d = parseUtcDate(r.timestamp);
-        return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${d.getMinutes().toString().padStart(2, '0')}`;
-      });
-
-      const healthVals = readings.map(r => r.health_pct);
-      const tempVals = readings.map(r => r.temperature_c);
-
-      if (state.chartInstance) {
-        state.chartInstance.data.labels = labels;
-        state.chartInstance.data.datasets[0].data = healthVals;
-        state.chartInstance.data.datasets[1].data = tempVals;
-        state.chartInstance.data.datasets[0].pointRadius = readings.length > 40 ? 0 : 3;
-        if (state.chartInstance.options?.scales?.yHealth) {
-          state.chartInstance.options.scales.yHealth.min = Math.max(60, Math.floor(Math.min(...healthVals) - 4));
-        }
-        state.chartInstance.update('none');
-      } else {
-        const ctx = el.chartCanvas.getContext('2d');
-        // Subtle gradient beneath white curve
-        const gradient = ctx.createLinearGradient(0, 0, 0, 240);
-        gradient.addColorStop(0, 'rgba(255, 255, 255, 0.15)');
-        gradient.addColorStop(1, 'rgba(255, 255, 255, 0.0)');
-
-        state.chartInstance = new Chart(ctx, {
-          type: 'line',
-          data: {
-            labels: labels,
-            datasets: [
-              {
-                label: 'Battery Health %',
-                data: healthVals,
-                borderColor: '#FFFFFF',
-                backgroundColor: gradient,
-                borderWidth: 2.5,
-                tension: 0.0,
-                fill: true,
-                pointRadius: readings.length > 40 ? 0 : 3,
-                pointHoverRadius: 6,
-                pointBackgroundColor: '#FFFFFF',
-                pointBorderColor: '#0F1024',
-                pointBorderWidth: 2,
-                yAxisID: 'yHealth',
-              },
-              {
-                label: 'Temp (°C)',
-                data: tempVals,
-                borderColor: 'rgba(129, 140, 248, 0.65)',
-                borderWidth: 1.5,
-                borderDash: [3, 3],
-                tension: 0.0,
-                fill: false,
-                pointRadius: 0,
-                pointHoverRadius: 4,
-                pointBackgroundColor: '#818CF8',
-                yAxisID: 'yTemp',
-              }
-            ],
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: {
-              mode: 'index',
-              intersect: false,
-            },
-            plugins: {
-              legend: {
-                display: true,
-                position: 'top',
-                align: 'end',
-                labels: {
-                  color: '#A1A1AA',
-                  font: { size: 11 },
-                  boxWidth: 10,
-                  boxHeight: 10,
-                  usePointStyle: true,
-                },
-              },
-              tooltip: {
-                backgroundColor: 'rgba(15, 16, 36, 0.95)',
-                titleColor: '#FFFFFF',
-                bodyColor: '#A1A1AA',
-                borderColor: 'rgba(255, 255, 255, 0.15)',
-                borderWidth: 1,
-                padding: 12,
-                cornerRadius: 14,
-                callbacks: {
-                  label: function(context) {
-                    const r = readings[context.dataIndex];
-                    if (!r) return `${context.dataset.label}: ${context.parsed.y}`;
-                    if (context.datasetIndex === 0) {
-                      const hp = (r.health_pct !== null && r.health_pct !== undefined) ? r.health_pct : context.parsed.y;
-                      return ` Battery Health %: ${hp}%`;
-                    } else if (context.datasetIndex === 1) {
-                      const temp = (r.temperature_c !== null && r.temperature_c !== undefined) ? r.temperature_c : context.parsed.y;
-                      return ` Temp (°C): ${temp}`;
-                    }
-                    return `${context.dataset.label}: ${context.parsed.y}`;
-                  },
-                  afterBody: function(contexts) {
-                    if (!contexts || contexts.length === 0) return '';
-                    const r = readings[contexts[0].dataIndex];
-                    if (!r) return '';
-                    const parts = [];
-                    if (r.voltage_mv) parts.push(`Voltage: ${r.voltage_mv} mV`);
-                    if (r.cycle_count !== null && r.cycle_count !== undefined) parts.push(`Cycles: ${r.cycle_count}`);
-                    if (r.health_method) parts.push(`Method: ${r.health_method}`);
-                    return parts.length ? '\n' + parts.join(' | ') : '';
-                  }
-                }
-              },
-            },
-            scales: {
-              x: {
-                grid: { color: 'rgba(255, 255, 255, 0.06)' },
-                ticks: {
-                  color: '#71717A',
-                  font: { size: 10 },
-                  maxRotation: 0,
-                  autoSkip: true,
-                  maxTicksLimit: 7,
-                },
-              },
-              yHealth: {
-                type: 'linear',
-                position: 'left',
-                min: Math.max(60, Math.floor(Math.min(...healthVals) - 4)),
-                max: 102,
-                grid: { color: 'rgba(255, 255, 255, 0.06)' },
-                ticks: {
-                  color: '#FFFFFF',
-                  font: { size: 11, weight: 'bold' },
-                  callback: v => `${v}%`,
-                },
-              },
-              yTemp: {
-                type: 'linear',
-                position: 'right',
-                grid: { display: false },
-                ticks: {
-                  color: '#818CF8',
-                  font: { size: 10 },
-                  callback: v => `${v}°C`,
-                },
-              },
-            },
-          },
-        });
-      }
-    } else {
-      // readings.length === 0: show clean empty state
-      if (emptyStateEl) emptyStateEl.classList.remove('hidden');
-      if (state.chartInstance) {
-        state.chartInstance.data.labels = [];
-        state.chartInstance.data.datasets[0].data = [];
-        state.chartInstance.data.datasets[1].data = [];
-        state.chartInstance.update('none');
-      }
-    }
-
-    // Fix 3: Stale chart sync check
-    const isConn = state.snapshot?.connected || state.systemStatus?.connected_devices?.some(d => d.state === 'device');
-    if (!isConn) {
-      if (el.chartCanvasContainer) {
-        el.chartCanvasContainer.classList.add('chart-stale-dimmed');
-      }
-      updateChartLastSyncedLabel();
-    } else {
-      if (el.chartCanvasContainer) {
-        el.chartCanvasContainer.classList.remove('chart-stale-dimmed');
-      }
-      if (el.chartLastSyncedLabel) {
-        el.chartLastSyncedLabel.classList.add('hidden');
-        el.chartLastSyncedLabel.textContent = '';
-      }
-    }
-  }
+  renderTelemetryChart(readings);
 
   // 2. History Log Table (Virtualized for 60+ FPS with 5,000+ rows)
   if (readings.length === 0) {
@@ -2628,57 +2431,6 @@ function updateLiveTelemetryPausedUI() {
   }
 }
 
-function formatSyncedTimestamp(isoString) {
-  try {
-    const d = parseUtcDate(isoString);
-    if (!d || isNaN(d.getTime())) return 'Recently';
-    const now = new Date();
-    const isToday = d.toDateString() === now.toDateString();
-    const timeStr = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
-    if (isToday) {
-      return `Today, ${timeStr}`;
-    }
-    const month = d.toLocaleDateString([], { month: 'short' });
-    const day = d.getDate();
-    return `${month} ${day}, ${timeStr}`;
-  } catch {
-    return 'Recently';
-  }
-}
-
-function updateChartLastSyncedLabel() {
-  const labelEl = el.chartLastSyncedLabel || document.getElementById('chart-last-synced-label');
-  if (!labelEl) return;
-
-  const isConn = state.snapshot?.connected || state.systemStatus?.connected_devices?.some(d => d.state === 'device');
-  if (isConn) {
-    labelEl.classList.add('hidden');
-    labelEl.textContent = '';
-    return;
-  }
-
-  let latestTimestamp = null;
-  if (state.history && state.history.length > 0) {
-    for (const r of state.history) {
-      if (r.timestamp) {
-        if (!latestTimestamp || (parseUtcDate(r.timestamp) > parseUtcDate(latestTimestamp))) {
-          latestTimestamp = r.timestamp;
-        }
-      }
-    }
-  } else if (state.snapshot && state.snapshot.timestamp) {
-    latestTimestamp = state.snapshot.timestamp;
-  }
-
-  if (latestTimestamp) {
-    const formatted = formatSyncedTimestamp(latestTimestamp);
-    labelEl.textContent = `Last synced: ${formatted}`;
-    labelEl.classList.remove('hidden');
-  } else {
-    labelEl.textContent = 'Last synced: Standby';
-    labelEl.classList.remove('hidden');
-  }
-}
 
 function formatRelativeTime(isoString) {
   if (!isoString) return null;
@@ -2870,32 +2622,8 @@ function init() {
   // Initialize Active Coulomb Calibration Listeners (from /static/js/calibration.js)
   initCalibrationListeners();
 
-  // Time Filter Buttons
-  document.querySelectorAll('.time-filter-pill').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.time-filter-pill').forEach(b => {
-        b.classList.remove('active', 'bg-white', 'text-black', 'shadow');
-        b.classList.add('text-zinc-400');
-      });
-      btn.classList.add('active', 'bg-white', 'text-black', 'shadow');
-      btn.classList.remove('text-zinc-400');
-      const d = parseInt(btn.dataset.days);
-      state.selectedDays = d;
-      fetchHistory(d);
-    });
-  });
-
-  // Chart Metric Toggle Buttons (Health % / Temp)
-  document.querySelectorAll('.chart-metric-pill').forEach(btn => {
-    btn.addEventListener('click', () => {
-      if (!state.chartInstance) return;
-      const idx = parseInt(btn.dataset.dataset, 10);
-      const isVisible = state.chartInstance.isDatasetVisible(idx);
-      state.chartInstance.setDatasetVisibility(idx, !isVisible);
-      state.chartInstance.update();
-      btn.classList.toggle('active', !isVisible);
-    });
-  });
+  // Initialize Telemetry Chart Listeners (from /static/js/telemetry-chart.js)
+  initChartListeners();
 
   // Initialize App Battery Drain Listeners (from /static/js/app-drain.js)
   initAppDrainListeners();
