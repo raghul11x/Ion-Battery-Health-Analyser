@@ -6,7 +6,6 @@ Frameless, dark glassmorphic loading window with dynamic status ticker and glowi
 from __future__ import annotations
 import os
 import sys
-import time
 import tkinter as tk
 from typing import Optional
 from PIL import Image, ImageTk

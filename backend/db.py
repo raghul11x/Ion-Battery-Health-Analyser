@@ -12,7 +12,6 @@ import random
 import sys
 from typing import Any, Dict, List, Optional
 from sqlalchemy import (
-    Boolean,
     Column,
     DateTime,
     Float,
@@ -23,6 +22,7 @@ from sqlalchemy import (
     create_engine,
     desc,
     func,
+    or_,
     text,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
@@ -344,7 +344,60 @@ class Database:
         try:
             from backend.health import calculate_apple_standard_health
 
-            readings = session.query(BatteryReading).all()
+            # Targeted candidate filter: only select rows exhibiting potential anomalies or unbackfilled fields
+            cond_10x = (
+                (BatteryReading.charge_full_design_uah.isnot(None))
+                & (BatteryReading.charge_full_design_uah < 1000000)
+                & (BatteryReading.charge_full_uah.isnot(None))
+                & (BatteryReading.charge_full_uah > 1000000)
+            )
+            cond_apple = (
+                (BatteryReading.cycle_count.isnot(None))
+                & (BatteryReading.cycle_count >= 50)
+                & (BatteryReading.health_method != "apple_standard_calibrated")
+                & (BatteryReading.charge_full_uah.isnot(None))
+                & (BatteryReading.charge_full_design_uah.isnot(None))
+                & (BatteryReading.charge_full_uah >= BatteryReading.charge_full_design_uah * 0.985)
+            )
+            cond_health_clamp = (BatteryReading.health_pct > 100.0)
+            cond_missing_ratio = (
+                (BatteryReading.raw_capacity_ratio.is_(None))
+                & (BatteryReading.charge_full_uah.isnot(None))
+                & (BatteryReading.charge_full_design_uah.isnot(None))
+            )
+            cond_recal_mismatch = (
+                (BatteryReading.charge_full_uah.isnot(None))
+                & (BatteryReading.charge_full_design_uah.isnot(None))
+                & (
+                    ((BatteryReading.charge_full_uah > BatteryReading.charge_full_design_uah) & (BatteryReading.recalibrated == 0))
+                    | ((BatteryReading.charge_full_uah <= BatteryReading.charge_full_design_uah) & (BatteryReading.recalibrated == 1))
+                )
+            )
+            cond_missing_effective = (
+                (BatteryReading.effective_capacity_uah.is_(None))
+                & (
+                    ((BatteryReading.charge_full_design_uah.isnot(None)) & (BatteryReading.health_pct.isnot(None)))
+                    | (BatteryReading.charge_full_uah.isnot(None))
+                )
+            )
+
+            readings = (
+                session.query(BatteryReading)
+                .filter(
+                    or_(
+                        cond_10x,
+                        cond_apple,
+                        cond_health_clamp,
+                        cond_missing_ratio,
+                        cond_recal_mismatch,
+                        cond_missing_effective,
+                    )
+                )
+                .all()
+            )
+            if not readings:
+                return
+
             updated_count = 0
 
             for row in readings:
@@ -391,13 +444,17 @@ class Database:
                             row.health_pct = new_h
                             modified = True
 
-                # 3. Ensure effective_capacity_uah is populated
+                # 3. Ensure effective_capacity_uah is populated if data is available
                 if row.effective_capacity_uah is None:
+                    new_eff = None
                     if row.charge_full_design_uah and row.health_pct:
-                        row.effective_capacity_uah = int(round(row.charge_full_design_uah * (row.health_pct / 100.0)))
-                    else:
-                        row.effective_capacity_uah = row.charge_full_uah
-                    modified = True
+                        new_eff = int(round(row.charge_full_design_uah * (row.health_pct / 100.0)))
+                    elif row.charge_full_uah is not None:
+                        new_eff = row.charge_full_uah
+
+                    if new_eff is not None:
+                        row.effective_capacity_uah = new_eff
+                        modified = True
 
                 if modified:
                     updated_count += 1

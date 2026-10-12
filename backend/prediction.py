@@ -53,7 +53,7 @@ def calculate_replacement_forecast(
     else:
         daily_cycle_rate = 1.0
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # Case 1: Already at or below replacement threshold
     if current_health_pct <= target_threshold_pct:

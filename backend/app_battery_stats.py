@@ -7,10 +7,9 @@ Correlates with secondary estimated power (mAh) from power_profile.xml approxima
 """
 
 from __future__ import annotations
-from datetime import datetime
 import logging
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from backend.status_bus import emit_status
 

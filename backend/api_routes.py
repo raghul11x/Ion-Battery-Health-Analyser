@@ -4,7 +4,7 @@ Provides data endpoints for the frontend dashboard and PyWebview shell.
 """
 
 from __future__ import annotations
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 import shlex
 from typing import Any, Dict, List, Optional
@@ -76,20 +76,13 @@ def reconnect_adb() -> Dict[str, Any]:
     return get_system_status()
 
 
-@router.get("/snapshot")
-def get_snapshot(
-    serial: Optional[str] = None,
-    include_demo: Optional[bool] = Query(default=None),
-) -> Dict[str, Any]:
-    """
-    Returns current snapshot. If phone is connected, returns live hardware reading.
-    Otherwise returns latest recorded reading from SQLite.
-    """
-    devices = adb.get_devices() if adb.is_available() else []
-    active = [d for d in devices if d.get("state") == "device"]
-    unauth = [d for d in devices if d.get("state") == "unauthorized"]
-    offline = [d for d in devices if d.get("state") == "offline"]
-
+def _check_connection_guidance(
+    active: List[Dict[str, Any]],
+    unauth: List[Dict[str, Any]],
+    offline: List[Dict[str, Any]],
+    serial: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    """Checks device status and returns guidance payload if in unauthorized, offline, or idle state."""
     # Special handling for device connected but waiting for USB debugging authorization
     if not active and unauth:
         u_dev = unauth[0]
@@ -170,7 +163,15 @@ def get_snapshot(
             "temperature_band": "normal",
         }
 
-    target_serial = serial or (active[0]["serial"] if active else None)
+    return None
+
+
+def _resolve_target_serial(
+    requested_serial: Optional[str],
+    active_devices: List[Dict[str, Any]],
+) -> Optional[str]:
+    """Resolves the target device serial based on query params, active USB devices, or DB history."""
+    target_serial = requested_serial or (active_devices[0]["serial"] if active_devices else None)
     if not target_serial:
         db_devs = db.get_devices()
         real_devs = [
@@ -181,238 +182,250 @@ def get_snapshot(
             target_serial = real_devs[0]["serial"]
         elif db_devs:
             target_serial = db_devs[0]["serial"]
+    return target_serial
 
-    # 1. LIVE HARDWARE SNAPSHOT
-    if target_serial and any(d["serial"] == target_serial for d in active):
-        try:
-            probe = adb.probe_device(target_serial)
-            summary = probe["summary"]
-            dev_info = probe["device_info"]
 
-            level_pct = summary.get("level_pct") or 0
-            voltage_mv = summary.get("voltage_mv") or 0
-            temp_c = summary.get("temperature_c") or 25.0
-            counter_uah = summary.get("charge_counter_uah")
-            charge_full_uah = summary.get("charge_full_uah")
-            charge_full_design_uah = summary.get("charge_full_design_uah")
+def _build_live_snapshot(target_serial: str) -> Optional[Dict[str, Any]]:
+    """Generates live hardware snapshot. Catches and logs any hardware/probe errors, returning None."""
+    try:
+        probe = adb.probe_device(target_serial)
+        summary = probe["summary"]
+        dev_info = probe["device_info"]
 
-            # Check cached profile for OEM SoH, discovered parameters and data sources
-            profile = db.get_device_profile(target_serial)
-            profile_fields = profile.get("fields", {}) if profile else {}
-            oem_soh = profile.get("oem_reported_soh") if profile else summary.get("oem_reported_soh")
-            history_days = db.get_history_duration_days(target_serial)
+        level_pct = summary.get("level_pct") or 0
+        voltage_mv = summary.get("voltage_mv") or 0
+        temp_c = summary.get("temperature_c") or 25.0
+        counter_uah = summary.get("charge_counter_uah")
+        charge_full_uah = summary.get("charge_full_uah")
+        charge_full_design_uah = summary.get("charge_full_design_uah")
 
-            # If design capacity missing from live probe, check discovered profile
-            if charge_full_design_uah is None and profile_fields:
-                cfd_field = profile_fields.get("charge_full_design", {})
-                if cfd_field.get("value"):
-                    charge_full_design_uah = cfd_field["value"]
-                elif cfd_field.get("path") and is_safe_sysfs_path(str(cfd_field.get("path"))):
-                    safe_path = str(cfd_field["path"]).strip()
-                    out, _, code = adb.run_shell(target_serial, f"cat {shlex.quote(safe_path)}")
-                    if code == 0 and out.strip().isdigit():
-                        charge_full_design_uah = int(out.strip())
+        # Check cached profile for OEM SoH, discovered parameters and data sources
+        profile = db.get_device_profile(target_serial)
+        profile_fields = profile.get("fields", {}) if profile else {}
+        oem_soh = profile.get("oem_reported_soh") if profile else summary.get("oem_reported_soh")
+        history_days = db.get_history_duration_days(target_serial)
 
-            # If full capacity missing from live probe, check discovered profile
-            if charge_full_uah is None and profile_fields:
-                cf_field = profile_fields.get("charge_full", {})
-                if cf_field.get("value"):
-                    charge_full_uah = cf_field["value"]
-                elif cf_field.get("path") and is_safe_sysfs_path(str(cf_field.get("path"))):
-                    safe_path = str(cf_field["path"]).strip()
-                    out, _, code = adb.run_shell(target_serial, f"cat {shlex.quote(safe_path)}")
-                    if code == 0 and out.strip().isdigit():
-                        charge_full_uah = int(out.strip())
+        # If design capacity missing from live probe, check discovered profile
+        if charge_full_design_uah is None and profile_fields:
+            cfd_field = profile_fields.get("charge_full_design", {})
+            if cfd_field.get("value"):
+                charge_full_design_uah = cfd_field["value"]
+            elif cfd_field.get("path") and is_safe_sysfs_path(str(cfd_field.get("path"))):
+                safe_path = str(cfd_field["path"]).strip()
+                out, _, code = adb.run_shell(target_serial, f"cat {shlex.quote(safe_path)}")
+                if code == 0 and out.strip().isdigit():
+                    charge_full_design_uah = int(out.strip())
 
-            # NOTE: Cycle count MUST be resolved before data_sources dictionary is constructed!
-            hw_cycle_count = summary.get("cycle_count")
-            if hw_cycle_count is None and profile_fields:
-                cy_field = profile_fields.get("cycle_count", {})
-                if cy_field.get("value") is not None and isinstance(cy_field["value"], int) and 0 <= cy_field["value"] < 20000:
-                    hw_cycle_count = cy_field["value"]
-                elif cy_field.get("path") and is_safe_sysfs_path(str(cy_field.get("path"))):
-                    safe_path = str(cy_field["path"]).strip()
-                    out, _, code = adb.run_shell(target_serial, f"cat {shlex.quote(safe_path)}")
-                    if code == 0 and out.strip().isdigit():
-                        c_val = int(out.strip())
-                        if 0 <= c_val < 20000:
-                            hw_cycle_count = c_val
+        # If full capacity missing from live probe, check discovered profile
+        if charge_full_uah is None and profile_fields:
+            cf_field = profile_fields.get("charge_full", {})
+            if cf_field.get("value"):
+                charge_full_uah = cf_field["value"]
+            elif cf_field.get("path") and is_safe_sysfs_path(str(cf_field.get("path"))):
+                safe_path = str(cf_field["path"]).strip()
+                out, _, code = adb.run_shell(target_serial, f"cat {shlex.quote(safe_path)}")
+                if code == 0 and out.strip().isdigit():
+                    charge_full_uah = int(out.strip())
 
-            if hw_cycle_count is not None and hw_cycle_count >= 0:
-                cycle_count = hw_cycle_count
-                cycle_count_type = "hardware"
-            else:
-                if history_days >= 7.0:
-                    est_cycles = db.get_estimated_cycles(target_serial)
-                    if est_cycles > 0:
-                        cycle_count = est_cycles
-                        cycle_count_type = "estimated"
-                    else:
-                        cycle_count = None
-                        cycle_count_type = "unavailable"
+        # NOTE: Cycle count MUST be resolved before data_sources dictionary is constructed!
+        hw_cycle_count = summary.get("cycle_count")
+        if hw_cycle_count is None and profile_fields:
+            cy_field = profile_fields.get("cycle_count", {})
+            if cy_field.get("value") is not None and isinstance(cy_field["value"], int) and 0 <= cy_field["value"] < 20000:
+                hw_cycle_count = cy_field["value"]
+            elif cy_field.get("path") and is_safe_sysfs_path(str(cy_field.get("path"))):
+                safe_path = str(cy_field["path"]).strip()
+                out, _, code = adb.run_shell(target_serial, f"cat {shlex.quote(safe_path)}")
+                if code == 0 and out.strip().isdigit():
+                    c_val = int(out.strip())
+                    if 0 <= c_val < 20000:
+                        hw_cycle_count = c_val
+
+        if hw_cycle_count is not None and hw_cycle_count >= 0:
+            cycle_count = hw_cycle_count
+            cycle_count_type = "hardware"
+        else:
+            if history_days >= 7.0:
+                est_cycles = db.get_estimated_cycles(target_serial)
+                if est_cycles > 0:
+                    cycle_count = est_cycles
+                    cycle_count_type = "estimated"
                 else:
                     cycle_count = None
                     cycle_count_type = "unavailable"
+            else:
+                cycle_count = None
+                cycle_count_type = "unavailable"
 
-            profile_fields = profile.get("fields", {}) if profile else {}
-            data_sources = {
-                "charge_full": profile_fields.get("charge_full", {}).get("source", "local" if charge_full_uah else "insufficient_data"),
-                "charge_full_design": profile_fields.get("charge_full_design", {}).get("source", "local" if charge_full_design_uah else "insufficient_data"),
-                "cycle_count": profile_fields.get("cycle_count", {}).get("source", "local" if (cycle_count is not None and cycle_count >= 0) else "unavailable"),
-                "charge_counter": profile_fields.get("charge_counter", {}).get("source", "local" if counter_uah else "insufficient_data"),
-                "temperature": profile_fields.get("temperature", {}).get("source", "local" if temp_c is not None else "insufficient_data"),
-            }
+        profile_fields = profile.get("fields", {}) if profile else {}
+        data_sources = {
+            "charge_full": profile_fields.get("charge_full", {}).get("source", "local" if charge_full_uah else "insufficient_data"),
+            "charge_full_design": profile_fields.get("charge_full_design", {}).get("source", "local" if charge_full_design_uah else "insufficient_data"),
+            "cycle_count": profile_fields.get("cycle_count", {}).get("source", "local" if (cycle_count is not None and cycle_count >= 0) else "unavailable"),
+            "charge_counter": profile_fields.get("charge_counter", {}).get("source", "local" if counter_uah else "insufficient_data"),
+            "temperature": profile_fields.get("temperature", {}).get("source", "local" if temp_c is not None else "insufficient_data"),
+        }
 
-            status = summary.get("status") or "Unknown"
-            health_flag = summary.get("health_flag") or "Good"
+        status = summary.get("status") or "Unknown"
+        health_flag = summary.get("health_flag") or "Good"
 
-            baseline = db.get_first_baseline(target_serial)
-            displayed_health, raw_ratio, recalibrated, method, details = calculate_health(
-                charge_full_uah=charge_full_uah,
-                charge_full_design_uah=charge_full_design_uah,
-                charge_counter_uah=counter_uah,
-                level_pct=level_pct,
-                baseline_record=baseline,
+        baseline = db.get_first_baseline(target_serial)
+        displayed_health, raw_ratio, recalibrated, method, details = calculate_health(
+            charge_full_uah=charge_full_uah,
+            charge_full_design_uah=charge_full_design_uah,
+            charge_counter_uah=counter_uah,
+            level_pct=level_pct,
+            baseline_record=baseline,
+            cycle_count=cycle_count,
+            voltage_mv=voltage_mv,
+            temperature_c=temp_c,
+            history_days=history_days,
+            oem_reported_soh=oem_soh,
+            data_sources=data_sources,
+        )
+
+        model_name = dev_info.get("model") or "Android Device"
+        if dev_info.get("manufacturer") and dev_info["manufacturer"] != "Unknown":
+            model_name = f"{dev_info['manufacturer']} {model_name}"
+
+        forecast = None
+        if displayed_health is not None:
+            forecast = calculate_replacement_forecast(
+                current_health_pct=displayed_health,
                 cycle_count=cycle_count,
-                voltage_mv=voltage_mv,
-                temperature_c=temp_c,
-                history_days=history_days,
-                oem_reported_soh=oem_soh,
-                data_sources=data_sources,
             )
 
-            model_name = dev_info.get("model") or "Android Device"
-            if dev_info.get("manufacturer") and dev_info["manufacturer"] != "Unknown":
-                model_name = f"{dev_info['manufacturer']} {model_name}"
-
-            forecast = None
-            if displayed_health is not None:
-                forecast = calculate_replacement_forecast(
-                    current_health_pct=displayed_health,
-                    cycle_count=cycle_count,
-                )
-
-            return {
-                "live": True,
-                "connected": True,
-                "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "device_serial": target_serial,
-                "device_model": model_name,
-                "level_pct": level_pct,
-                "voltage_mv": voltage_mv,
-                "temperature_c": temp_c,
-                "charge_counter_uah": counter_uah,
-                "charge_full_uah": charge_full_uah,
-                "charge_full_design_uah": charge_full_design_uah,
-                "maximum_battery_capacity_uah": details.get("breakdown", {}).get("maximum_battery_capacity"),
-                "maximum_chargeable_capacity_uah": details.get("breakdown", {}).get("maximum_chargeable_capacity_now"),
-                "capacity_retention_pct": details.get("capacity_retention_pct"),
-                "capacity_fade_pct": details.get("capacity_fade_pct"),
-                "breakdown": details.get("breakdown"),
-                "effective_capacity_uah": details.get("effective_capacity_uah") or charge_full_uah,
-                "is_static_register": details.get("is_uncalibrated_static_register", False),
-                "apple_standard": details.get("apple_standard"),
-                "replacement_forecast": forecast,
-                "cycle_count": cycle_count,
-                "cycle_count_type": cycle_count_type,
-                "cycle_count_display": str(cycle_count) if cycle_count is not None else "Unavailable",
-                "health_pct": displayed_health,
-                "health_status": details.get("health_status", "evaluated" if displayed_health is not None else "insufficient_data"),
-                "oem_reported_soh": details.get("oem_reported_soh") or oem_soh,
-                "soh_divergence_flag": details.get("soh_divergence_flag", False),
-                "soh_divergence_delta": details.get("soh_divergence_delta"),
-                "history_days": round(history_days, 1),
-                "raw_capacity_ratio": raw_ratio,
-                "recalibrated": recalibrated,
-                "health_method": method,
-                "health_details": details,
-                "status": status,
-                "health_flag": health_flag,
-                "health_band": get_health_band(displayed_health),
-                "temperature_band": get_temperature_band(temp_c),
-            }
-        except Exception as e:
-            logger.error(f"Error generating live hardware snapshot for {target_serial}: {e}", exc_info=True)
-
-    # 2. LATEST RECORDED FROM DATABASE (DISCONNECTED STATE)
-    latest = db.get_latest_reading(target_serial, include_demo=include_demo)
-    if latest:
-        eff_cap = latest.get("effective_capacity_uah")
-        if eff_cap is None:
-            if latest.get("charge_full_design_uah") and latest.get("health_pct"):
-                eff_cap = int(round(latest["charge_full_design_uah"] * (latest["health_pct"] / 100.0)))
-            else:
-                eff_cap = latest.get("charge_full_uah")
-
-        h_val = latest.get("health_pct")
-        c_val = latest.get("cycle_count")
-        cf = latest.get("charge_full_uah")
-        cfd = latest.get("charge_full_design_uah")
-        chargeable_now = eff_cap or cf
-        retention = None
-        fade = None
-        if chargeable_now and cfd and cfd > 0:
-            retention = round((chargeable_now / float(cfd)) * 100.0, 2)
-            if h_val is not None and abs(retention - h_val) < 0.1:
-                retention = h_val
-            fade = round(max(0.0, 100.0 - retention), 2)
-
-        forecast = calculate_replacement_forecast(current_health_pct=h_val, cycle_count=c_val) if h_val is not None else None
-
-        profile = db.get_device_profile(latest["device_serial"]) if "device_serial" in latest else None
-        oem_soh = profile.get("oem_reported_soh") if profile else None
-        divergence = False
-        if h_val is not None and oem_soh is not None:
-            divergence = abs(h_val - oem_soh) > 10.0
-
-        disc_sources = {
-            "charge_full": "local" if cf else "insufficient_data",
-            "charge_full_design": "local" if cfd else "insufficient_data",
-            "cycle_count": "local" if c_val else "insufficient_data",
-            "charge_counter": "local" if latest.get("charge_counter_uah") else "insufficient_data",
-            "temperature": "local" if latest.get("temperature_c") is not None else "insufficient_data",
-        }
-        disc_breakdown = {
-            "maximum_battery_capacity": cfd,
-            "maximum_chargeable_capacity_now": chargeable_now,
-            "capacity_retention_pct": retention,
-            "capacity_fade_pct": fade,
-            "cycle_fatigue_pct": None,
-            "calendar_aging_pct": None,
-            "stress_multiplier": 1.0,
-            "final_health_pct": h_val,
-            "data_sources": disc_sources,
-            "provenance_note": f"Cached from database reading on {latest.get('timestamp')}",
-        }
-
-        cached_cycle = latest.get("cycle_count")
-        cached_type = latest.get("cycle_count_type") or ("hardware" if cached_cycle is not None else "unavailable")
-        if cached_cycle is None:
-            cached_type = "unavailable"
-
         return {
-            "live": False,
-            "connected": False,
-            **latest,
-            "cycle_count": cached_cycle,
-            "cycle_count_type": cached_type,
-            "cycle_count_display": str(cached_cycle) if cached_cycle is not None else "Unavailable",
-            "status": "Disconnected",
-            "maximum_battery_capacity_uah": cfd,
-            "maximum_chargeable_capacity_uah": chargeable_now,
-            "capacity_retention_pct": retention,
-            "capacity_fade_pct": fade,
-            "breakdown": disc_breakdown,
-            "effective_capacity_uah": eff_cap,
+            "live": True,
+            "connected": True,
+            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "device_serial": target_serial,
+            "device_model": model_name,
+            "level_pct": level_pct,
+            "voltage_mv": voltage_mv,
+            "temperature_c": temp_c,
+            "charge_counter_uah": counter_uah,
+            "charge_full_uah": charge_full_uah,
+            "charge_full_design_uah": charge_full_design_uah,
+            "maximum_battery_capacity_uah": details.get("breakdown", {}).get("maximum_battery_capacity"),
+            "maximum_chargeable_capacity_uah": details.get("breakdown", {}).get("maximum_chargeable_capacity_now"),
+            "capacity_retention_pct": details.get("capacity_retention_pct"),
+            "capacity_fade_pct": details.get("capacity_fade_pct"),
+            "breakdown": details.get("breakdown"),
+            "effective_capacity_uah": details.get("effective_capacity_uah") or charge_full_uah,
+            "is_static_register": details.get("is_uncalibrated_static_register", False),
+            "apple_standard": details.get("apple_standard"),
             "replacement_forecast": forecast,
-            "health_status": "evaluated" if h_val is not None else "insufficient_data",
-            "oem_reported_soh": oem_soh,
-            "soh_divergence_flag": divergence,
-            "health_band": get_health_band(latest.get("health_pct")),
-            "temperature_band": get_temperature_band(latest.get("temperature_c")),
+            "cycle_count": cycle_count,
+            "cycle_count_type": cycle_count_type,
+            "cycle_count_display": str(cycle_count) if cycle_count is not None else "Unavailable",
+            "health_pct": displayed_health,
+            "health_status": details.get("health_status", "evaluated" if displayed_health is not None else "insufficient_data"),
+            "oem_reported_soh": details.get("oem_reported_soh") or oem_soh,
+            "soh_divergence_flag": details.get("soh_divergence_flag", False),
+            "soh_divergence_delta": details.get("soh_divergence_delta"),
+            "history_days": round(history_days, 1),
+            "raw_capacity_ratio": raw_ratio,
+            "recalibrated": recalibrated,
+            "health_method": method,
+            "health_details": details,
+            "status": status,
+            "health_flag": health_flag,
+            "health_band": get_health_band(displayed_health),
+            "temperature_band": get_temperature_band(temp_c),
         }
+    except Exception as e:
+        logger.error(f"Error generating live hardware snapshot for {target_serial}: {e}", exc_info=True)
+        return None
 
-    # 3. NO DATA YET
+
+def _build_disconnected_snapshot(
+    target_serial: Optional[str],
+    include_demo: Optional[bool],
+) -> Optional[Dict[str, Any]]:
+    """Builds snapshot from SQLite database reading when disconnected. Returns None if no reading found."""
+    latest = db.get_latest_reading(target_serial, include_demo=include_demo)
+    if not latest:
+        return None
+
+    eff_cap = latest.get("effective_capacity_uah")
+    if eff_cap is None:
+        if latest.get("charge_full_design_uah") and latest.get("health_pct"):
+            eff_cap = int(round(latest["charge_full_design_uah"] * (latest["health_pct"] / 100.0)))
+        else:
+            eff_cap = latest.get("charge_full_uah")
+
+    h_val = latest.get("health_pct")
+    c_val = latest.get("cycle_count")
+    cf = latest.get("charge_full_uah")
+    cfd = latest.get("charge_full_design_uah")
+    chargeable_now = eff_cap or cf
+    retention = None
+    fade = None
+    if chargeable_now and cfd and cfd > 0:
+        retention = round((chargeable_now / float(cfd)) * 100.0, 2)
+        if h_val is not None and abs(retention - h_val) < 0.1:
+            retention = h_val
+        fade = round(max(0.0, 100.0 - retention), 2)
+
+    forecast = calculate_replacement_forecast(current_health_pct=h_val, cycle_count=c_val) if h_val is not None else None
+
+    profile = db.get_device_profile(latest["device_serial"]) if "device_serial" in latest else None
+    oem_soh = profile.get("oem_reported_soh") if profile else None
+    divergence = False
+    if h_val is not None and oem_soh is not None:
+        divergence = abs(h_val - oem_soh) > 10.0
+
+    disc_sources = {
+        "charge_full": "local" if cf else "insufficient_data",
+        "charge_full_design": "local" if cfd else "insufficient_data",
+        "cycle_count": "local" if c_val else "insufficient_data",
+        "charge_counter": "local" if latest.get("charge_counter_uah") else "insufficient_data",
+        "temperature": "local" if latest.get("temperature_c") is not None else "insufficient_data",
+    }
+    disc_breakdown = {
+        "maximum_battery_capacity": cfd,
+        "maximum_chargeable_capacity_now": chargeable_now,
+        "capacity_retention_pct": retention,
+        "capacity_fade_pct": fade,
+        "cycle_fatigue_pct": None,
+        "calendar_aging_pct": None,
+        "stress_multiplier": 1.0,
+        "final_health_pct": h_val,
+        "data_sources": disc_sources,
+        "provenance_note": f"Cached from database reading on {latest.get('timestamp')}",
+    }
+
+    cached_cycle = latest.get("cycle_count")
+    cached_type = latest.get("cycle_count_type") or ("hardware" if cached_cycle is not None else "unavailable")
+    if cached_cycle is None:
+        cached_type = "unavailable"
+
+    return {
+        "live": False,
+        "connected": False,
+        **latest,
+        "cycle_count": cached_cycle,
+        "cycle_count_type": cached_type,
+        "cycle_count_display": str(cached_cycle) if cached_cycle is not None else "Unavailable",
+        "status": "Disconnected",
+        "maximum_battery_capacity_uah": cfd,
+        "maximum_chargeable_capacity_uah": chargeable_now,
+        "capacity_retention_pct": retention,
+        "capacity_fade_pct": fade,
+        "breakdown": disc_breakdown,
+        "effective_capacity_uah": eff_cap,
+        "replacement_forecast": forecast,
+        "health_status": "evaluated" if h_val is not None else "insufficient_data",
+        "oem_reported_soh": oem_soh,
+        "soh_divergence_flag": divergence,
+        "health_band": get_health_band(latest.get("health_pct")),
+        "temperature_band": get_temperature_band(latest.get("temperature_c")),
+    }
+
+
+def _build_empty_snapshot() -> Dict[str, Any]:
+    """Returns fallback snapshot when no hardware is connected and no database records exist."""
     return {
         "live": False,
         "connected": False,
@@ -434,6 +447,41 @@ def get_snapshot(
         "health_band": get_health_band(None),
         "temperature_band": get_temperature_band(None),
     }
+
+
+@router.get("/snapshot")
+def get_snapshot(
+    serial: Optional[str] = None,
+    include_demo: Optional[bool] = Query(default=None),
+) -> Dict[str, Any]:
+    """
+    Returns current snapshot. If phone is connected, returns live hardware reading.
+    Otherwise returns latest recorded reading from SQLite.
+    """
+    devices = adb.get_devices() if adb.is_available() else []
+    active = [d for d in devices if d.get("state") == "device"]
+    unauth = [d for d in devices if d.get("state") == "unauthorized"]
+    offline = [d for d in devices if d.get("state") == "offline"]
+
+    guidance = _check_connection_guidance(active=active, unauth=unauth, offline=offline, serial=serial)
+    if guidance is not None:
+        return guidance
+
+    target_serial = _resolve_target_serial(requested_serial=serial, active_devices=active)
+
+    # 1. LIVE HARDWARE SNAPSHOT
+    if target_serial and any(d["serial"] == target_serial for d in active):
+        live_snap = _build_live_snapshot(target_serial)
+        if live_snap is not None:
+            return live_snap
+
+    # 2. LATEST RECORDED FROM DATABASE (DISCONNECTED STATE)
+    disc_snap = _build_disconnected_snapshot(target_serial=target_serial, include_demo=include_demo)
+    if disc_snap is not None:
+        return disc_snap
+
+    # 3. NO DATA YET
+    return _build_empty_snapshot()
 
 
 @router.get("/raw-diagnostic")
@@ -567,7 +615,7 @@ def list_devices(include_demo: Optional[bool] = Query(default=None)) -> List[Dic
                     "serial": dev["serial"],
                     "model": model_name,
                     "readings_count": 0,
-                    "last_seen": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "last_seen": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                     "active": True,
                 })
                 known_serials.add(dev["serial"])

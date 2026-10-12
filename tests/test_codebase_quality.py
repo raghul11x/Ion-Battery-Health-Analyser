@@ -94,6 +94,55 @@ def test_fix_existing_anomalies_idempotency():
         session.close()
 
 
+def test_fix_existing_anomalies_targeted_repairs_and_phantom_elimination():
+    """Verifies that fix_existing_anomalies repairs legitimate anomalies and avoids phantom dirty states."""
+    db = Database(":memory:")
+    # 1. MediaTek 10x mismatch
+    r1 = db.insert_reading(
+        level_pct=50, voltage_mv=3800, temperature_c=25.0, health_pct=95.0, health_method="capacity_ratio",
+        charge_full_uah=4998000, charge_full_design_uah=499000, cycle_count=10
+    )
+    # 2. Uncalibrated degraded device (cycle >= 50, ratio >= 98.5%)
+    r2 = db.insert_reading(
+        level_pct=80, voltage_mv=4150, temperature_c=28.0, health_pct=99.0, health_method="capacity_ratio",
+        charge_full_uah=5000000, charge_full_design_uah=5000000, cycle_count=100
+    )
+    # 3. Over 100% health
+    r3 = db.insert_reading(
+        level_pct=80, voltage_mv=4150, temperature_c=28.0, health_pct=105.0, health_method="capacity_ratio",
+        charge_full_uah=5000000, charge_full_design_uah=5000000, cycle_count=10
+    )
+    # 4. Null capacities (must NOT be modified or produce phantom dirty updates)
+    r4 = db.insert_reading(
+        level_pct=50, voltage_mv=3800, temperature_c=25.0, health_pct=90.0, health_method="trend_estimate",
+        charge_full_uah=None, charge_full_design_uah=None, cycle_count=5
+    )
+
+    # Run fixer
+    db.fix_existing_anomalies()
+
+    session = db.get_session()
+    try:
+        row1 = session.query(BatteryReading).filter_by(id=r1["id"]).first()
+        assert row1.charge_full_design_uah == 4990000  # 10x corrected
+        assert row1.raw_capacity_ratio == 100.16
+
+        row2 = session.query(BatteryReading).filter_by(id=r2["id"]).first()
+        assert row2.health_method == "apple_standard_calibrated"
+        assert row2.health_pct < 98.5
+
+        row3 = session.query(BatteryReading).filter_by(id=r3["id"]).first()
+        assert row3.health_pct <= 100.0
+
+        row4 = session.query(BatteryReading).filter_by(id=r4["id"]).first()
+        assert row4.effective_capacity_uah is None
+    finally:
+        session.close()
+
+    # Re-running on clean data produces 0 modifications and 0 errors
+    db.fix_existing_anomalies()
+
+
 def test_api_devices_active_flag_propagation():
     """Verifies /api/devices sets active: True for matching connected ADB devices."""
     with patch("backend.api_routes.adb") as mock_adb:

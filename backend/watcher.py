@@ -4,7 +4,7 @@ Periodically polls for ADB device connections and auto-logs battery readings in 
 """
 
 from __future__ import annotations
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 import shlex
 import threading
@@ -53,7 +53,7 @@ class DeviceWatcher:
 
     def poll_cycle(self) -> None:
         """Executes a single check and auto-logs if device is connected."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         self.last_status["last_check"] = now.isoformat()
 
         if not self.adb.is_available():
@@ -167,7 +167,7 @@ class DeviceWatcher:
             def _bg_drain(dev_serial: str):
                 try:
                     self.run_app_drain_scan(dev_serial)
-                    self.last_deep_scan_time[dev_serial] = datetime.utcnow()
+                    self.last_deep_scan_time[dev_serial] = datetime.now(timezone.utc)
                 except Exception as e:
                     logger.warning(f"Note during app drain scan for {dev_serial}: {e}")
                 finally:
