@@ -99,8 +99,7 @@ const state = {
   forecastData: null,
   forecastLoading: false,
   calibrationPollTimer: null,
-  cachedDevices: [],
-  lastDevicesFetchTime: 0,
+  // cachedDevices and lastDevicesFetchTime moved to /static/js/last-seen.js
   deviceStatusEvents: [],
   statusFeedExpanded: false,
   selectedSerial: null,
@@ -1889,89 +1888,12 @@ function updateLiveTelemetryPausedUI() {
 }
 
 
-function formatRelativeTime(isoString) {
-  if (!isoString) return null;
-  const d = parseUtcDate(isoString);
-  if (!d || isNaN(d.getTime())) return null;
-  const now = new Date();
-  const diffSec = Math.floor((now - d) / 1000);
-  if (diffSec < 0 || isNaN(diffSec)) return 'just now';
-  if (diffSec < 45) return 'just now';
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin} min ago`;
-  const diffHours = Math.floor(diffMin / 60);
-  if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`;
-  const diffDays = Math.floor(diffMin / 1440);
-  if (diffDays === 1) return 'yesterday';
-  if (diffDays < 7) return `${diffDays} days ago`;
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
-}
-
-async function fetchRecentDevices() {
-  const now = Date.now();
-  if (now - (state.lastDevicesFetchTime || 0) < 8000 && state.cachedDevices && state.cachedDevices.length > 0) {
-    return state.cachedDevices;
-  }
-  try {
-    const res = await fetch('/api/devices');
-    if (res.ok) {
-      state.cachedDevices = await res.json();
-      state.lastDevicesFetchTime = now;
-      return state.cachedDevices;
-    }
-  } catch (err) {
-    console.warn('Failed to fetch devices for last-seen context:', err);
-  }
-  return state.cachedDevices || [];
-}
-
-async function updateLastSeenDeviceLabel() {
-  const labelEl = el.connLastSeenLabel || document.getElementById('conn-last-seen-label');
-  if (!labelEl) return;
-
-  const isConn = state.snapshot?.connected || state.systemStatus?.connected_devices?.some(d => d.state === 'device');
-  if (isConn) {
-    labelEl.classList.add('hidden');
-    labelEl.textContent = '';
-    return;
-  }
-
-  const devices = await fetchRecentDevices();
-  if (!devices || devices.length === 0) {
-    labelEl.classList.add('hidden');
-    return;
-  }
-
-  const valid = devices.filter(d => d.last_seen);
-  if (valid.length === 0) {
-    labelEl.classList.add('hidden');
-    return;
-  }
-
-  valid.sort((a, b) => parseUtcDate(b.last_seen) - parseUtcDate(a.last_seen));
-  const mostRecent = valid[0];
-  const relTime = formatRelativeTime(mostRecent.last_seen);
-  if (!relTime) {
-    labelEl.classList.add('hidden');
-    return;
-  }
-
-  if (devices.length > 1) {
-    const model = mostRecent.model ? mostRecent.model.replace(/_/g, ' ') : '';
-    const serial = mostRecent.serial && mostRecent.serial !== 'default' ? mostRecent.serial : '';
-    const serialShort = serial.length > 8 ? serial.slice(0, 8) : serial;
-    let label = model;
-    if (model && serialShort && !model.toLowerCase().includes(serialShort.toLowerCase())) {
-      label = `${serialShort} (${model})`;
-    } else if (!model) {
-      label = serialShort || 'Device';
-    }
-    labelEl.textContent = `${label} · last seen ${relTime}`;
-  } else {
-    labelEl.textContent = `Last seen ${relTime}`;
-  }
-  labelEl.classList.remove('hidden');
-}
+// ==========================================
+// DISCONNECTED DEVICE LAST-SEEN SUB-SYSTEM
+// Extracted to /static/js/last-seen.js
+// Provides formatRelativeTime, fetchRecentDevices,
+// and updateLastSeenDeviceLabel
+// ==========================================
 
 // ==========================================
 // APP BATTERY DRAIN ATTRIBUTION SUB-SYSTEM
