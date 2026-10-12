@@ -467,38 +467,8 @@ const el = {
   appDrainThermalText: document.getElementById('app-drain-thermal-text'),
 };
 
-// Utilities
-function formatCapacity(uah) {
-  if (uah === null || uah === undefined || isNaN(uah)) return '—';
-  const mah = Math.round(uah / 1000);
-  return `${mah.toLocaleString()} mAh`;
-}
-
-function formatDate(isoStr) {
-  if (!isoStr) return '—';
-  try {
-    const d = parseUtcDate(isoStr);
-    if (!d || isNaN(d.getTime())) return isoStr;
-    return d.toLocaleString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return isoStr;
-  }
-}
-
-function escapeHtml(str) {
-  if (str === null || str === undefined) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
+// Utilities extracted to /static/js/formatters.js:
+// formatCapacity, formatDate, escapeHtml
 
 // In-Flight Request Tracking (Prevents Overlapping Polling & Backend Socket Contention)
 let isFetchingStatus = false;
