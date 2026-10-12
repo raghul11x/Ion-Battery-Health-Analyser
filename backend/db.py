@@ -12,7 +12,6 @@ import random
 import sys
 from typing import Any, Dict, List, Optional
 from sqlalchemy import (
-    Boolean,
     Column,
     DateTime,
     Float,
