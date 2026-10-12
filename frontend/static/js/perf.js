@@ -54,11 +54,6 @@
     return renderer;
   }
 
-  if (typeof requestIdleCallback === 'function') {
-    requestIdleCallback(() => { window.IonPerf.gpuRenderer = detectGpu(); });
-  } else {
-    setTimeout(() => { window.IonPerf.gpuRenderer = detectGpu(); }, 1200);
-  }
 
   // 1. Refresh Rate Detection
   function sampleRefreshRate(callback) {
@@ -136,26 +131,23 @@
   }, { passive: true });
 
   window.addEventListener('resize', () => {
-    if (Math.abs(window.screenX - lastScreenX) > 40 || Math.abs(window.screenY - lastScreenY) > 40) {
-      lastScreenX = window.screenX;
-      lastScreenY = window.screenY;
-      sampleRefreshRate();
-    }
+    lastScreenX = window.screenX;
+    lastScreenY = window.screenY;
+    sampleRefreshRate();
   }, { passive: true });
 
-  setInterval(() => {
-    if (Math.abs(window.screenX - lastScreenX) > 40 || Math.abs(window.screenY - lastScreenY) > 40) {
-      lastScreenX = window.screenX;
-      lastScreenY = window.screenY;
-      sampleRefreshRate();
-    }
-  }, 4000);
+  // 2. Dev-Only Performance Instrumentation State & Lazy Initializer
+  let isDevInstrumentationInitialized = false;
+  let longTaskObserver = null;
+  let loafObserver = null;
 
-  // 2. LongTask & LongAnimationFrame Observer
-  if (typeof PerformanceObserver !== 'undefined' && PerformanceObserver.supportedEntryTypes) {
+  function initPerformanceObservers() {
+    if (typeof PerformanceObserver === 'undefined' || !PerformanceObserver.supportedEntryTypes) {
+      return;
+    }
     try {
-      if (PerformanceObserver.supportedEntryTypes.includes('longtask')) {
-        const longTaskObserver = new PerformanceObserver((list) => {
+      if (!longTaskObserver && PerformanceObserver.supportedEntryTypes.includes('longtask')) {
+        longTaskObserver = new PerformanceObserver((list) => {
           const entries = list.getEntries();
           for (const entry of entries) {
             window.IonPerf.longTaskCount++;
@@ -175,8 +167,8 @@
         longTaskObserver.observe({ entryTypes: ['longtask'] });
       }
 
-      if (PerformanceObserver.supportedEntryTypes.includes('long-animation-frame')) {
-        const loafObserver = new PerformanceObserver((list) => {
+      if (!loafObserver && PerformanceObserver.supportedEntryTypes.includes('long-animation-frame')) {
+        loafObserver = new PerformanceObserver((list) => {
           const entries = list.getEntries();
           for (const entry of entries) {
             if (entry.duration > window.IonPerf.worstLongTaskMs) {
@@ -189,6 +181,28 @@
     } catch (_) {}
   }
 
+  function ensureDevInstrumentation() {
+    if (isDevInstrumentationInitialized) return;
+    isDevInstrumentationInitialized = true;
+
+    // 1. Lazy GPU detection
+    if (window.IonPerf.gpuRenderer === 'Detecting...') {
+      window.IonPerf.gpuRenderer = detectGpu();
+    }
+
+    // 2. Lazy PerformanceObservers
+    initPerformanceObservers();
+
+    // 3. Lazy HUD DOM element creation
+    createHudElement();
+
+    const gpuEl = document.getElementById('hud-gpu-info');
+    if (gpuEl) {
+      gpuEl.textContent = `GPU: ${window.IonPerf.gpuRenderer}`;
+      gpuEl.title = window.IonPerf.gpuRenderer;
+    }
+  }
+
   // 3. Performance HUD UI Implementation
   let hudContainer = null;
   let hudRafId = null;
@@ -198,6 +212,7 @@
 
   function createHudElement() {
     if (hudContainer) return hudContainer;
+    if (!document.body) return null;
 
     hudContainer = document.createElement('div');
     hudContainer.id = 'ion-perf-hud';
@@ -352,7 +367,9 @@
   }
 
   function togglePerfHud(forceState) {
+    ensureDevInstrumentation();
     const el = createHudElement();
+    if (!el) return;
     const targetState = typeof forceState === 'boolean' ? forceState : !window.IonPerf.hudVisible;
 
     window.IonPerf.hudVisible = targetState;
@@ -513,6 +530,7 @@
 
   // Expose helper to get live stats
   window.IonPerf.getStats = function () {
+    ensureDevInstrumentation();
     let worstDelta = 0;
     let hitches = 0;
     const hitchThreshold = window.IonPerf.frameMs * 1.5;
@@ -537,6 +555,7 @@
 
   // Automated 10-second scroll benchmark runner for baseline and verification tests
   window.IonPerf.startBenchmark = function (viewId, durationSeconds = 10, onComplete) {
+    ensureDevInstrumentation();
     const targetView = document.getElementById(viewId);
     if (!targetView) {
       console.error(`View ${viewId} not found`);
@@ -627,6 +646,7 @@
 
   // Full baseline & verification suite
   window.IonPerf.runFullSuite = function (onComplete) {
+    ensureDevInstrumentation();
     const views = ['view-dashboard', 'view-trends', 'view-habits', 'view-diagnostics'];
     const suiteResults = {
       timestamp: new Date().toISOString(),
