@@ -7,10 +7,12 @@ to empirically measure absorbed milliamp-hours and validate mathematical capacit
 from __future__ import annotations
 from datetime import datetime, timezone
 import logging
+import shlex
 import threading
 import time
 from typing import Any, Dict, List, Optional
 import uuid
+from backend.device_profiler import is_safe_sysfs_path
 from backend.status_bus import emit_status
 from backend.prediction import calculate_coulomb_confidence
 
@@ -24,6 +26,7 @@ class ActiveCalibrationManager:
         self._lock = threading.RLock()
         self.session_id: Optional[str] = None
         self.device_serial: Optional[str] = None
+        self.current_now_path: Optional[str] = None
         self.is_running: bool = False
         self.is_simulated: bool = False
         self.start_time: Optional[datetime] = None
@@ -105,6 +108,7 @@ class ActiveCalibrationManager:
 
             self.session_id = str(uuid.uuid4())[:8]
             self.device_serial = device_serial
+            self.current_now_path = None
             self.is_running = True
             self.is_simulated = simulate
             self.status = "recording"
@@ -166,6 +170,7 @@ class ActiveCalibrationManager:
             self.is_running = False
             self.status = "idle"
             self.session_id = None
+            self.current_now_path = None
             self.samples = []
             self.accumulated_mah = 0.0
             self.last_current_ma = 0.0
@@ -226,6 +231,19 @@ class ActiveCalibrationManager:
         from backend.adb_client import ADBClient
         adb = ADBClient()
 
+        # Deterministically resolve current_now path once for this session
+        resolved_path: Optional[str] = None
+        if self.device_serial and hasattr(adb, "get_current_now_path"):
+            try:
+                resolved_path = adb.get_current_now_path(self.device_serial)
+            except Exception as ex:
+                logger.debug(f"Failed to dynamically resolve current_now path: {ex}")
+
+        # Fallback to standard battery/current_now if no readable path discovered or if unsafe
+        target_path = resolved_path if (resolved_path and is_safe_sysfs_path(resolved_path)) else "/sys/class/power_supply/battery/current_now"
+        with self._lock:
+            self.current_now_path = target_path
+
         while not self._stop_event.is_set():
             if self._stop_event.wait(1.0):
                 break
@@ -256,14 +274,15 @@ class ActiveCalibrationManager:
                         voltage_mv = summary.get("voltage_mv") or voltage_mv
                         temp_c = summary.get("temperature_c") or temp_c
 
-                    # Try reading sysfs current_now
-                    out, _, code = adb.run_shell(self.device_serial, "cat /sys/class/power_supply/battery/current_now")
-                    if code == 0 and out.strip().lstrip("-").isdigit():
-                        raw_c = int(out.strip().lstrip("-"))
-                        if raw_c > 10000:
-                            current_ma = raw_c / 1000.0
-                        elif raw_c > 0:
-                            current_ma = float(raw_c)
+                    # Try reading sysfs current_now using the resolved target path
+                    if is_safe_sysfs_path(target_path):
+                        out, _, code = adb.run_shell(self.device_serial, f"cat {shlex.quote(target_path)}")
+                        if code == 0 and out.strip().lstrip("-").isdigit():
+                            raw_c = int(out.strip().lstrip("-"))
+                            if raw_c > 10000:
+                                current_ma = raw_c / 1000.0
+                            elif raw_c > 0:
+                                current_ma = float(raw_c)
                 except Exception as ex:
                     logger.debug(f"Current polling tick note: {ex}")
 

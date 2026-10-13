@@ -1040,6 +1040,50 @@ class ADBClient:
 
         return report
 
+    def get_current_now_path(self, serial: str) -> Optional[str]:
+        """
+        Deterministically resolves the readable `current_now` sysfs path for the device
+        using the dynamically discovered power supplies tree.
+
+        Resolution order:
+        1. If discovered "battery/current_now" is readable, use it.
+        2. Otherwise select a readable discovered "current_now" entry deterministically (sorted by node name).
+        3. Returns None if no readable discovered current_now node exists.
+        """
+        try:
+            from backend.device_profiler import is_safe_sysfs_path
+        except Exception:
+            is_safe_sysfs_path = None
+
+        probe = self.probe_device(serial)
+        power_tree = probe.get("power_supplies", {}) if isinstance(probe, dict) else {}
+        if not isinstance(power_tree, dict):
+            power_tree = {}
+
+        # 1. Check 'battery' node first
+        battery_data = power_tree.get("battery")
+        if isinstance(battery_data, dict):
+            battery_entry = battery_data.get("current_now")
+            if isinstance(battery_entry, dict) and battery_entry.get("readable") and battery_entry.get("path"):
+                path = battery_entry["path"]
+                if not is_safe_sysfs_path or is_safe_sysfs_path(path):
+                    return path
+
+        # 2. Select readable discovered current_now deterministically (sorted by node name)
+        for node in sorted(power_tree.keys()):
+            if node == "battery":
+                continue
+            node_data = power_tree.get(node)
+            if not isinstance(node_data, dict):
+                continue
+            entry = node_data.get("current_now")
+            if isinstance(entry, dict) and entry.get("readable") and entry.get("path"):
+                path = entry["path"]
+                if not is_safe_sysfs_path or is_safe_sysfs_path(path):
+                    return path
+
+        return None
+
     def print_diagnostic_dump(self, dump: Dict[str, Any]) -> None:
         """Logs the formatted raw hardware diagnostic dump."""
         reg = dump.get("registers", {})
