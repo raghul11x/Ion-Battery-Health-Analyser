@@ -1392,115 +1392,12 @@ function renderHistoryAndChart() {
   renderVirtualHistory(reversed);
 }
 
-// Virtualized History Log Table Implementation
-let virtualHistoryState = {
-  items: [],
-  rowHeight: 44,
-  container: null,
-  scrollListenerAttached: false,
-  lastRenderedStart: -1,
-  lastRenderedEnd: -1,
-};
-
-function renderVirtualHistory(items) {
-  if (items) {
-    virtualHistoryState.items = items;
-    virtualHistoryState.lastRenderedStart = -1;
-    virtualHistoryState.lastRenderedEnd = -1;
-  }
-  const container = document.getElementById('history-scroll-container');
-  if (!container || !el.historyTableBody) return;
-
-  virtualHistoryState.container = container;
-
-  if (!virtualHistoryState.scrollListenerAttached) {
-    virtualHistoryState.scrollListenerAttached = true;
-    let scrollRaf = null;
-    container.addEventListener('scroll', () => {
-      lastScrollTimestamp = performance.now();
-      if (!scrollRaf) {
-        scrollRaf = requestAnimationFrame(() => {
-          updateVirtualHistoryView();
-          scrollRaf = null;
-        });
-      }
-    }, { passive: true });
-  }
-
-  updateVirtualHistoryView();
-}
-
-function updateVirtualHistoryView() {
-  const { items, rowHeight, container } = virtualHistoryState;
-  if (!container || !el.historyTableBody) return;
-  if (!items || items.length === 0) {
-    el.historyTableBody.innerHTML = `
-      <tr>
-        <td colspan="7" class="py-8 text-center text-zinc-500 text-xs">
-          No history yet. Connect a device or toggle Demo data to preview.
-        </td>
-      </tr>
-    `;
-    return;
-  }
-
-  const scrollTop = container.scrollTop;
-  const viewportHeight = container.clientHeight || 500;
-  const totalItems = items.length;
-  const buffer = 10;
-
-  let startIndex = Math.max(0, Math.floor(scrollTop / rowHeight) - buffer);
-  let endIndex = Math.min(totalItems, Math.ceil((scrollTop + viewportHeight) / rowHeight) + buffer);
-
-  if (startIndex === virtualHistoryState.lastRenderedStart && endIndex === virtualHistoryState.lastRenderedEnd) {
-    return; // Already rendered this exact slice
-  }
-
-  virtualHistoryState.lastRenderedStart = startIndex;
-  virtualHistoryState.lastRenderedEnd = endIndex;
-
-  const topSpacerHeight = startIndex * rowHeight;
-  const bottomSpacerHeight = Math.max(0, (totalItems - endIndex) * rowHeight);
-
-  const visibleItems = items.slice(startIndex, endIndex);
-
-  const rowsHtml = visibleItems.map(r => {
-    let badge = `<span class="glass-chip font-bold">${r.health_pct}%</span>`;
-    if (r.health_pct >= 85) {
-      badge = `<span class="glass-chip glass-chip-success font-bold">${r.health_pct}%</span>`;
-    } else if (r.health_pct >= 70) {
-      badge = `<span class="glass-chip glass-chip-warning font-bold">${r.health_pct}%</span>`;
-    } else {
-      badge = `<span class="glass-chip glass-chip-danger font-bold">${r.health_pct}%</span>`;
-    }
-
-    return `
-      <tr class="history-virtual-row border-b border-white/[0.04] hover:bg-white/[0.04] text-xs text-zinc-300 transition-colors">
-        <td class="py-3 px-4 font-mono text-zinc-400">${formatDate(r.timestamp)}</td>
-        <td class="py-3 px-4">${badge}</td>
-        <td class="py-3 px-4 font-bold text-white font-mono">${r.level_pct}%</td>
-        <td class="py-3 px-4 font-mono text-zinc-400">${(r.voltage_mv / 1000).toFixed(2)} V</td>
-        <td class="py-3 px-4 text-zinc-300 font-mono">${r.temperature_c} °C</td>
-        <td class="py-3 px-4 font-mono text-zinc-400">${(r.cycle_count !== null && r.cycle_count !== undefined && r.cycle_count_type !== 'unavailable') ? r.cycle_count : '<span class="text-zinc-500 italic">Unavailable</span>'}</td>
-        <td class="py-3 px-4">
-          <span class="glass-chip text-[10px]">
-            ${r.health_method === 'capacity_ratio' ? 'Capacity Ratio' : 'Trend'}
-          </span>
-        </td>
-      </tr>
-    `;
-  }).join('');
-
-  const topRow = topSpacerHeight > 0 
-    ? `<tr style="height:${topSpacerHeight}px; padding:0; border:none; pointer-events:none;"><td colspan="7" style="height:${topSpacerHeight}px; padding:0; border:none;"></td></tr>`
-    : '';
-
-  const bottomRow = bottomSpacerHeight > 0
-    ? `<tr style="height:${bottomSpacerHeight}px; padding:0; border:none; pointer-events:none;"><td colspan="7" style="height:${bottomSpacerHeight}px; padding:0; border:none;"></td></tr>`
-    : '';
-
-  el.historyTableBody.innerHTML = topRow + rowsHtml + bottomRow;
-}
+// ==========================================
+// VIRTUALIZED HISTORY LOG TABLE SUB-SYSTEM
+// Extracted to /static/js/virtual-history.js
+// Provides virtualHistoryState, renderVirtualHistory,
+// and updateVirtualHistoryView
+// ==========================================
 
 // ==========================================
 // DIAGNOSTIC HABIT INSIGHTS SUB-SYSTEM
