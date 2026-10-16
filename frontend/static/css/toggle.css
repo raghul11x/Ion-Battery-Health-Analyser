@@ -171,6 +171,17 @@
 .toggle-cont:has(.toggle-input:checked) .cont-icon .icon { transform: rotate(-225deg) scale(1.08); }
 .toggle-cont:has(.toggle-input:checked) .sparkle { opacity: 0.9; animation-play-state: running; }
 
+/* Subtle hover and active tactile response */
+.toggle-cont:hover:not(:has(.toggle-input:disabled)) .toggle-label {
+  border-color: rgba(255, 255, 255, 0.35);
+}
+.toggle-cont:active:not(:has(.toggle-input:disabled)) .cont-icon {
+  transform: scale(0.94);
+}
+.toggle-cont:has(.toggle-input:checked):active:not(:has(.toggle-input:disabled)) .cont-icon {
+  transform: translateX(var(--h)) scale(0.94);
+}
+
 /* ---------- Focus / disabled / motion ---------- */
 .toggle-cont:has(.toggle-input:focus-visible) .toggle-label {
   outline: 2px solid color-mix(in srgb, var(--accent-2) 85%, transparent);

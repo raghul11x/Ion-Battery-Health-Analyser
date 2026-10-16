@@ -170,7 +170,7 @@ function renderAppDrain(data, isStandby = false) {
       ` : '';
 
       return `
-        <div class="p-3.5 rounded-2xl bg-black/40 hover:bg-black/60 border border-white/5 transition flex flex-col gap-2">
+        <div class="app-drain-item p-3.5 rounded-2xl bg-black/40 hover:bg-black/60 border border-white/5 transition flex flex-col gap-2">
           <div class="flex items-center justify-between gap-3">
             <div class="flex items-center gap-3 min-w-0">
               <span class="w-6 h-6 rounded-full bg-indigo-950/60 border border-indigo-500/30 text-indigo-300 font-mono text-[11px] font-black flex items-center justify-center shrink-0">

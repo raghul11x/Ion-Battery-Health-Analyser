@@ -139,27 +139,31 @@ function updateVirtualHistoryView() {
   const visibleItems = items.slice(startIndex, endIndex);
 
   const rowsHtml = visibleItems.map(r => {
-    let badge = `<span class="glass-chip font-bold">${r.health_pct}%</span>`;
+    let badgeClass = 'history-badge-rose';
     if (r.health_pct >= 85) {
-      badge = `<span class="glass-chip glass-chip-success font-bold">${r.health_pct}%</span>`;
+      badgeClass = 'history-badge-emerald';
     } else if (r.health_pct >= 70) {
-      badge = `<span class="glass-chip glass-chip-warning font-bold">${r.health_pct}%</span>`;
-    } else {
-      badge = `<span class="glass-chip glass-chip-danger font-bold">${r.health_pct}%</span>`;
+      badgeClass = 'history-badge-amber';
     }
+    const badge = `<span class="history-badge ${badgeClass}">${r.health_pct}%</span>`;
+
+    const voltageVal = (r.voltage_mv / 1000).toFixed(2);
+    const tempVal = r.temperature_c;
+    const cyclesDisplay = (r.cycle_count !== null && r.cycle_count !== undefined && r.cycle_count_type !== 'unavailable')
+      ? `<span class="text-zinc-200 font-mono text-xs">${r.cycle_count}</span>`
+      : `<span class="text-zinc-500 italic text-[11px]">Unavailable</span>`;
+    const methodLabel = r.health_method === 'capacity_ratio' ? 'Capacity Ratio' : 'Trend';
 
     return `
-      <tr class="history-virtual-row border-b border-white/[0.04] hover:bg-white/[0.04] text-xs text-zinc-300 transition-colors">
-        <td class="py-3 px-4 font-mono text-zinc-400">${_formatDate(r.timestamp)}</td>
-        <td class="py-3 px-4">${badge}</td>
-        <td class="py-3 px-4 font-bold text-white font-mono">${r.level_pct}%</td>
-        <td class="py-3 px-4 font-mono text-zinc-400">${(r.voltage_mv / 1000).toFixed(2)} V</td>
-        <td class="py-3 px-4 text-zinc-300 font-mono">${r.temperature_c} °C</td>
-        <td class="py-3 px-4 font-mono text-zinc-400">${(r.cycle_count !== null && r.cycle_count !== undefined && r.cycle_count_type !== 'unavailable') ? r.cycle_count : '<span class="text-zinc-500 italic">Unavailable</span>'}</td>
-        <td class="py-3 px-4">
-          <span class="glass-chip text-[10px]">
-            ${r.health_method === 'capacity_ratio' ? 'Capacity Ratio' : 'Trend'}
-          </span>
+      <tr class="history-virtual-row border-b border-white/[0.035] hover:bg-white/[0.03] text-xs">
+        <td class="h-[44px] py-0 pl-6 pr-4 text-left font-mono text-xs text-zinc-400 align-middle whitespace-nowrap">${_formatDate(r.timestamp)}</td>
+        <td class="h-[44px] py-0 px-3 text-center align-middle whitespace-nowrap">${badge}</td>
+        <td class="h-[44px] py-0 px-3 text-center align-middle whitespace-nowrap font-mono font-semibold text-xs text-white">${r.level_pct}%</td>
+        <td class="h-[44px] py-0 px-3 text-center align-middle whitespace-nowrap font-mono text-xs text-zinc-300"><span class="text-zinc-200 font-medium">${voltageVal}</span><span class="text-zinc-500 text-[10px] ml-1">V</span></td>
+        <td class="h-[44px] py-0 px-3 text-center align-middle whitespace-nowrap font-mono text-xs text-zinc-300"><span class="text-zinc-200 font-medium">${tempVal}</span><span class="text-zinc-500 text-[10px] ml-1">°C</span></td>
+        <td class="h-[44px] py-0 px-3 text-center align-middle whitespace-nowrap text-xs text-zinc-300">${cyclesDisplay}</td>
+        <td class="h-[44px] py-0 px-4 text-center align-middle whitespace-nowrap">
+          <span class="history-method-pill">${methodLabel}</span>
         </td>
       </tr>
     `;

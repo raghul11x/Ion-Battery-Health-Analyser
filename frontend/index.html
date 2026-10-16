@@ -82,7 +82,7 @@
     </div>
 
     <!-- Center: Floating Glass Pill Capsule Nav -->
-    <nav class="relative z-10 capsule-nav flex items-center shadow-lg" role="tablist">
+    <nav class="relative z-10 capsule-nav flex items-center shadow-lg" role="tablist" aria-label="Main Navigation">
       <div id="capsule-blob" class="capsule-blob" aria-hidden="true"></div>
       <button class="capsule-segment active" data-tab="dashboard" role="tab" aria-selected="true">Dashboard</button>
       <button class="capsule-segment" data-tab="trends" role="tab" aria-selected="false">History</button>
@@ -795,16 +795,25 @@
       <!-- History Table -->
       <div class="eura-dark-card perf-defer-card p-6">
         <div id="history-scroll-container" class="overflow-x-auto overflow-y-auto max-h-[500px]">
-          <table class="w-full text-left">
+          <table class="history-table w-full text-left">
+            <colgroup>
+              <col style="width: 24%;">
+              <col style="width: 13%;">
+              <col style="width: 13%;">
+              <col style="width: 12%;">
+              <col style="width: 12%;">
+              <col style="width: 12%;">
+              <col style="width: 14%;">
+            </colgroup>
             <thead class="sticky top-0 glass-table-head z-10">
-              <tr class="text-[11px] uppercase tracking-wider text-zinc-400 border-b border-white/[0.08]">
-                <th class="py-3 px-4">Timestamp</th>
-                <th class="py-3 px-4">Health %</th>
-                <th class="py-3 px-4">Charge Level</th>
-                <th class="py-3 px-4">Voltage</th>
-                <th class="py-3 px-4">Temperature</th>
-                <th class="py-3 px-4">Cycles</th>
-                <th class="py-3 px-4">Method</th>
+              <tr class="history-header-row text-[11px] uppercase tracking-wider text-zinc-400">
+                <th class="h-10 py-0 pl-6 pr-4 text-left font-semibold text-[11px] tracking-wider text-zinc-400 select-none align-middle">Timestamp</th>
+                <th class="h-10 py-0 px-3 text-center font-semibold text-[11px] tracking-wider text-zinc-400 select-none align-middle">Health %</th>
+                <th class="h-10 py-0 px-3 text-center font-semibold text-[11px] tracking-wider text-zinc-400 select-none align-middle">Charge Level</th>
+                <th class="h-10 py-0 px-3 text-center font-semibold text-[11px] tracking-wider text-zinc-400 select-none align-middle">Voltage</th>
+                <th class="h-10 py-0 px-3 text-center font-semibold text-[11px] tracking-wider text-zinc-400 select-none align-middle">Temperature</th>
+                <th class="h-10 py-0 px-3 text-center font-semibold text-[11px] tracking-wider text-zinc-400 select-none align-middle">Cycles</th>
+                <th class="h-10 py-0 px-4 text-center font-semibold text-[11px] tracking-wider text-zinc-400 select-none align-middle">Method</th>
               </tr>
             </thead>
             <tbody id="history-table-body">

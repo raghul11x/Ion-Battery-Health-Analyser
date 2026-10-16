@@ -1437,9 +1437,11 @@ function switchTab(tabId) {
   el.capsuleSegments.forEach(seg => {
     if (seg.dataset.tab === tabId) {
       seg.classList.add('active');
+      seg.setAttribute('aria-selected', 'true');
       activeSeg = seg;
     } else {
       seg.classList.remove('active');
+      seg.setAttribute('aria-selected', 'false');
     }
   });
 
@@ -1473,6 +1475,8 @@ function switchTab(tabId) {
 async function handleProbe() {
   if (state.isRefreshing) return;
   state.isRefreshing = true;
+  el.probeBtn?.classList.add('is-loading');
+  el.probeBtn?.setAttribute('aria-busy', 'true');
   el.probeIcon?.classList.add('animate-spin');
 
   try {
@@ -1486,6 +1490,8 @@ async function handleProbe() {
   } finally {
     setTimeout(() => {
       el.probeIcon?.classList.remove('animate-spin');
+      el.probeBtn?.classList.remove('is-loading');
+      el.probeBtn?.removeAttribute('aria-busy');
       state.isRefreshing = false;
     }, 400);
   }
@@ -1677,6 +1683,35 @@ function init() {
   el.capsuleSegments.forEach(seg => {
     seg.addEventListener('click', () => switchTab(seg.dataset.tab));
   });
+
+  // WAI-ARIA Keyboard navigation for capsule nav tabs
+  const capsuleNav = document.querySelector('.capsule-nav');
+  if (capsuleNav) {
+    capsuleNav.addEventListener('keydown', (e) => {
+      const segments = Array.from(el.capsuleSegments);
+      const activeIdx = segments.findIndex(s => s.classList.contains('active'));
+      if (activeIdx === -1) return;
+
+      let nextIdx = -1;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        nextIdx = (activeIdx + 1) % segments.length;
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        nextIdx = (activeIdx - 1 + segments.length) % segments.length;
+      } else if (e.key === 'Home') {
+        nextIdx = 0;
+      } else if (e.key === 'End') {
+        nextIdx = segments.length - 1;
+      }
+
+      if (nextIdx !== -1) {
+        e.preventDefault();
+        const nextSeg = segments[nextIdx];
+        nextSeg.focus();
+        switchTab(nextSeg.dataset.tab);
+      }
+    });
+  }
+
   const initialActive = document.querySelector('.capsule-segment.active');
   if (initialActive) {
     requestAnimationFrame(() => updateCapsuleBlob(initialActive));
